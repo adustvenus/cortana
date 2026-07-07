@@ -1,0 +1,20 @@
+# Install (as the cortana user):
+#   mkdir -p ~/.config/systemd/user
+#   cp cortana.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now cortana
+#   loginctl enable-linger $USER
+# Logs: journalctl --user -u cortana -f
+[Unit]
+Description=Cortana voice assistant
+After=graphical-session.target sound.target network-online.target
+
+[Service]
+WorkingDirectory=%h/cortana
+ExecStart=%h/cortana/venv/bin/python %h/cortana/main.py
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target
