@@ -1,0 +1,14 @@
+anthropic>=0.40
+openai>=1.40
+requests
+python-dotenv
+numpy
+sounddevice
+soundfile
+mss
+pillow
+yfinance
+pynput
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
