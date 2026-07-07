@@ -5,8 +5,14 @@ Voice mode (default):
   F10        = cycle mode: ptt -> wake ("ok cortana ...") -> open (just talk)
 Text mode (debug / hotkey-less fallback):
   python main.py --text
+
+System keywords (spoken, matched before LLM):
+  "okay cortana, time for a restart"  -> restarts the cortana systemd service
+  "okay cortana, time to shut down"   -> stops the cortana systemd service
 """
 import argparse
+import os
+import re
 import time
 
 import config
@@ -15,6 +21,29 @@ import orchestrator
 from voice import mic, stt, tts, wake
 
 state = {"mode": config.MODE, "ptt": False, "busy": False}
+
+# --- System command patterns ---
+_RESTART_PATTERN = re.compile(
+    r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+for\s+a\s+restart", re.I
+)
+_SHUTDOWN_PATTERN = re.compile(
+    r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+to\s+shut\s+down", re.I
+)
+
+
+def _handle_system_commands(text):
+    """Check for restart/shutdown keywords. Returns True if a system command was matched."""
+    if _RESTART_PATTERN.search(text):
+        tts.speak("Restarting now. Back in a moment.")
+        time.sleep(1.5)
+        os.system("systemctl --user restart cortana")
+        return True
+    if _SHUTDOWN_PATTERN.search(text):
+        tts.speak("Shutting down. Goodbye.")
+        time.sleep(1.5)
+        os.system("systemctl --user stop cortana")
+        return True
+    return False
 
 
 def process(wav_path):
@@ -35,6 +64,11 @@ def process(wav_path):
             print(f"(ignored, not addressed to me: {text[:60]})")
             return
     print("YOU:", text)
+
+    # Check for system-level commands before hitting the LLM
+    if _handle_system_commands(text):
+        return
+
     state["busy"] = True
     try:
         reply = orchestrator.handle(text)
@@ -89,7 +123,9 @@ def text_loop():
         if t.lower() in ("quit", "exit"):
             break
         if t:
-            print("CORTANA:", orchestrator.handle(t))
+            # Also handle system commands in text mode
+            if not _handle_system_commands(t):
+                print("CORTANA:", orchestrator.handle(t))
 
 
 if __name__ == "__main__":
