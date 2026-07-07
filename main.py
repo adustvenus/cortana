@@ -7,7 +7,7 @@ Text mode (debug / hotkey-less fallback):
   python main.py --text
 
 System keywords (spoken, matched before LLM):
-  "okay cortana, time for a restart"  -> restarts the cortana systemd service
+  "okay cortana, time to restart"  -> restarts the cortana systemd service
   "okay cortana, time to shut down"   -> stops the cortana systemd service
 """
 import argparse
@@ -24,7 +24,7 @@ state = {"mode": config.MODE, "ptt": False, "busy": False}
 
 # --- System command patterns ---
 _RESTART_PATTERN = re.compile(
-    r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+for\s+a\s+restart", re.I
+    r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+to\s+restart", re.I
 )
 _SHUTDOWN_PATTERN = re.compile(
     r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+to\s+shut\s+down", re.I
