@@ -51,11 +51,14 @@ def get_last_good():
 
 
 def checkpoint(msg="checkpoint"):
-    """Commit current state so nothing is ever lost before an edit."""
+    """Commit pending *tracked* changes so nothing is lost before an edit.
+
+    Only tracked files (`git add -u`) - never untracked scratch/test files, so
+    stray .wav/log/temp files can't ride into a commit and get pushed.
+    """
     _ensure_repo()
-    _git("add", "-A")
-    status = _git("status", "--porcelain")
-    if status:
+    _git("add", "-u")
+    if _git("diff", "--cached", "--name-only"):
         _git("commit", "-m", f"auto-checkpoint: {msg}", check=False)
     if not LAST_GOOD.exists():
         save_last_good()
@@ -120,7 +123,9 @@ def _do_apply(files, description):
         if not ok:
             _git("reset", "--hard", good)
             return ("FAILED", f"Validation failed, reverted. {msg}")
-        _git("add", "-A")
+        # Stage ONLY the files in this edit (adds/mods/deletes) - never a blanket
+        # `git add -A`, which used to sweep untracked junk into self-updates.
+        _git("add", "-A", "--", *[f["path"] for f in files])
         _git("commit", "-m", f"self-update: {description}")
         save_last_good()
         _push_backup()

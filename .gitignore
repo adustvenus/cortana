@@ -10,7 +10,12 @@ hud_state.json
 .last_good
 pending_edit.json
 pending_diff.txt
-mic_test.wav
+
+# --- Audio / scratch (kept out so self-edit can't push them) ---
+*.wav
+*.log
+scratch/
+tmp/
 
 # --- Python ---
 __pycache__/
