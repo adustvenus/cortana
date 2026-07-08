@@ -13,6 +13,7 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 _restart_flag = {"do": False}
 _shutdown_flag = {"do": False}
+_turn = {"tool_calls": 0}   # reset each handle(); gates the self-critique loop
 
 
 def restart_requested():
@@ -45,6 +46,7 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label=""):
         for b in resp.content:
             if b.type != "tool_use":
                 continue
+            _turn["tool_calls"] += 1
             if b.name == "delegate":
                 tgt = b.input.get("agent", "")
                 hud_state.set_state("working", agent=tgt)
@@ -97,7 +99,7 @@ def _critique(user_text, answer):
         return ""
 
 
-def handle(user_text, max_refine=3):
+def handle(user_text, max_refine=1):
     spent = memory.month_spend()
     if spent >= BUDGET_MONTHLY_USD:
         return (f"Monthly budget cap of {BUDGET_MONTHLY_USD:.0f} dollars reached "
@@ -107,13 +109,15 @@ def handle(user_text, max_refine=3):
     if not msgs:
         msgs = [{"role": "user", "content": user_text}]
 
-    hud_state.clear_thoughts()
-    hud_state.set_state("thinking")
+    _turn["tool_calls"] = 0
+    hud_state.set_state("thinking")   # feed was already cleared when we went idle last turn
     hud_state.think("understanding the request")
     try:
         reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS)
-        # self-critique / iterate: only for non-trivial answers, skip if restarting/shutting down
-        if not _restart_flag["do"] and not _shutdown_flag["do"] and len(reply) > 40:
+        # self-critique / iterate: only when actual work ran (a tool/delegate),
+        # skip plain conversational answers and skip if restarting/shutting down
+        if (not _restart_flag["do"] and not _shutdown_flag["do"]
+                and _turn["tool_calls"] > 0 and len(reply) > 40):
             for i in range(max_refine):
                 gaps = _critique(user_text, reply)
                 if not gaps:

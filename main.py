@@ -85,8 +85,12 @@ def process(wav_path):
     try:
         reply = orchestrator.handle(text)
         print("CORTANA:", reply)
-        hud_state.set_state("speaking")
-        tts.speak(reply)
+        # If the agent itself asked to restart/shutdown, let _do_system say the
+        # one action line instead of speaking the reply too (avoids double TTS).
+        pending = orchestrator.shutdown_requested() or orchestrator.restart_requested()
+        if not pending:
+            hud_state.set_state("speaking")
+            tts.speak(reply)
     finally:
         state["busy"] = False
         hud_state.set_state("idle")

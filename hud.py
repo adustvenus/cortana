@@ -43,9 +43,11 @@ class HUD(QtWidgets.QWidget):
             QtCore.Qt.FramelessWindowHint
             | QtCore.Qt.WindowStaysOnTopHint
             | QtCore.Qt.Tool
+            | QtCore.Qt.WindowTransparentForInput  # empties the X11 input shape - true click-through
             | QtCore.Qt.X11BypassWindowManagerHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)  # click-through
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)  # click-through (Qt-side)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)      # never steal focus/clicks
 
         scr = QtWidgets.QApplication.primaryScreen().geometry()
         self.setGeometry(scr.x(), scr.y(), scr.width(), HEIGHT)
