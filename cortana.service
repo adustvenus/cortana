@@ -12,9 +12,15 @@ After=graphical-session.target sound.target network-online.target
 [Service]
 WorkingDirectory=%h/cortana
 ExecStart=%h/cortana/venv/bin/python %h/cortana/launcher.py
-Restart=on-failure
-RestartSec=5
+# Relaunch on ANY exit (clean restart exit 0, or a crash) EXCEPT a
+# deliberate shutdown. main.py/launcher.py exit 42 (config.SHUTDOWN_CODE)
+# means "stay down". This makes restart work at the systemd layer even
+# if launcher.py is ever bypassed and main.py is run directly.
+Restart=always
+RestartPreventExitStatus=42
+RestartSec=2
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/1001/gdm/Xauthority
 
 [Install]
 WantedBy=default.target
