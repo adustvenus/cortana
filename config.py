@@ -27,6 +27,7 @@ WAKE_REGEX = r"^\s*(ok(ay)?[\s,]+|hey[\s,]+)?cortana[,.!?\s]*(.*)$"
 SAMPLE_RATE = 16000
 MIC_DEVICE = os.getenv("MIC_DEVICE")  # optional int index from sounddevice.query_devices()
 MIC_DEVICE = int(MIC_DEVICE) if MIC_DEVICE not in (None, "") else None
+MIC_NAME = os.getenv("MIC_NAME", "")  # substring match, e.g. "USB" - overrides MIC_DEVICE, survives index shuffling
 VAD_THRESHOLD = int(os.getenv("VAD_THRESHOLD", "350"))  # raise if it triggers on room noise
 
 # --- Budget ---
@@ -39,6 +40,9 @@ PRICES = {
 }
 
 # --- Misc ---
+# main.py exits with this code for a voice/tool shutdown; launcher.py treats it
+# as "stop, do not relaunch". A plain exit 0 means restart (relaunch).
+SHUTDOWN_CODE = 42
 MAX_TOKENS = 2048
 DB_PATH = ROOT / "state.db"
 CORTANA_MD = ROOT / "CORTANA.md"

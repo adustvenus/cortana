@@ -14,6 +14,12 @@ _local = None
 
 
 def transcribe(wav_path):
+    import numpy as np
+    import soundfile as sf
+    audio, _ = sf.read(wav_path, dtype="int16")  # int16 so the RMS threshold below is on the PCM scale
+    rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+    if rms < 200:
+        return ""  # too quiet, skip - avoids Whisper hallucination on near-silence
     if USE_LOCAL:
         return _transcribe_local(wav_path)
     try:

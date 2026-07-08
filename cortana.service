@@ -11,7 +11,7 @@ After=graphical-session.target sound.target network-online.target
 
 [Service]
 WorkingDirectory=%h/cortana
-ExecStart=%h/cortana/venv/bin/python %h/cortana/main.py
+ExecStart=%h/cortana/venv/bin/python %h/cortana/launcher.py
 Restart=on-failure
 RestartSec=5
 Environment=DISPLAY=:0

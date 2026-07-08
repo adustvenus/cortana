@@ -1,12 +1,26 @@
-"""Lead agent loop + subagent execution + cost tracking + budget cap."""
+"""Lead agent loop + subagent execution + cost tracking + budget cap +
+self-critique iteration + HUD state broadcasting."""
 import anthropic
 
 from config import (ANTHROPIC_API_KEY, BUDGET_MONTHLY_USD, MAX_TOKENS, MODEL_LEAD,
-                    PRICES)
+                    MODEL_FAST, PRICES)
 import agents
+from agents import RestartRequested, ShutdownRequested
 import memory
+import hud_state
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+_restart_flag = {"do": False}
+_shutdown_flag = {"do": False}
+
+
+def restart_requested():
+    return _restart_flag["do"]
+
+
+def shutdown_requested():
+    return _shutdown_flag["do"]
 
 
 def _track(model, usage):
@@ -15,7 +29,7 @@ def _track(model, usage):
     memory.add_usage(model, usage.input_tokens, usage.output_tokens, cost)
 
 
-def _loop(model, system, messages, tools, max_iters=15):
+def _loop(model, system, messages, tools, max_iters=15, agent_label=""):
     for _ in range(max_iters):
         resp = client.messages.create(model=model, max_tokens=MAX_TOKENS,
                                       system=system, messages=messages, tools=tools)
@@ -23,12 +37,29 @@ def _loop(model, system, messages, tools, max_iters=15):
         if resp.stop_reason != "tool_use":
             return "".join(b.text for b in resp.content if b.type == "text").strip()
         messages.append({"role": "assistant", "content": resp.content})
+        # surface any reasoning text to the live HUD feed
+        for b in resp.content:
+            if b.type == "text" and b.text.strip():
+                hud_state.think(b.text.strip()[:140])
         results = []
         for b in resp.content:
             if b.type != "tool_use":
                 continue
+            if b.name == "delegate":
+                tgt = b.input.get("agent", "")
+                hud_state.set_state("working", agent=tgt)
+                hud_state.think(f"delegating to {tgt}: {b.input.get('task','')[:80]}")
+            else:
+                hud_state.set_state("working", agent=agent_label or b.name)
+                hud_state.think(f"{b.name}: {str(b.input)[:80]}")
             try:
                 out = agents.dispatch(b.name, b.input, run_agent=run_agent)
+            except RestartRequested:
+                _restart_flag["do"] = True
+                out = "Restarting now to load changes."
+            except ShutdownRequested:
+                _shutdown_flag["do"] = True
+                out = "Shutting down. Goodbye."
             except Exception as e:
                 out = f"TOOL ERROR ({b.name}): {e}"
             content = out if isinstance(out, list) else [
@@ -43,11 +74,30 @@ def run_agent(name, task):
     a = agents.AGENTS[name]
     tools = [agents.TOOL_DEFS[t] for t in a["tools"]] + a.get("server_tools", [])
     print(f"  [delegating -> {name}]")
+    hud_state.set_state("working", agent=name)
     return _loop(a["model"], a["system"],
-                 [{"role": "user", "content": task}], tools)
+                 [{"role": "user", "content": task}], tools, agent_label=name)
 
 
-def handle(user_text):
+def _critique(user_text, answer):
+    """Cheap gap-check. Returns '' if complete, else a short gap list to fix."""
+    try:
+        r = client.messages.create(
+            model=MODEL_FAST, max_tokens=200,
+            system=("You are a strict reviewer. Given a user request and an assistant's "
+                    "result, reply DONE if the request is fully and correctly satisfied. "
+                    "Otherwise reply with a short bullet list of concrete gaps to fix. "
+                    "Be terse. Do not nitpick style."),
+            messages=[{"role": "user",
+                       "content": f"REQUEST:\n{user_text}\n\nRESULT:\n{answer}"}])
+        _track(MODEL_FAST, r.usage)
+        t = "".join(b.text for b in r.content if b.type == "text").strip()
+        return "" if t.upper().startswith("DONE") else t
+    except Exception:
+        return ""
+
+
+def handle(user_text, max_refine=3):
     spent = memory.month_spend()
     if spent >= BUDGET_MONTHLY_USD:
         return (f"Monthly budget cap of {BUDGET_MONTHLY_USD:.0f} dollars reached "
@@ -56,8 +106,24 @@ def handle(user_text):
     msgs = memory.recent_messages(12)
     if not msgs:
         msgs = [{"role": "user", "content": user_text}]
+
+    hud_state.clear_thoughts()
+    hud_state.set_state("thinking")
+    hud_state.think("understanding the request")
     try:
         reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS)
+        # self-critique / iterate: only for non-trivial answers, skip if restarting/shutting down
+        if not _restart_flag["do"] and not _shutdown_flag["do"] and len(reply) > 40:
+            for i in range(max_refine):
+                gaps = _critique(user_text, reply)
+                if not gaps:
+                    break
+                hud_state.set_state("working", agent=f"refining {i + 1}/{max_refine}")
+                hud_state.think(f"self-check found gaps, refining ({i + 1}/{max_refine})")
+                msgs.append({"role": "assistant", "content": reply})
+                msgs.append({"role": "user",
+                             "content": f"Not complete yet. Fix these gaps, then give the full result:\n{gaps}"})
+                reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS)
     except anthropic.APIStatusError as e:
         reply = f"API error: {e.status_code}. Check model names and billing in the Anthropic console."
     except Exception as e:
