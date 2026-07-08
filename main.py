@@ -10,6 +10,7 @@ import argparse
 import re
 import sys
 import time
+from pathlib import Path
 
 import config
 import memory
@@ -19,10 +20,10 @@ from voice import mic, stt, tts, wake
 
 state = {"mode": config.MODE, "ptt": False, "busy": False}
 
+# Flag file written before a restart exit; checked on the next startup
+RESTART_FLAG = config.ROOT / ".restarting"
+
 # --- Spoken system commands, matched before the LLM for reliability. ---
-# Anchored to the whole utterance so incidental mentions ("how do I restart my
-# router") don't trigger them. An optional "cortana" / "ok cortana" prefix is
-# allowed. These run even if the model would never think to call the tool.
 _RESTART_RE = re.compile(
     r"^\s*(ok(ay)?[\s,]+)?(cortana[\s,]+)?(please\s+)?"
     r"(time\s+to\s+restart|restart(\s+yourself)?|reboot(\s+yourself)?)"
@@ -45,7 +46,8 @@ def _system_command(text):
 def _do_system(kind):
     """Speak, park the HUD, and exit with the code the launcher expects."""
     if kind == "restart":
-        tts.speak("Restarting now. Back in a moment.")
+        tts.speak("Restarting.")
+        RESTART_FLAG.touch()          # new instance detects this and says "Back up"
         hud_state.set_state("offline")
         print("[main] clean exit for restart")
         sys.exit(0)
@@ -53,6 +55,13 @@ def _do_system(kind):
     hud_state.set_state("offline")
     print("[main] clean exit for shutdown")
     sys.exit(config.SHUTDOWN_CODE)
+
+
+def _startup_announce():
+    """If coming back from a restart, announce it. Silent on first boot."""
+    if RESTART_FLAG.exists():
+        RESTART_FLAG.unlink()
+        tts.speak("Back up.")
 
 
 def process(wav_path):
@@ -77,7 +86,6 @@ def process(wav_path):
             hud_state.set_state("idle")
             return
     print("YOU:", text)
-    # Spoken system commands take priority over the LLM.
     cmd = _system_command(text)
     if cmd:
         _do_system(cmd)
@@ -94,7 +102,6 @@ def process(wav_path):
     finally:
         state["busy"] = False
         hud_state.set_state("idle")
-    # Tool-initiated restart/shutdown (e.g. the agent calls the tool itself).
     if orchestrator.shutdown_requested():
         _do_system("shutdown")
     if orchestrator.restart_requested():
@@ -102,7 +109,7 @@ def process(wav_path):
 
 
 def voice_loop():
-    from pynput import keyboard  # imported here: fails cleanly on headless/Wayland
+    from pynput import keyboard
 
     def on_press(key):
         if key == keyboard.Key.f9:
@@ -119,6 +126,7 @@ def voice_loop():
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
     hud_state.set_state("idle")
+    _startup_announce()
     print(f"Cortana up. Mode: {state['mode']}. F9 hold = talk. F10 = cycle mode. Ctrl+C = quit.")
     while True:
         if state["busy"]:
@@ -131,7 +139,7 @@ def voice_loop():
                     process(p)
             else:
                 time.sleep(0.05)
-        else:  # wake / open: continuous listen
+        else:
             p = mic.listen_segment()
             if p and not state["busy"]:
                 process(p)
@@ -139,6 +147,7 @@ def voice_loop():
 
 def text_loop():
     print("Text mode. 'quit' to exit.")
+    _startup_announce()
     while True:
         try:
             t = input("> ").strip()
