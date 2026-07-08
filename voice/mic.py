@@ -9,19 +9,32 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
-from config import MIC_DEVICE, SAMPLE_RATE, VAD_THRESHOLD
+from config import MIC_DEVICE, MIC_NAME, SAMPLE_RATE, VAD_THRESHOLD
 
-if MIC_DEVICE is not None:
-    sd.default.device = (MIC_DEVICE, None)
 
+def _find_by_name(name):
+    if not name:
+        return None
+    for i, d in enumerate(sd.query_devices()):
+        if name.lower() in d["name"].lower() and d["max_input_channels"] > 0:
+            return i
+    print(f"MIC_NAME '{name}' not found, falling back to MIC_DEVICE index.")
+    return None
+
+
+_resolved = _find_by_name(MIC_NAME) if MIC_NAME else MIC_DEVICE
+if _resolved is not None:
+    sd.default.device = (_resolved, None)
+MIC_DEVICE = _resolved
 
 REC_RATE = SAMPLE_RATE
 try:
-    sd.check_input_setting(device=MIC_DEVICE, samplerate=SAMPLE_RATE)
+    sd.check_input_settings(device=MIC_DEVICE, samplerate=SAMPLE_RATE)
 except Exception:
     dev = sd.query_devices(MIC_DEVICE, "input") if MIC_DEVICE is not None else sd.query_devices(kind="input")
     REC_RATE = int(dev["default_samplerate"])
     print(f"Mic doesn't support {SAMPLE_RATE}Hz, recording at {REC_RATE}Hz instead.")
+
 
 def _resample(audio, orig_rate, target_rate):
     if orig_rate == target_rate:
@@ -30,6 +43,7 @@ def _resample(audio, orig_rate, target_rate):
     x_old = np.linspace(0, 1, len(audio))
     x_new = np.linspace(0, 1, n_out)
     return np.interp(x_new, x_old, audio.flatten()).astype(np.int16).reshape(-1, 1)
+
 
 def _save(audio):
     f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)

@@ -5,55 +5,67 @@ Voice mode (default):
   F10        = cycle mode: ptt -> wake ("ok cortana ...") -> open (just talk)
 Text mode (debug / hotkey-less fallback):
   python main.py --text
-
-System keywords (spoken, matched before LLM):
-  "okay cortana, time to restart"  -> restarts the cortana systemd service
-  "okay cortana, time to shut down"   -> stops the cortana systemd service
 """
 import argparse
-import os
 import re
+import sys
 import time
 
 import config
 import memory
 import orchestrator
+import hud_state
 from voice import mic, stt, tts, wake
 
 state = {"mode": config.MODE, "ptt": False, "busy": False}
 
-# --- System command patterns ---
-_RESTART_PATTERN = re.compile(
-    r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+to\s+restart", re.I
-)
-_SHUTDOWN_PATTERN = re.compile(
-    r"(ok(ay)?[\s,]+cortana[\s,]+)?time\s+to\s+shut\s+down", re.I
-)
+# --- Spoken system commands, matched before the LLM for reliability. ---
+# Anchored to the whole utterance so incidental mentions ("how do I restart my
+# router") don't trigger them. An optional "cortana" / "ok cortana" prefix is
+# allowed. These run even if the model would never think to call the tool.
+_RESTART_RE = re.compile(
+    r"^\s*(ok(ay)?[\s,]+)?(cortana[\s,]+)?(please\s+)?"
+    r"(time\s+to\s+restart|restart(\s+yourself)?|reboot(\s+yourself)?)"
+    r"\s*[.!]?\s*$", re.I)
+_SHUTDOWN_RE = re.compile(
+    r"^\s*(ok(ay)?[\s,]+)?(cortana[\s,]+)?(please\s+)?"
+    r"(time\s+to\s+shut\s*down|shut\s*down|shutdown|power\s*down|go\s+offline)"
+    r"\s*[.!]?\s*$", re.I)
 
 
-def _handle_system_commands(text):
-    """Check for restart/shutdown keywords. Returns True if a system command was matched."""
-    if _RESTART_PATTERN.search(text):
+def _system_command(text):
+    """Return 'restart' | 'shutdown' | None for a spoken system command."""
+    if _RESTART_RE.search(text):
+        return "restart"
+    if _SHUTDOWN_RE.search(text):
+        return "shutdown"
+    return None
+
+
+def _do_system(kind):
+    """Speak, park the HUD, and exit with the code the launcher expects."""
+    if kind == "restart":
         tts.speak("Restarting now. Back in a moment.")
-        time.sleep(1.5)
-        os.system("systemctl --user restart cortana")
-        return True
-    if _SHUTDOWN_PATTERN.search(text):
-        tts.speak("Shutting down. Goodbye.")
-        time.sleep(1.5)
-        os.system("systemctl --user stop cortana")
-        return True
-    return False
+        hud_state.set_state("offline")
+        print("[main] clean exit for restart")
+        sys.exit(0)
+    tts.speak("Shutting down. Goodbye.")
+    hud_state.set_state("offline")
+    print("[main] clean exit for shutdown")
+    sys.exit(config.SHUTDOWN_CODE)
 
 
 def process(wav_path):
+    hud_state.set_state("thinking")
     text = stt.transcribe(wav_path)
     if not text:
+        hud_state.set_state("idle")
         return
     mode = state["mode"]
     if mode == "wake":
         stripped = wake.wake_match(text)
         if stripped is None:
+            hud_state.set_state("idle")
             return
         text = stripped
     elif mode == "open":
@@ -62,20 +74,27 @@ def process(wav_path):
             text = stripped
         elif not wake.addressed(text, memory.recent_text(6)):
             print(f"(ignored, not addressed to me: {text[:60]})")
+            hud_state.set_state("idle")
             return
     print("YOU:", text)
-
-    # Check for system-level commands before hitting the LLM
-    if _handle_system_commands(text):
-        return
-
+    # Spoken system commands take priority over the LLM.
+    cmd = _system_command(text)
+    if cmd:
+        _do_system(cmd)
     state["busy"] = True
     try:
         reply = orchestrator.handle(text)
         print("CORTANA:", reply)
+        hud_state.set_state("speaking")
         tts.speak(reply)
     finally:
         state["busy"] = False
+        hud_state.set_state("idle")
+    # Tool-initiated restart/shutdown (e.g. the agent calls the tool itself).
+    if orchestrator.shutdown_requested():
+        _do_system("shutdown")
+    if orchestrator.restart_requested():
+        _do_system("restart")
 
 
 def voice_loop():
@@ -95,6 +114,7 @@ def voice_loop():
             tts.speak(f"{state['mode']} mode")
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
+    hud_state.set_state("idle")
     print(f"Cortana up. Mode: {state['mode']}. F9 hold = talk. F10 = cycle mode. Ctrl+C = quit.")
     while True:
         if state["busy"]:
@@ -123,9 +143,10 @@ def text_loop():
         if t.lower() in ("quit", "exit"):
             break
         if t:
-            # Also handle system commands in text mode
-            if not _handle_system_commands(t):
-                print("CORTANA:", orchestrator.handle(t))
+            cmd = _system_command(t)
+            if cmd:
+                _do_system(cmd)
+            print("CORTANA:", orchestrator.handle(t))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,15 @@ def _schema(name, desc, props, req):
             "input_schema": {"type": "object", "properties": props, "required": req}}
 
 
+class RestartRequested(Exception):
+    """Raised by the restart tool; main.py catches it and exits code 0."""
+
+
+class ShutdownRequested(Exception):
+    """Raised by the shutdown tool; main.py exits with config.SHUTDOWN_CODE so
+    the launcher stops instead of relaunching."""
+
+
 TOOL_DEFS = {
     "shell": _schema("shell", "Run a bash command in the workspace. Full autonomy, no approval needed.",
                      {"command": {"type": "string"}}, ["command"]),
@@ -44,6 +53,19 @@ TOOL_DEFS = {
     "delegate": _schema("delegate", "Hand a task to a specialist subagent. Agents: research (web), email (gmail), trading (markets), video (editing), dev (coding/apps).",
                         {"agent": {"type": "string"}, "task": {"type": "string"}},
                         ["agent", "task"]),
+    "self_update": _schema("self_update", "Edit Cortana's OWN source code. Provide the FULL new content of each file. Small safe edits apply automatically; large ones ask the user to confirm out loud. Always git-checkpointed and auto-reverted if it fails to compile.",
+                           {"files": {"type": "array", "items": {
+                               "type": "object",
+                               "properties": {"path": {"type": "string"},
+                                              "content": {"type": "string"},
+                                              "delete": {"type": "boolean"}}}},
+                            "description": {"type": "string"}},
+                           ["files", "description"]),
+    "confirm_pending": _schema("confirm_pending", "Apply the previously staged large self-update after the user said yes.", {}, []),
+    "cancel_pending": _schema("cancel_pending", "Discard the staged large self-update after the user said no.", {}, []),
+    "revert_change": _schema("revert_change", "Roll back the last applied self-update to the previous good state.", {}, []),
+    "restart": _schema("restart", "Cleanly restart Cortana so code changes take effect. Use when the user says to restart, or after applying a self-update.", {}, []),
+    "shutdown": _schema("shutdown", "Cleanly shut Cortana down and stay off (the launcher will NOT relaunch). Use only when the user clearly asks to shut down, power off, or go offline.", {}, []),
 }
 
 WEB_SEARCH = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
@@ -79,14 +101,17 @@ AGENTS = {
     },
     "dev": {
         "model": MODEL_HEAVY,
-        "tools": ["shell", "read_file", "write_file", "list_files"],
-        "system": ("Software engineer for future UI/app/automation projects. Write, run, and debug code in "
-                   f"the workspace autonomously. Summarize results briefly. {_SPOKEN}"),
+        "tools": ["shell", "read_file", "write_file", "list_files", "self_update"],
+        "system": ("Software engineer for Cortana herself and future UI/app/automation projects. "
+                   "To change Cortana's own code use self_update with the FULL new file content - "
+                   "never hand-edit via shell. Write, run, and debug code in the workspace "
+                   f"autonomously. Summarize results briefly. {_SPOKEN}"),
     },
 }
 
 LEAD_TOOL_NAMES = ["delegate", "remember", "shell", "read_file", "write_file",
-                   "list_files", "screenshot"]
+                   "list_files", "screenshot", "self_update", "confirm_pending",
+                   "cancel_pending", "revert_change", "restart", "shutdown"]
 LEAD_TOOLS = [TOOL_DEFS[n] for n in LEAD_TOOL_NAMES]
 
 
@@ -125,6 +150,20 @@ def dispatch(name, args, run_agent=None):
         return V.screenshot()
     if name == "remember":
         return memory.remember(args["key"], args["value"])
+    if name in ("self_update", "confirm_pending", "cancel_pending", "revert_change"):
+        import selfedit
+        if name == "self_update":
+            _, msg = selfedit.apply_edit(args["files"], args.get("description", "update"))
+            return msg
+        if name == "confirm_pending":
+            return selfedit.confirm_pending()[1]
+        if name == "cancel_pending":
+            return selfedit.cancel_pending()[1]
+        return selfedit.revert_last()[1]
+    if name == "restart":
+        raise RestartRequested()
+    if name == "shutdown":
+        raise ShutdownRequested()
     if name == "quote":
         from tools import trading as T
         return T.get_quote(args["symbol"])

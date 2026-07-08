@@ -1,0 +1,19 @@
+# --- Secrets (NEVER commit; self-edit auto-pushes to GitHub) ---
+.env
+credentials.json
+token.json
+
+# --- Runtime state / artifacts ---
+state.db
+hud_state.json
+*.tmp
+.last_good
+pending_edit.json
+pending_diff.txt
+mic_test.wav
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+venv/
+.venv/
