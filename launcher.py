@@ -60,7 +60,9 @@ def run():
 
         if code == SHUTDOWN_CODE:
             print("[launcher] shutdown requested -> stopping, will not relaunch")
-            return  # exits 0; systemd (Restart=on-failure) leaves the service stopped
+            # Exit with SHUTDOWN_CODE so systemd (RestartPreventExitStatus=42)
+            # keeps the service stopped. Any other launcher exit relaunches.
+            sys.exit(SHUTDOWN_CODE)
 
         if code == 0:
             print("[launcher] clean restart requested")
