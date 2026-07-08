@@ -14,6 +14,8 @@ _MAX_THOUGHTS = 6
 
 # states: idle | listening | thinking | working | speaking | offline
 def set_state(state, agent="", detail=""):
+    if state == "idle":
+        _thoughts.clear()          # wipe feed so HUD goes blank on idle
     _write(state, agent, detail)
 
 
