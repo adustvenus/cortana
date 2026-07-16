@@ -26,6 +26,13 @@ state = {"mode": config.MODE, "ptt": False,
          "capturing": False,   # the user is talking right now (VAD-started)
          "exit": None}         # exit code set by _do_system; loops exit on it
 
+# Cancel token for whichever turn the processor thread is currently working
+# on. Cleared right before each turn starts; set by a NEWER utterance arriving
+# while one is still in flight, so the stale turn bails instead of running to
+# completion (or its full step limit) while the user is talking about
+# something else. Single processor thread => single slot is always correct.
+current_cancel = threading.Event()
+
 # Flag file written before a restart exit; checked on the next startup
 RESTART_FLAG = config.ROOT / ".restarting"
 
@@ -90,7 +97,10 @@ def _startup_announce():
         speech.say("Back up.")
 
 
-def process(wav_path):
+def process(wav_path, cancel=None):
+    """Runs on the processor thread. busy/hud-idle lifecycle is owned by the
+    caller (processor()) so there's no window where a just-dequeued turn is
+    running but state['busy'] hasn't flipped yet."""
     hud_state.set_state("thinking")
     text = stt.transcribe(wav_path)
     if not text:
@@ -122,19 +132,17 @@ def process(wav_path):
     # later 'restart' re-runs the warn-once flow instead of firing silently
     # (e.g. 'restart' -> warned -> 'never mind' -> 'restart' should warn again).
     _pending_sys["kind"] = None
-    state["busy"] = True
-    try:
-        reply = orchestrator.handle(text)
-        print("CORTANA:", reply)
-        # If the agent itself asked to restart/shutdown, let _do_system say the
-        # one action line instead of speaking the reply too (avoids double TTS).
-        pending = orchestrator.shutdown_requested() or orchestrator.restart_requested()
-        if not pending:
-            speech.say(reply)
-    finally:
-        state["busy"] = False
-        if not speech.speaking():
-            hud_state.set_state("idle")
+    reply = orchestrator.handle(text, cancel=cancel)
+    if reply is None:
+        # Preempted by a newer utterance mid-turn - stay silent, the newer
+        # request is next in the queue and will speak its own reply.
+        return
+    print("CORTANA:", reply)
+    # If the agent itself asked to restart/shutdown, let _do_system say the
+    # one action line instead of speaking the reply too (avoids double TTS).
+    pending = orchestrator.shutdown_requested() or orchestrator.restart_requested()
+    if not pending:
+        speech.say(reply)
     if orchestrator.shutdown_requested():
         _do_system("shutdown")
     if orchestrator.restart_requested():
@@ -165,16 +173,30 @@ def voice_loop():
 
     utterances = queue.Queue()
 
+    def _enqueue(p):
+        """Queue an utterance. If the processor is mid-turn, signal that turn
+        to bail ASAP - a fresh command always takes priority over finishing
+        whatever she was already doing (see current_cancel)."""
+        if state["busy"]:
+            current_cancel.set()
+        utterances.put(p)
+
     def processor():
         while state["exit"] is None:
             try:
                 p = utterances.get(timeout=0.5)
             except queue.Empty:
                 continue
-            try:
-                process(p)
+            state["busy"] = True          # set BEFORE any work, closes the
+            current_cancel.clear()        # race where a new utterance arrives
+            try:                          # between dequeue and 'busy' flipping
+                process(p, cancel=current_cancel)
             except Exception as e:
                 print("[main] process error:", e)
+            finally:
+                state["busy"] = False
+                if not speech.speaking():
+                    hud_state.set_state("idle")
 
     threading.Thread(target=processor, daemon=True, name="processor").start()
 
@@ -195,7 +217,7 @@ def voice_loop():
                 if state["ptt"]:
                     p = mic.record_while(lambda: state["ptt"], should_abort=abort)
                     if p:
-                        utterances.put(p)
+                        _enqueue(p)
                 else:
                     time.sleep(0.05)
             else:
@@ -204,7 +226,7 @@ def voice_loop():
                     should_abort=abort)
                 state["capturing"] = False
                 if p:
-                    utterances.put(p)
+                    _enqueue(p)
         except Exception as e:
             # A transient audio-device error (USB hiccup, PipeWire suspend, unplug)
             # must not kill the main thread - that would take the whole process and
