@@ -294,8 +294,33 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
+<<<<<<< HEAD
   ipcMain.on('ui:open', () => showMain());
   ipcMain.on('ui:bubble', () => toBubble(true));
+=======
+
+  ipcMain.handle('git:status', () => {
+    const REPO = path.join(os.homedir(), 'cortana');
+    return new Promise(resolve => {
+      // Run three git commands in parallel
+      let done = 0; const out = {};
+      const run = (key, args, cb) => {
+        execFile('git', ['-C', REPO, ...args], { timeout: 6000 }, (err, stdout) => {
+          out[key] = cb(err, String(stdout || '').trim());
+          if (++done === 3) resolve(out);
+        });
+      };
+      run('log',    ['log', '--oneline', '-5'],
+          (e, s) => s ? s.split('\n').map(l => ({ hash: l.slice(0,7), msg: l.slice(8) })) : []);
+      run('status', ['status', '--short'],
+          (e, s) => ({ clean: !s, files: s ? s.split('\n').length : 0 }));
+      run('branch', ['rev-parse', '--abbrev-ref', 'HEAD'],
+          (e, s) => s || 'unknown');
+    });
+  });
+  ipcMain.on('ui:open', showMain);
+  ipcMain.on('ui:bubble', toBubble);
+>>>>>>> 9c472195 (dash: add GIT STATUS module — branch, clean/dirty, last 5 commits, 30s poll)
   ipcMain.on('ui:ctx', () => {
     Menu.buildFromTemplate([
       { label: 'Open dashboard', click: showMain },
