@@ -101,8 +101,18 @@ function login() {
     let win = null;
     authServer.on('error', (e) => finish({ ok: false, error: 'loopback failed: ' + e.message }));
     authServer.listen(REDIRECT_PORT, '127.0.0.1', () => {
-      win = new BrowserWindow({ width: 520, height: 720, title: 'Connect Spotify', autoHideMenuBar: true });
+      // alwaysOnTop + center + focus so it appears OVER the fullscreen kiosk
+      // dashboard (a plain child window can otherwise open behind it on X11).
+      win = new BrowserWindow({
+        width: 520, height: 720, title: 'Connect Spotify', autoHideMenuBar: true,
+        alwaysOnTop: true, center: true, minimizable: false, maximizable: false,
+        webPreferences: { nodeIntegration: false, contextIsolation: true }
+      });
+      win.setAlwaysOnTop(true, 'screen-saver');
       win.loadURL(authUrl);
+      win.once('ready-to-show', () => { win.show(); win.focus(); });
+      win.webContents.on('did-fail-load', (_e, code, desc) =>
+        finish({ ok: false, error: 'auth page failed to load: ' + desc + ' (' + code + ')' }));
       win.on('closed', () => {
         if (authServer) { try { authServer.close(); } catch (e) {} authServer = null; }
         finish({ ok: false, error: 'window closed' });
