@@ -6,4 +6,7 @@ if [ ! -x node_modules/.bin/electron ]; then
   echo "Electron not installed. Run: bash ../install-dash.sh" >&2
   exit 1
 fi
-exec ./node_modules/.bin/electron . "$@"
+# --no-sandbox: this is a local single-user dashboard that loads only local
+# files, and it avoids the chrome-sandbox SUID-root requirement that otherwise
+# breaks on every Electron reinstall. Safe here; do not copy to a web-facing app.
+exec ./node_modules/.bin/electron --no-sandbox . "$@"
