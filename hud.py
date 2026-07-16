@@ -13,12 +13,43 @@ State file (hud_state.json) drives speed + amplitude:
 Run standalone: ./venv/bin/python hud.py   (launcher normally starts it)
 Quit: exits when state == 'offline', or on SIGTERM from launcher.
 """
+import ctypes
 import math
 import sys
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from hud_state import read_state
+
+
+def _empty_x11_input_region(win_id):
+    """Set an empty X11 input shape on the native window so ALL pointer events
+    pass through to whatever is beneath it. This is the reliable click-through
+    path on X11 - Qt's WindowTransparentForInput/WA_TransparentForMouseEvents
+    do not always empty the native input shape (esp. with override-redirect),
+    which leaves the window swallowing clicks instead of passing them down.
+    No-op / harmless if the X libs or session aren't X11 (e.g. Wayland)."""
+    try:
+        x11 = ctypes.CDLL("libX11.so.6")
+        xext = ctypes.CDLL("libXext.so.6")
+    except OSError:
+        return False
+    ShapeInput, ShapeSet = 2, 0  # X11 shape constants
+    xext.XShapeCombineRectangles.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+        ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    dpy = x11.XOpenDisplay(None)
+    if not dpy:
+        return False
+    try:
+        # NULL rect list + count 0 => empty input region => full click-through
+        xext.XShapeCombineRectangles(
+            dpy, ctypes.c_ulong(int(win_id)), ShapeInput, 0, 0, None, 0,
+            ShapeSet, 0)
+        x11.XFlush(dpy)
+    finally:
+        x11.XCloseDisplay(dpy)
+    return True
 
 HEIGHT = 78          # strip height (wave + thinking line)
 WAVE_H = 52          # vertical space the mirrored wave uses
@@ -65,6 +96,13 @@ class HUD(QtWidgets.QWidget):
         self.poll = QtCore.QTimer(self)
         self.poll.timeout.connect(self._poll)
         self.poll.start(120)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Native window now exists; empty its X11 input shape for true
+        # click-through. Guarded to the X11 (xcb) platform.
+        if QtWidgets.QApplication.platformName() == "xcb":
+            _empty_x11_input_region(self.winId())
 
     def _poll(self):
         s = read_state()
