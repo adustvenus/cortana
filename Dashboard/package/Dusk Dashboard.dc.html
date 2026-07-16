@@ -214,12 +214,15 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 
         <!-- ═══ AGENDA ═══ -->
         <sc-if value="{{ m.t_agenda }}" hint-placeholder-val="{{ false }}">
-          <div style="{{ m.cardStyle }}">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">AGENDA · TODAY</div>
-            <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:.7rem">
-              <div style="display:flex;gap:.8rem"><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgb(var(--accent-rgb));width:3rem;flex-shrink:0">19:00</span><span style="font-size:.95rem;color:rgb(var(--text-rgb))">Dinner w/ Sam — Linger</span></div>
-              <div style="display:flex;gap:.8rem"><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgb(var(--accent-rgb));width:3rem;flex-shrink:0">21:30</span><span style="font-size:.95rem;color:rgb(var(--text-rgb))">Deploy window opens</span></div>
-              <div style="display:flex;gap:.8rem"><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgba(var(--text-rgb),.4);width:3rem;flex-shrink:0">08:00</span><span style="font-size:.95rem;color:rgba(var(--text-rgb),.5)">Tomorrow — standup</span></div>
+          <div style="{{ m.cardStyleCol }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb));flex-shrink:0">AGENDA · TODAY</div>
+            <div style="flex:1;overflow-y:auto;margin-top:.7rem;min-height:0;display:flex;flex-direction:column;gap:.75rem;-webkit-mask-image:linear-gradient(180deg,#000 92%,transparent);mask-image:linear-gradient(180deg,#000 92%,transparent)">
+              <sc-for list="{{ agendaItems }}" as="ev" hint-placeholder-count="3">
+                <div style="display:flex;gap:.8rem"><span style="{{ ev.timeStyle }}">{{ ev.time }}</span><span style="{{ ev.titleStyle }}">{{ ev.title }}</span></div>
+              </sc-for>
+              <sc-if value="{{ agendaEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:.9rem;color:rgba(var(--text-rgb),.4)">{{ agendaEmptyTxt }}</div>
+              </sc-if>
             </div>
           </div>
         </sc-if>
@@ -653,6 +656,7 @@ class Component extends DCLogic {
       aiSent: '',          // transient feedback line after a control action
       gitData: null,       // last git:status response from main process
       gitAge: '—',         // HH:MM of last successful git poll
+      calData: null,       // {events, error} from Cortana's calendar loop
       nextId: 100
     };
   })();
@@ -712,6 +716,18 @@ class Component extends DCLogic {
     };
     pollGit();
     this._gitPoll = setInterval(pollGit, 30000);
+
+    // ── Calendar (Agenda module): read events Cortana writes to disk ──
+    const pollCal = async () => {
+      if (!this.state.modules.some(m => m.type === 'agenda')) return;
+      if (!window.duskBridge || typeof window.duskBridge.calendar !== 'function') return;
+      try {
+        const d = await window.duskBridge.calendar();
+        if (d && typeof d === 'object') this.setState({ calData: d });
+      } catch (e) {}
+    };
+    pollCal();
+    this._calPoll = setInterval(pollCal, 60000);
 
     // ── Auto-remove completed tasks 1h after they were checked off ──
     this._taskReap = setInterval(() => {
@@ -827,7 +843,7 @@ class Component extends DCLogic {
 
   componentWillUnmount() {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
-    clearInterval(this._taskReap); clearInterval(this._weatherPoll);
+    clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
@@ -1396,6 +1412,28 @@ class Component extends DCLogic {
         this.setState({ weatherZip: zip, weatherInput: '', weatherData: null },
                       () => this._pollWeather && this._pollWeather());
       },
+
+      // ── AGENDA (Google Calendar via Cortana; same visual format as before) ──
+      agendaItems: (() => {
+        const evs = (s.calData && Array.isArray(s.calData.events)) ? s.calData.events : [];
+        return evs.map(ev => {
+          const dim = !!ev.past;   // past events fade, matching the old design
+          return {
+            time: ev.allDay ? '—' : ev.time,
+            title: ev.title,
+            timeStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.8rem',
+                         color: dim ? 'rgba(var(--text-rgb),.4)' : 'rgb(var(--accent-rgb))',
+                         width: '3rem', flexShrink: 0 },
+            titleStyle: { fontSize: '.95rem', whiteSpace: 'nowrap', overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          color: dim ? 'rgba(var(--text-rgb),.5)' : 'rgb(var(--text-rgb))' }
+          };
+        });
+      })(),
+      agendaEmpty: !(s.calData && Array.isArray(s.calData.events) && s.calData.events.length),
+      agendaEmptyTxt: !window.duskBridge ? 'open in the Dusk app for your calendar'
+        : (s.calData && s.calData.error) ? s.calData.error
+        : (s.calData ? 'nothing on the calendar today' : 'loading…'),
 
       // ── YOUTUBE (iframe mounted imperatively in _syncYoutube) ──
       ytNoVideo: !s.youtubeId,
