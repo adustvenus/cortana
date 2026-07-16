@@ -51,13 +51,21 @@ def _save(audio):
     return f.name
 
 
-def record_while(flag):
+def record_while(flag, should_abort=None):
+    """PTT capture: record while flag() is true. should_abort() is polled every
+    ~0.1s; if it fires (TTS started, or exit requested) the capture is ABANDONED
+    and None returned - so a fragment truncated by Cortana's own voice starting
+    is never processed as a command."""
     frames = []
+    aborted = False
     with sd.InputStream(samplerate=REC_RATE, channels=1, dtype="int16") as st:
         while flag():
+            if should_abort and should_abort():
+                aborted = True
+                break
             data, _ = st.read(int(REC_RATE * 0.1))
             frames.append(data.copy())
-    if not frames:
+    if aborted or not frames:
         return None
     audio = np.concatenate(frames)
     if len(audio) < REC_RATE * 0.3:
@@ -65,14 +73,21 @@ def record_while(flag):
     return _save(audio)
 
 
-def listen_segment(silence_s=0.8, max_s=30, wait_s=5, on_speech_start=None):
+def listen_segment(silence_s=0.8, max_s=30, wait_s=5, on_speech_start=None,
+                   should_abort=None):
     """Block up to wait_s for speech; then record until silence_s of quiet.
     on_speech_start fires once when voice is first detected (lets the caller
-    flag 'user is talking' so queued announcements hold politely)."""
+    flag 'user is talking' so queued announcements hold politely).
+    should_abort() is polled every ~0.1s: if it fires (Cortana's TTS started
+    mid-capture, or an exit was requested) the capture is dropped and None
+    returned - this is the half-duplex gate that stops her hearing herself,
+    since TTS can begin AFTER this call is already recording."""
     frames, started, silent = [], False, 0.0
     t0 = time.time()
     with sd.InputStream(samplerate=REC_RATE, channels=1, dtype="int16") as st:
         while True:
+            if should_abort and should_abort():
+                return None
             data, _ = st.read(int(REC_RATE * 0.1))
             rms = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
             if not started:
