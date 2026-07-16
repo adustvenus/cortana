@@ -23,6 +23,36 @@ PENDING = ROOT / "pending_edit.json"
 MAX_FILES_AUTO = 2
 MAX_NET_LINES_AUTO = 40
 
+# Paths self-edit must NEVER touch, even with a spoken yes. These are the
+# recovery chain (launcher/selfedit/service files - a bad edit here can brick
+# the rollback path itself) and the dashboard engine (support.js/vendor are
+# verified-good, per Dashboard/package/MODULES.md hard stops; the .dc.html
+# module areas stay editable so module authoring keeps working).
+PROTECTED = (
+    "launcher.py",
+    "selfedit.py",
+    "cortana.service",
+    "Dashboard/cortana-dash.service",
+    "Dashboard/app/",
+    "Dashboard/package/support.js",
+    "Dashboard/package/vendor/",
+)
+
+
+def _protected_hits(files):
+    """Relative paths in `files` that fall inside a protected area.
+    Resolves each path against ROOT first so ../ tricks can't slip through."""
+    hits = []
+    for f in files:
+        try:
+            rel = (ROOT / f["path"]).resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            hits.append(f["path"])      # escapes the repo entirely - block
+            continue
+        if any(rel == p or rel.startswith(p) for p in PROTECTED):
+            hits.append(rel)
+    return hits
+
 
 def _git(*args, check=True):
     r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
@@ -93,6 +123,11 @@ def apply_edit(files, description, force=False):
     Small & safe -> applied now. Large -> staged pending, needs confirm_pending().
     """
     _ensure_repo()
+    blocked = _protected_hits(files)
+    if blocked:
+        return ("BLOCKED", "Refusing to modify protected files: "
+                + ", ".join(blocked) + ". These are the recovery chain / "
+                "dashboard engine and must be edited by a human.")
     nfiles, net, has_delete = _size(files)
     big = (nfiles > MAX_FILES_AUTO or net > MAX_NET_LINES_AUTO or has_delete)
 
@@ -108,6 +143,9 @@ def apply_edit(files, description, force=False):
 
 
 def _do_apply(files, description):
+    blocked = _protected_hits(files)   # choke point: also guards confirm_pending()
+    if blocked:
+        return ("BLOCKED", "Refusing to modify protected files: " + ", ".join(blocked))
     checkpoint(f"before: {description}")
     good = current_commit()
     try:

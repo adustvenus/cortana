@@ -1,0 +1,12 @@
+{
+  "_comment": "Agent registry for the Dusk dashboard. Each agent: id, name, stateFile (hud_state-style JSON: {state, agent, detail, thoughts, ts}), systemdUnit (user unit controlled via systemctl --user start/stop/restart). stateFile may be absolute, ~-relative, or relative to this directory. Agents without a systemdUnit are status-only. Add an entry here and the dashboard picks it up on next launch - no code changes.",
+  "agents": [
+    {
+      "id": "cortana",
+      "name": "CORTANA",
+      "stateFile": "../../hud_state.json",
+      "staleAfterSec": 5,
+      "systemdUnit": "cortana"
+    }
+  ]
+}

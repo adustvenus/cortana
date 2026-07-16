@@ -28,8 +28,15 @@ CRASH_LIMIT = 3        # crashes within window -> revert
 SHUTDOWN_CODE = 42     # must match config.SHUTDOWN_CODE: main.py exits this to stay off
 crash_times = []
 
+# Legacy strip HUD (hud.py). Superseded by the Dusk Dashboard (Dashboard/),
+# which runs as its own systemd unit (cortana-dash) and reads hud_state.json
+# directly. Set CORTANA_LEGACY_HUD=1 to bring the old strip back.
+HUD_ENABLED = os.getenv("CORTANA_LEGACY_HUD", "") == "1"
+
 
 def start_hud():
+    if not HUD_ENABLED:
+        return None
     return subprocess.Popen([PY, str(ROOT / "hud.py")], cwd=ROOT)
 
 
@@ -57,6 +64,8 @@ def wait_for_hud(timeout=5.0):
     before main.py calls hud_state.set_state() for the first time.
     Falls through after `timeout` seconds so we never hang indefinitely.
     """
+    if not HUD_ENABLED:
+        return
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.1)
