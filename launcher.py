@@ -104,8 +104,10 @@ def run():
 
         if code == 0:
             print("[launcher] clean restart requested")
-            # No flat sleep — next iteration calls wait_for_hud() which gates on
-            # actual HUD liveness, not an arbitrary timer.
+            # With the HUD disabled, wait_for_hud() no-ops - keep a small sleep
+            # so a fast clean-exit fault can't spin an unthrottled relaunch loop.
+            if not HUD_ENABLED:
+                time.sleep(1)
             continue
 
         # crash path

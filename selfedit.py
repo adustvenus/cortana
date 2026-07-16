@@ -49,7 +49,10 @@ def _protected_hits(files):
         except ValueError:
             hits.append(f["path"])      # escapes the repo entirely - block
             continue
-        if any(rel == p or rel.startswith(p) for p in PROTECTED):
+        # Path-boundary-safe: "launcher.py" must not block "launcher.py.orig",
+        # and dir entries (trailing /) block their whole subtree.
+        if any(rel == p.rstrip("/") or rel.startswith(p if p.endswith("/") else p + "/")
+               for p in PROTECTED):
             hits.append(rel)
     return hits
 
