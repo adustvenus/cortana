@@ -1,0 +1,10 @@
+{
+  "clientId": "YOUR_SPOTIFY_CLIENT_ID",
+  "_setup": [
+    "1. Go to https://developer.spotify.com/dashboard and create an app.",
+    "2. In the app settings, add this Redirect URI exactly: http://127.0.0.1:8888/callback",
+    "3. Copy the app's Client ID and paste it above as clientId (replace YOUR_SPOTIFY_CLIENT_ID).",
+    "4. Restart the dashboard, add a MUSIC module, and click Connect Spotify.",
+    "Note: play/pause/skip need Spotify Premium; now-playing works on free."
+  ]
+}

@@ -49,6 +49,10 @@ EOF
   exit 1
 fi
 
+# Seed the per-machine Spotify config from the template (never overwrite an
+# existing one - it holds the user's Client ID and is gitignored).
+[ -f app/spotify.json ] || cp app/spotify.example.json app/spotify.json
+
 echo "[2/4] Installing application icon + desktop entry..."
 mkdir -p ~/.local/share/applications
 sed "s|__HOME__|$HOME|g" dusk-dash.desktop > ~/.local/share/applications/dusk-dash.desktop
