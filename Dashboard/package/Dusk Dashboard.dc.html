@@ -1449,7 +1449,7 @@ class Component extends DCLogic {
             : !configured ? 'add your Client ID in Dashboard/app/spotify.json, then restart'
             : !connected ? 'connect your Spotify account'
             : (sp && sp.error === 401) ? 'Spotify session expired — click Connect Spotify again'
-            : (sp && sp.error === 403) ? ('Spotify 403: ' + ((sp.errorMsg || 'forbidden')) + (sp.grantedScope ? '' : ' — no scopes were granted; reconnect'))
+            : (sp && sp.error === 403) ? ('Spotify 403: ' + (sp.errorMsg || 'forbidden (no message)') + ' · scope=' + (sp.grantedScope || 'NONE'))
             : (sp && sp.error) ? ('Spotify error ' + sp.error + (sp.errorMsg ? ': ' + sp.errorMsg : ''))
             : 'nothing playing — play a track in the Spotify app on this account',
           spTrack: (sp && sp.track) || '—',
