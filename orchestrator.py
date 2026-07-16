@@ -8,12 +8,19 @@ import agents
 from agents import RestartRequested, ShutdownRequested
 import memory
 import hud_state
+from voice import speech
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 _restart_flag = {"do": False}
 _shutdown_flag = {"do": False}
-_turn = {"tool_calls": 0}   # reset each handle(); gates the self-critique loop
+# Reset each handle(). Only the LEAD loop mutates these (subagent threads run
+# _loop concurrently and must not affect the critique gate):
+# tool_calls counts lead tool use; sync_work is True only if something beyond
+# fire-and-forget delegation ran - background handoffs skip the critique pass.
+_turn = {"tool_calls": 0, "sync_work": False}
+
+_BG_ONLY_TOOLS = {"task_status", "cancel_task", "remember"}
 
 
 def restart_requested():
@@ -30,23 +37,36 @@ def _track(model, usage):
     memory.add_usage(model, usage.input_tokens, usage.output_tokens, cost)
 
 
-def _loop(model, system, messages, tools, max_iters=15, agent_label=""):
+def _loop(model, system, messages, tools, max_iters=15, agent_label="",
+          is_lead=False, cancel=None):
     for _ in range(max_iters):
+        if cancel is not None and cancel.is_set():
+            return "Cancelled."
         resp = client.messages.create(model=model, max_tokens=MAX_TOKENS,
                                       system=system, messages=messages, tools=tools)
         _track(model, resp.usage)
         if resp.stop_reason != "tool_use":
             return "".join(b.text for b in resp.content if b.type == "text").strip()
         messages.append({"role": "assistant", "content": resp.content})
-        # surface any reasoning text to the live HUD feed
+        # Preamble text riding along with tool calls: the lead SPEAKS it before
+        # the work runs ("On it - handing this to dev."), so the user gets an
+        # instant acknowledgment instead of silence. Subagents feed the HUD only.
         for b in resp.content:
             if b.type == "text" and b.text.strip():
-                hud_state.think(b.text.strip()[:140])
+                line = b.text.strip()
+                hud_state.think(line[:140])
+                if is_lead:
+                    speech.say(line[:400])
         results = []
         for b in resp.content:
             if b.type != "tool_use":
                 continue
-            _turn["tool_calls"] += 1
+            if is_lead:
+                _turn["tool_calls"] += 1
+                is_bg_delegate = (b.name == "delegate"
+                                  and bool(b.input.get("background", True)))
+                if not is_bg_delegate and b.name not in _BG_ONLY_TOOLS:
+                    _turn["sync_work"] = True
             if b.name == "delegate":
                 tgt = b.input.get("agent", "")
                 hud_state.set_state("working", agent=tgt)
@@ -72,13 +92,16 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label=""):
     return "I hit my step limit on that task. Ask me to continue if you want more."
 
 
-def run_agent(name, task):
+def run_agent(name, task, cancel=None):
+    """Run a subagent to completion. cancel: threading.Event checked between
+    steps (background tasks pass it; sync delegation leaves it None)."""
     a = agents.AGENTS[name]
     tools = [agents.TOOL_DEFS[t] for t in a["tools"]] + a.get("server_tools", [])
     print(f"  [delegating -> {name}]")
     hud_state.set_state("working", agent=name)
     return _loop(a["model"], a["system"],
-                 [{"role": "user", "content": task}], tools, agent_label=name)
+                 [{"role": "user", "content": task}], tools, agent_label=name,
+                 cancel=cancel)
 
 
 def _critique(user_text, answer):
@@ -110,14 +133,18 @@ def handle(user_text, max_refine=1):
         msgs = [{"role": "user", "content": user_text}]
 
     _turn["tool_calls"] = 0
+    _turn["sync_work"] = False
     hud_state.set_state("thinking")   # feed was already cleared when we went idle last turn
     hud_state.think("understanding the request")
     try:
-        reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS)
-        # self-critique / iterate: only when actual work ran (a tool/delegate),
-        # skip plain conversational answers and skip if restarting/shutting down
+        reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
+                      is_lead=True)
+        # Self-critique / iterate: only when SYNCHRONOUS work ran. Background
+        # handoffs skip it - the reply is just an acknowledgment, the real work
+        # reports later, and a critique pass here would re-add the very latency
+        # the async path exists to remove.
         if (not _restart_flag["do"] and not _shutdown_flag["do"]
-                and _turn["tool_calls"] > 0 and len(reply) > 40):
+                and _turn["sync_work"] and len(reply) > 40):
             for i in range(max_refine):
                 gaps = _critique(user_text, reply)
                 if not gaps:
@@ -127,7 +154,8 @@ def handle(user_text, max_refine=1):
                 msgs.append({"role": "assistant", "content": reply})
                 msgs.append({"role": "user",
                              "content": f"Not complete yet. Fix these gaps, then give the full result:\n{gaps}"})
-                reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS)
+                reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
+                              is_lead=True)
     except anthropic.APIStatusError as e:
         reply = f"API error: {e.status_code}. Check model names and billing in the Anthropic console."
     except Exception as e:

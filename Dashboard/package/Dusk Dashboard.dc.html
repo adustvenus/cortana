@@ -263,15 +263,18 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               <span style="font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.14em;color:rgba(var(--text-rgb),.45)">{{ aiServiceTxt }}</span>
             </div>
             <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
-              <div onPointerDown="{{ m.aiOrbDown }}" title="Power menu" style="{{ aiOrbStyle }}"></div>
-              <div style="margin-top:.55rem;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.12em;color:rgba(var(--text-rgb),.5);text-align:center;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ aiDetailTxt }}</div>
+              <div style="{{ m.aiOrbBox }}"><div onPointerDown="{{ m.aiOrbDown }}" title="Power menu" style="{{ aiOrbStyle }}"></div></div>
+              <div style="{{ m.aiExtrasStyle }}"><div style="margin-top:.55rem;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.12em;color:rgba(var(--text-rgb),.5);text-align:center;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ aiDetailTxt }}</div></div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:.28rem;min-height:0">
-              <sc-for list="{{ aiThoughts }}" as="th" hint-placeholder-count="3">
-                <div style="{{ th.style }}">{{ th.text }}</div>
-              </sc-for>
+            <div style="{{ m.aiExtrasStyle }}">
+              <div style="display:flex;flex-direction:column;gap:.28rem;min-height:0">
+                <sc-for list="{{ aiThoughts }}" as="th" hint-placeholder-count="3">
+                  <div style="{{ th.style }}">{{ th.text }}</div>
+                </sc-for>
+              </div>
             </div>
             <sc-if value="{{ aiExtraOn }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ m.aiExtrasStyle }}">
               <div style="display:flex;flex-direction:column;gap:.3rem;margin-top:.45rem;padding-top:.4rem;border-top:1px solid rgba(var(--text-rgb),.12)">
                 <sc-for list="{{ aiExtraAgents }}" as="xa" hint-placeholder-count="1">
                   <div style="display:flex;align-items:center;gap:.5rem;font-family:'JetBrains Mono',monospace;font-size:.68rem">
@@ -284,8 +287,9 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                   </div>
                 </sc-for>
               </div>
+              </div>
             </sc-if>
-            <canvas ref="{{ m.aiWaveRef }}" style="width:100%;height:2.1rem;margin-top:.45rem;flex-shrink:0;display:block"></canvas>
+            <canvas ref="{{ m.aiWaveRef }}" style="{{ m.aiWaveStyle }}"></canvas>
             <sc-if value="{{ m.aiMenuOn }}" hint-placeholder-val="{{ false }}">
               <div style="position:absolute;inset:10% 14%;z-index:25;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.55rem;background:rgba(20,16,32,.93);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.5);border-radius:14px;padding:.9rem">
                 <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.22em;color:rgb(var(--accent3-rgb))">{{ aiMenuTitle }}</div>
@@ -635,6 +639,16 @@ class Component extends DCLogic {
       const [speed, target, rgb] = WPROF[st] || WPROF.idle;
       this._aiPhase += 0.06 * speed;
       this._aiAmp += (target - this._aiAmp) * 0.12;
+      // Idle/offline power saver: once the wave has decayed to nothing, clear
+      // the canvases once and skip all per-frame canvas work until it wakes.
+      if (target === 0 && this._aiAmp < 0.012) {
+        if (!this._aiCleared) {
+          this._aiCleared = true;
+          for (const cv of els) if (cv.width) cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+        }
+        return;
+      }
+      this._aiCleared = false;
       for (const cv of els) {
         const w = cv.clientWidth, h = cv.clientHeight;
         if (!w || !h) continue;
@@ -961,6 +975,16 @@ class Component extends DCLogic {
           const els = this._aiWaveEls || (this._aiWaveEls = {});   // refs fire before didMount
           if (el) els[m.id] = el; else delete els[m.id];
         },
+        // Compact mode at small sizes: a fixed 4.4rem orb + waveform + thoughts
+        // can't fit the 3x2 minimum, so shrink the orb and drop the extras
+        // (title + orb must survive per MODULES.md §4).
+        aiOrbBox: (m.h < 4 || m.w < 5)
+          ? { width: '2.1rem', height: '2.1rem', flexShrink: 0 }
+          : { width: '4.4rem', height: '4.4rem', flexShrink: 0 },
+        aiWaveStyle: (m.h < 4 || m.w < 5)
+          ? { display: 'none' }
+          : { width: '100%', height: '2.1rem', marginTop: '.45rem', flexShrink: 0, display: 'block' },
+        aiExtrasStyle: (m.h < 4 || m.w < 5) ? { display: 'none' } : {},
         hasImg: !!m.img, noImg: !m.img,
         wrapStyle,
         cardStyle: { ...base, ...editOutline, ...pad },
@@ -1152,22 +1176,31 @@ class Component extends DCLogic {
         const bridged = !!(window.duskBridge);
         const list = s.aiAgents || [];
         const ai = list[0] || null;
-        const running = ai ? (ai.service === 'active' || (ai.service === 'unknown' && !ai.stale)) : false;
-        const aiState = (bridged && ai && running) ? (ai.state || 'idle') : 'offline';
+        // Live if: unit active, OR the state file is being written right now
+        // (agent run manually outside systemd), OR no unit and not stale.
+        const isRun = (a) => !!a && (a.service === 'active' || a.fresh || (a.service === 'unknown' && !a.stale));
+        const running = isRun(ai);
+        const aiState = (bridged && running) ? (ai.state || 'idle') : 'offline';
         this._aiPrimaryState = aiState;   // consumed by the waveform rAF loop
         const AIC = { idle: '150,165,195', listening: '110,210,175', thinking: '150,170,255',
                       working: '150,170,255', speaking: '170,200,255', offline: '135,135,150' };
         const rgb = AIC[aiState] || AIC.idle;
-        const speed = { idle: 4.5, listening: 2.2, thinking: 3, working: 3, speaking: 1.2 }[aiState];
+        // fallback covers unknown/custom states so the animation stays valid CSS
+        const speed = ({ idle: 4.5, listening: 2.2, thinking: 3, working: 3, speaking: 1.2 })[aiState] || 3.5;
         const name = (ai && ai.name) || 'CORTANA';
         const thoughts = (ai && Array.isArray(ai.thoughts)) ? ai.thoughts.slice(-3) : [];
         const send = (id, action, label) => (e) => {
           e.stopPropagation(); e.preventDefault();
           if (!bridged) return;
           window.duskBridge.control(id, action).then(r => {
-            this.setState({ aiSent: (r && r.ok) ? label + ' SENT' : 'FAILED: ' + ((r && r.error) || 'unknown') });
+            const line = (r && r.ok) ? label + ' SENT' : 'FAILED: ' + ((r && r.error) || 'unknown');
+            // aiSent shows in the open menu; the toast covers row buttons whose
+            // feedback has no menu (extra agents). Timer clears the text only -
+            // never force-closes a menu (it may be a different module's).
+            this.setState({ aiSent: line });
+            this.showToast(line);
             clearTimeout(this._aiSentT);
-            this._aiSentT = setTimeout(() => this.setState({ aiSent: '', aiMenu: null }), 2500);
+            this._aiSentT = setTimeout(() => this.setState({ aiSent: '' }), 3000);
           }).catch(() => this.setState({ aiSent: 'BRIDGE ERROR' }));
         };
         const menuBtn = (label, action, accent) => ({
@@ -1187,12 +1220,15 @@ class Component extends DCLogic {
           aiDotStyle: dot(aiState, running),
           aiLabelColor: running ? `rgb(${rgb})` : 'rgba(240,80,90,.9)',
           aiStatusTxt: name + ' \u00b7 ' + aiState.toUpperCase(),
-          aiServiceTxt: !bridged ? 'NO BRIDGE' : (ai ? 'SVC ' + String(ai.service || 'unknown').toUpperCase() : 'NO AGENTS'),
+          aiServiceTxt: !bridged ? 'NO BRIDGE'
+            : (!ai ? 'NO AGENTS'
+              : (ai.fresh && ai.service !== 'active' ? 'MANUAL RUN'
+                : 'SVC ' + String(ai.service || 'unknown').toUpperCase())),
           aiDetailTxt: (ai && ai.detail) || (aiState === 'offline'
             ? (bridged ? 'click the orb to start' : 'open via the Dusk app for live status')
             : (ai && ai.agent ? '[' + ai.agent + ']' : '\u00a0')),
           aiOrbStyle: {
-            width: '4.4rem', height: '4.4rem', borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+            width: '100%', height: '100%', borderRadius: '50%', cursor: 'pointer',
             background: running
               ? 'radial-gradient(circle at 35% 30%,rgb(var(--peach-rgb)),rgb(var(--accent2-rgb)) 55%,rgb(var(--orb-rgb)))'
               : 'radial-gradient(circle at 35% 30%,#8a8a96,#565664 55%,#33333e)',
@@ -1208,7 +1244,7 @@ class Component extends DCLogic {
           })),
           aiExtraOn: list.length > 1,
           aiExtraAgents: list.slice(1).map(a => {
-            const arun = a.service === 'active' || (a.service === 'unknown' && !a.stale);
+            const arun = isRun(a);
             const ast = arun ? (a.state || 'idle') : 'offline';
             return {
               name: a.name || a.id, stateTxt: ast.toUpperCase(),

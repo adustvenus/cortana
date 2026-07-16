@@ -1,16 +1,21 @@
 /* Dusk Dashboard preload: the only bridge between the dashboard page and the
  * OS. Exposes a minimal, validated API - no node/fs access reaches the page. */
 const { contextBridge, ipcRenderer } = require('electron');
-const fs = require('fs');
-const path = require('path');
 
 // Raw page source for the dashboard's template repair pass (DOM parsing
 // lowercases camelCase attrs; the page re-adopts its raw template after boot).
 // Fixed path only - the page cannot read arbitrary files through this.
-const PAGE = path.join(__dirname, '..', 'package', 'Dusk Dashboard.dc.html');
-contextBridge.exposeInMainWorld('duskRaw', () => {
-  try { return fs.readFileSync(PAGE, 'utf8'); } catch (e) { return ''; }
-});
+// require('fs') is wrapped: under a sandboxed preload (e.g. if webPreferences
+// ever revert to the default) it throws, and an uncaught throw here would kill
+// the WHOLE preload - leaving even the IPC bridge unexposed (inert bubble).
+let readRaw = () => '';
+try {
+  const fs = require('fs');
+  const path = require('path');
+  const PAGE = path.join(__dirname, '..', 'package', 'Dusk Dashboard.dc.html');
+  readRaw = () => { try { return fs.readFileSync(PAGE, 'utf8'); } catch (e) { return ''; } };
+} catch (e) { /* sandboxed: template repair falls back to fetch */ }
+contextBridge.exposeInMainWorld('duskRaw', readRaw);
 
 contextBridge.exposeInMainWorld('duskBridge', {
   /** Subscribe to agent snapshots. Immediately delivers current state, then

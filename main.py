@@ -7,21 +7,30 @@ Text mode (debug / hotkey-less fallback):
   python main.py --text
 """
 import argparse
+import queue
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
 import config
 import memory
 import orchestrator
+import tasks
 import hud_state
-from voice import mic, stt, tts, wake
+from voice import mic, stt, wake, speech
 
-state = {"mode": config.MODE, "ptt": False, "busy": False}
+state = {"mode": config.MODE, "ptt": False,
+         "busy": False,        # a request is being processed (LLM working)
+         "capturing": False,   # the user is talking right now (VAD-started)
+         "exit": None}         # exit code set by _do_system; loops exit on it
 
 # Flag file written before a restart exit; checked on the next startup
 RESTART_FLAG = config.ROOT / ".restarting"
+
+# Spoken restart/shutdown with tasks in flight requires saying it twice (90s).
+_pending_sys = {"kind": None, "ts": 0.0}
 
 # --- Spoken system commands, matched before the LLM for reliability. ---
 _RESTART_RE = re.compile(
@@ -43,25 +52,42 @@ def _system_command(text):
     return None
 
 
+def _confirm_or_warn(kind):
+    """Restart/shutdown guard: with background tasks running, require the
+    command twice within 90s so in-flight work isn't killed by accident."""
+    running = tasks.active_summary()
+    if not running:
+        return True
+    if _pending_sys["kind"] == kind and time.time() - _pending_sys["ts"] < 90:
+        return True
+    _pending_sys.update(kind=kind, ts=time.time())
+    speech.say(f"Still working on {running}. That work dies on {kind} - "
+               f"say it again to {kind} anyway.")
+    return False
+
+
 def _do_system(kind):
-    """Speak, park the HUD, and exit with the code the launcher expects."""
+    """Speak, park the HUD, and flag the exit code (loops exit on it).
+    Runs on the processor thread, so it must NOT sys.exit directly - that
+    would only kill the worker thread, not the process."""
     if kind == "restart":
-        tts.speak("Restarting.")
+        speech.say_wait("Restarting.")
         RESTART_FLAG.touch()          # new instance detects this and says "Back up"
         hud_state.set_state("offline")
         print("[main] clean exit for restart")
-        sys.exit(0)
-    tts.speak("Shutting down. Goodbye.")
+        state["exit"] = 0
+        return
+    speech.say_wait("Shutting down. Goodbye.")
     hud_state.set_state("offline")
     print("[main] clean exit for shutdown")
-    sys.exit(config.SHUTDOWN_CODE)
+    state["exit"] = config.SHUTDOWN_CODE
 
 
 def _startup_announce():
     """If coming back from a restart, announce it. Silent on first boot."""
     if RESTART_FLAG.exists():
         RESTART_FLAG.unlink()
-        tts.speak("Back up.")
+        speech.say("Back up.")
 
 
 def process(wav_path):
@@ -88,7 +114,10 @@ def process(wav_path):
     print("YOU:", text)
     cmd = _system_command(text)
     if cmd:
-        _do_system(cmd)
+        if _confirm_or_warn(cmd):
+            _do_system(cmd)
+        hud_state.set_state("idle")
+        return
     state["busy"] = True
     try:
         reply = orchestrator.handle(text)
@@ -97,11 +126,11 @@ def process(wav_path):
         # one action line instead of speaking the reply too (avoids double TTS).
         pending = orchestrator.shutdown_requested() or orchestrator.restart_requested()
         if not pending:
-            hud_state.set_state("speaking")
-            tts.speak(reply)
+            speech.say(reply)
     finally:
         state["busy"] = False
-        hud_state.set_state("idle")
+        if not speech.speaking():
+            hud_state.set_state("idle")
     if orchestrator.shutdown_requested():
         _do_system("shutdown")
     if orchestrator.restart_requested():
@@ -109,6 +138,10 @@ def process(wav_path):
 
 
 def voice_loop():
+    """Full-duplex-feel loop: the MIC keeps listening while requests process
+    (utterances queue up and are handled in order). Listening only pauses
+    while Cortana is audibly speaking - one mic, one speaker, no echo
+    cancellation, so that half-duplex gate is what stops her hearing herself."""
     from pynput import keyboard
 
     def on_press(key):
@@ -122,44 +155,74 @@ def voice_loop():
             order = ["ptt", "wake", "open"]
             state["mode"] = order[(order.index(state["mode"]) + 1) % 3]
             print("MODE:", state["mode"])
-            tts.speak(f"{state['mode']} mode")
+            speech.say(f"{state['mode']} mode")
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
+
+    utterances = queue.Queue()
+
+    def processor():
+        while state["exit"] is None:
+            try:
+                p = utterances.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                process(p)
+            except Exception as e:
+                print("[main] process error:", e)
+
+    threading.Thread(target=processor, daemon=True, name="processor").start()
+
     hud_state.set_state("idle")
     _startup_announce()
     print(f"Cortana up. Mode: {state['mode']}. F9 hold = talk. F10 = cycle mode. Ctrl+C = quit.")
-    while True:
-        if state["busy"]:
-            time.sleep(0.1)
+    while state["exit"] is None:
+        if speech.speaking():          # don't listen to our own voice
+            time.sleep(0.05)
             continue
         if state["mode"] == "ptt":
             if state["ptt"]:
-                p = mic.record_while(lambda: state["ptt"])
+                p = mic.record_while(lambda: state["ptt"] and not speech.speaking())
                 if p:
-                    process(p)
+                    utterances.put(p)
             else:
                 time.sleep(0.05)
         else:
-            p = mic.listen_segment()
-            if p and not state["busy"]:
-                process(p)
+            p = mic.listen_segment(
+                on_speech_start=lambda: state.__setitem__("capturing", True))
+            state["capturing"] = False
+            if p:
+                utterances.put(p)
+    speech.flush(timeout=15)
+    sys.exit(state["exit"])
 
 
 def text_loop():
     print("Text mode. 'quit' to exit.")
     _startup_announce()
-    while True:
+    while state["exit"] is None:
         try:
             t = input("> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if t.lower() in ("quit", "exit"):
             break
-        if t:
-            cmd = _system_command(t)
-            if cmd:
+        if not t:
+            continue
+        cmd = _system_command(t)
+        if cmd:
+            if _confirm_or_warn(cmd):
                 _do_system(cmd)
-            print("CORTANA:", orchestrator.handle(t))
+            continue
+        print("CORTANA:", orchestrator.handle(t))
+        if orchestrator.shutdown_requested():
+            _do_system("shutdown")
+        elif orchestrator.restart_requested():
+            _do_system("restart")
+    if state["exit"] is not None:
+        speech.flush(timeout=15)
+        sys.exit(state["exit"])
 
 
 if __name__ == "__main__":
@@ -167,6 +230,9 @@ if __name__ == "__main__":
     ap.add_argument("--text", action="store_true", help="text mode (no mic/hotkeys)")
     args = ap.parse_args()
     memory.init()
+    speech.init(voice=not args.text,
+                quiet_gate=lambda: not state["busy"] and not state["capturing"]
+                                   and not state["ptt"])
     if args.text:
         text_loop()
     else:
