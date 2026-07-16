@@ -121,22 +121,34 @@ function login() {
   });
 }
 
+function parsePlayback(j) {
+  const it = j.item || {};
+  const img = (it.album && it.album.images && it.album.images[0]) || {};
+  return {
+    configured: true, connected: true, active: true, playing: !!j.is_playing,
+    track: it.name || '', artist: (it.artists || []).map(a => a.name).join(', '),
+    art: img.url || '', progress: j.progress_ms || 0, duration: it.duration_ms || 0
+  };
+}
+
 async function state() {
   if (!configured()) return { configured: false, connected: false };
   const at = await accessToken();
   if (!at) return { configured: true, connected: false };
+  const H = { Authorization: 'Bearer ' + at };
   try {
-    const r = await fetch('https://api.spotify.com/v1/me/player', { headers: { Authorization: 'Bearer ' + at } });
-    if (r.status === 204) return { configured: true, connected: true, active: false, playing: false };
-    if (!r.ok) return { configured: true, connected: true, error: r.status };
-    const j = await r.json();
-    const it = j.item || {};
-    const img = (it.album && it.album.images && it.album.images[0]) || {};
-    return {
-      configured: true, connected: true, active: true, playing: !!j.is_playing,
-      track: it.name || '', artist: (it.artists || []).map(a => a.name).join(', '),
-      art: img.url || '', progress: j.progress_ms || 0, duration: it.duration_ms || 0
-    };
+    // /me/player is authoritative but returns 204 when no device is "active"
+    // in the API's view - which happens even while playing on some devices.
+    // Fall back to /me/player/currently-playing, which reports across devices.
+    let r = await fetch('https://api.spotify.com/v1/me/player', { headers: H });
+    if (r.ok && r.status !== 204) return parsePlayback(await r.json());
+    if (r.status !== 204 && !r.ok) return { configured: true, connected: true, error: r.status };
+    const r2 = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: H });
+    if (r2.status === 204) return { configured: true, connected: true, active: false, playing: false };
+    if (!r2.ok) return { configured: true, connected: true, error: r2.status };
+    const j2 = await r2.json();
+    if (!j2 || !j2.item) return { configured: true, connected: true, active: false, playing: false };
+    return parsePlayback(j2);
   } catch (e) { return { configured: true, connected: true, error: String(e.message) }; }
 }
 
