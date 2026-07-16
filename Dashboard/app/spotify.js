@@ -137,9 +137,13 @@ function parsePlayback(j) {
 }
 
 async function errBody(r) {
-  // Spotify error bodies carry the real reason: {"error":{"status,message,reason"}}
-  try { const j = await r.json(); return (j && j.error && (j.error.message || j.error.reason)) || ''; }
-  catch (e) { return ''; }
+  // Spotify error bodies carry the real reason: {"error":{"status,message,reason"}}.
+  // Fall back to raw text so a non-JSON / message-less 403 still tells us something.
+  try {
+    const txt = await r.text();
+    try { const j = JSON.parse(txt); if (j && j.error && (j.error.message || j.error.reason)) return j.error.message || j.error.reason; } catch (e) {}
+    return (txt || '').trim().slice(0, 160);
+  } catch (e) { return ''; }
 }
 
 async function state() {
