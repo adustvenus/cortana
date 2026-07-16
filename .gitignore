@@ -6,6 +6,7 @@ token.json
 # --- Runtime state / artifacts ---
 state.db
 hud_state.json
+calendar_state.json
 *.tmp
 .last_good
 pending_edit.json
