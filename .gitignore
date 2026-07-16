@@ -29,3 +29,6 @@ venv/
 # Dashboard app (Electron installed per-machine by install-dash.sh)
 Dashboard/app/node_modules/
 Dashboard/app/package-lock.json
+
+# Spotify OAuth token (refresh token is a secret; Client ID stays in spotify.json)
+Dashboard/app/spotify_token.json
