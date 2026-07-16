@@ -25,3 +25,7 @@ venv/
 
 # Self-edit backup files
 *.bak
+
+# Dashboard app (Electron installed per-machine by install-dash.sh)
+Dashboard/app/node_modules/
+Dashboard/app/package-lock.json

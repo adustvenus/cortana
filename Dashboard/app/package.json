@@ -1,0 +1,13 @@
+{
+  "name": "dusk-dash",
+  "version": "1.0.0",
+  "description": "Standalone Dusk Dashboard shell — Cortana status/home display",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}
