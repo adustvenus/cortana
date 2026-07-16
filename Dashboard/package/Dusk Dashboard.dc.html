@@ -253,6 +253,29 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           </div>
         </sc-if>
 
+
+        <!-- ═══ GIT STATUS ═══ -->
+        <sc-if value="{{ m.t_git }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.55rem;flex-shrink:0">
+              <span style="width:.55rem;height:.55rem;border-radius:50%;background:{{ gitDotColor }};flex-shrink:0"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">GIT · CORTANA</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.55)">{{ gitBranch }}</span>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:{{ gitStatusColor }};margin-top:.25rem;flex-shrink:0">{{ gitStatusTxt }}</div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.22rem;margin-top:.45rem;min-height:0;overflow:hidden">
+              <sc-for list="{{ gitCommits }}" as="gc" hint-placeholder-count="5">
+                <div style="display:flex;gap:.5rem;align-items:baseline;min-width:0;overflow:hidden">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgb(var(--accent-rgb));flex-shrink:0">{{ gc.hash }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:rgba(var(--text-rgb),.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ gc.msg }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.35);flex-shrink:0;margin-top:.3rem">UPDATED {{ gitAge }}</div>
+          </div>
+        </sc-if>
+
         <!-- ═══ CORTANA STATUS (AI agent home module) ═══ -->
         <sc-if value="{{ m.t_cortana }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleCol }}">
@@ -408,6 +431,7 @@ const DEFS = {
   chart:   { w: 6,  h: 3, label: 'CHART' },
   console: { w: 24, h: 3, label: 'CONSOLE' },
   cortana: { w: 10, h: 7, label: 'CORTANA' }
+  ,git:    { w: 8,  h: 5, label: 'GIT STATUS' }
 };
 
 // Clean home board: just the AI status module, centered. Everything else is
@@ -565,6 +589,8 @@ class Component extends DCLogic {
       aiAgents: [],        // live registry snapshot pushed by the Dusk app bridge
       aiMenu: null,        // module id whose power menu is open
       aiSent: '',          // transient feedback line after a control action
+      gitData: null,       // last git:status response from main process
+      gitAge: '—',         // HH:MM of last successful git poll
       nextId: 100
     };
   })();
@@ -611,6 +637,20 @@ class Component extends DCLogic {
         this.setState(s => ({ edit: !s.edit, linking: null, armRemove: null }));
       }
     };
+
+    // ── Git status polling ──
+    const pollGit = async () => {
+      if (!window.duskBridge || typeof window.duskBridge.gitStatus !== 'function') return;
+      try {
+        const d = await window.duskBridge.gitStatus();
+        if (d && typeof d === 'object') {
+          this.setState({ gitData: d, gitAge: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+        }
+      } catch (e) {}
+    };
+    pollGit();
+    this._gitPoll = setInterval(pollGit, 30000);
+
     window.addEventListener('keydown', this._key);
 
     // ── AI bridge: live agent status pushed by the Dusk app (Electron preload).
@@ -676,7 +716,7 @@ class Component extends DCLogic {
   }
 
   componentWillUnmount() {
-    clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log);
+    clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
@@ -968,6 +1008,7 @@ class Component extends DCLogic {
         t_music: m.type === 'music', t_tasks: m.type === 'tasks',
         t_agenda: m.type === 'agenda', t_image: m.type === 'image', t_chart: m.type === 'chart',
         t_console: m.type === 'console', t_cortana: m.type === 'cortana',
+        t_git: m.type === 'git',
         aiMenuOn: s.aiMenu === m.id,
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
         aiMenuClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ aiMenu: null, aiSent: '' }); },
@@ -1160,7 +1201,13 @@ class Component extends DCLogic {
         tsStyle: { color: l.warn ? 'rgb(var(--accent2-rgb))' : 'rgb(var(--accent-rgb))' },
         caretStyle: i === s.logs.length - 1 ? { color: 'rgb(var(--accent3-rgb))', animation: 'caret 1.1s step-end infinite' } : { display: 'none' }
       })),
-      addables: ['clock', 'date', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana'].map(t => ({
+      gitBranch: (() => { const g = s.gitData; return g ? g.branch : '—'; })(),
+      gitStatusTxt: (() => { const g = s.gitData; if (!g) return 'loading…'; return g.status.clean ? '✓ working tree clean' : g.status.files + ' file' + (g.status.files !== 1 ? 's' : '') + ' changed'; })(),
+      gitStatusColor: (() => { const g = s.gitData; return g && g.status.clean ? '#9be8b8' : 'rgb(var(--accent2-rgb))'; })(),
+      gitDotColor: (() => { const g = s.gitData; if (!g) return 'rgba(var(--text-rgb),.25)'; return g.status.clean ? '#9be8b8' : 'rgb(var(--accent2-rgb))'; })(),
+      gitCommits: (() => { const g = s.gitData; return g && g.log.length ? g.log : [{hash:'———', msg:'no data yet'}]; })(),
+      gitAge: s.gitAge || '—',
+      addables: ['clock', 'date', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),

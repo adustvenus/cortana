@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('duskBridge', {
   control(id, action) {
     return ipcRenderer.invoke('agents:control', { id: String(id), action: String(action) });
   },
+  gitStatus() { return ipcRenderer.invoke('git:status'); },
   open() { ipcRenderer.send('ui:open'); },
   toBubble() { ipcRenderer.send('ui:bubble'); },
   ctxMenu() { ipcRenderer.send('ui:ctx'); }
