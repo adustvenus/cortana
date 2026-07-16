@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('duskBridge', {
     return ipcRenderer.invoke('agents:control', { id: String(id), action: String(action) });
   },
   gitStatus() { return ipcRenderer.invoke('git:status'); },
+  /** Today's calendar events (read-only): {events:[{time,title,allDay,past}], error}. */
+  calendar() { return ipcRenderer.invoke('calendar:today'); },
   open() { ipcRenderer.send('ui:open'); },
   toBubble() { ipcRenderer.send('ui:bubble'); },
   ctxMenu() { ipcRenderer.send('ui:ctx'); }
