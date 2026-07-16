@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent-rgb: 255,171,143;   /* coral */
+    --accent2-rgb: 240,138,155;  /* rose */
+    --accent3-rgb: 201,184,232;  /* lavender */
+    --peach-rgb: 255,217,196;    /* highlight */
+    --orb-rgb: 143,123,184;      /* orb deep */
+    --text-rgb: 253,243,236;     /* primary text */
+  }
+  html { font-size: clamp(12px, 0.78vw, 22px); }
+  body { margin:0; background:#221d33; font-family:'Space Grotesk',sans-serif; overflow:hidden; }
+  a { color:rgb(var(--accent-rgb)); text-decoration:none; }
+  a:hover { color:rgb(var(--peach-rgb)); }
+  input { font-family:inherit; }
+  @keyframes orbPulse { 0%,100%{ box-shadow:0 0 20px 5px rgba(var(--accent-rgb),.4);} 50%{ box-shadow:0 0 36px 12px rgba(var(--accent3-rgb),.5);} }
+  @keyframes popIn { from { opacity:0; transform:scale(.86); } to { opacity:1; transform:scale(1); } }
+  @keyframes caret { 0%,55%{opacity:1} 56%,100%{opacity:0} }
+  @keyframes linkPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(var(--accent-rgb),.7);} 50%{ box-shadow:0 0 0 6px rgba(var(--accent-rgb),0);} }
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;overflow:auto;background:#221d33">
+<div style="position:relative;width:100%;height:100%;min-height:760px;min-width:1080px">
+  <div style="position:absolute;inset:-28px;background-image:url('assets/bg-dusk.png');background-size:cover;background-position:center;filter:{{ bgFilter }}"></div>
+  <sc-if value="{{ bgCustomOn }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ bgLayerStyle }}"></div>
+  </sc-if>
+  <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(50,38,60,.18) 0%,rgba(26,24,44,.5) 100%)"></div>
+
+  <!-- grid area (bottom strip reserved for edit controls) -->
+  <div ref="{{ gridRef }}" style="position:absolute;left:20px;right:20px;top:20px;bottom:64px">
+
+    <!-- localized fading grid lines while dragging -->
+    <sc-if value="{{ gridLinesOn }}" hint-placeholder-val="{{ false }}">
+      <sc-for list="{{ gridLines }}" as="gl" hint-placeholder-count="2">
+        <div style="{{ gl.style }}"></div>
+      </sc-for>
+    </sc-if>
+
+    <sc-for list="{{ modules }}" as="m" hint-placeholder-count="6">
+      <div style="{{ m.wrapStyle }}" onPointerDown="{{ m.drag }}" data-screen-label="{{ m.type }}">
+
+        <!-- ═══ CLOCK ═══ -->
+        <sc-if value="{{ m.t_clock }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleRow }}">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:1.7rem;font-weight:500;color:rgb(var(--text-rgb))">{{ clockHM }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;color:rgb(var(--accent-rgb))">:{{ clockS }}</span>
+          </div>
+        </sc-if>
+
+        <!-- ═══ DATE ═══ -->
+        <sc-if value="{{ m.t_date }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCenter }}">
+            <span style="font-size:1rem;font-weight:600;color:rgb(var(--text-rgb))">{{ dateLine }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:rgba(var(--text-rgb),.55);margin-top:.2rem">{{ dateSub }}</span>
+          </div>
+        </sc-if>
+
+        <!-- ═══ TICKER ═══ -->
+        <sc-if value="{{ m.t_ticker }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleTicker }}">
+            <sc-for list="{{ tickerItems }}" as="tk" hint-placeholder-count="4">
+              <span style="white-space:nowrap;color:rgba(var(--text-rgb),.85)">{{ tk.s }} {{ tk.vTxt }} <span style="{{ tk.chgStyle }}">{{ tk.chgTxt }}</span></span>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- ═══ WEATHER ═══ -->
+        <sc-if value="{{ m.t_weather }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">WEATHER · DENVER</div>
+            <div style="display:flex;align-items:baseline;gap:.7rem;margin-top:.5rem">
+              <span style="font-size:3rem;font-weight:300;color:rgb(var(--text-rgb))">72°</span>
+              <span style="font-size:1rem;color:rgb(var(--accent-rgb))">Clear dusk</span>
+            </div>
+            <div style="display:flex;gap:1.1rem;margin-top:.7rem;font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgba(var(--text-rgb),.6)">
+              <span>H 84°</span><span>L 61°</span><span>WIND 6mph</span><span>UV 1</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ CPU ═══ -->
+        <sc-if value="{{ m.t_cpu }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:rgb(var(--accent3-rgb))"><span>CPU</span><span style="color:rgb(var(--text-rgb))">{{ cpuTxt }}</span></div>
+            <div style="margin-top:.6rem;height:6px;border-radius:3px;background:rgba(255,255,255,.14)"><div style="{{ cpuBar }}"></div></div>
+            <div style="margin-top:.45rem;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.45)">8 CORES · 52°C</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ RAM ═══ -->
+        <sc-if value="{{ m.t_ram }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:rgb(var(--accent3-rgb))"><span>MEMORY</span><span style="color:rgb(var(--text-rgb))">{{ memTxt }}</span></div>
+            <div style="margin-top:.6rem;height:6px;border-radius:3px;background:rgba(255,255,255,.14)"><div style="{{ memBar }}"></div></div>
+            <div style="margin-top:.45rem;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.45)">SWAP 0.4 GB</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ MUSIC ═══ -->
+        <sc-if value="{{ m.t_music }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">NOW PLAYING</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.5rem">
+              <div>
+                <div style="font-size:1.05rem;font-weight:600;color:rgb(var(--text-rgb))">Nightfall Divide</div>
+                <div style="font-size:.82rem;color:rgba(var(--text-rgb),.55)">Hollow Coves</div>
+              </div>
+              <div style="display:flex;gap:.9rem;align-items:center;color:rgb(var(--text-rgb));font-size:1rem">
+                <span style="cursor:pointer;opacity:.8">⏮</span>
+                <span onClick="{{ togglePlay }}" style="width:2.2rem;height:2.2rem;border-radius:50%;background:rgba(var(--accent-rgb),.25);border:1px solid rgba(var(--accent-rgb),.6);display:flex;align-items:center;justify-content:center;cursor:pointer">{{ playIcon }}</span>
+                <span style="cursor:pointer;opacity:.8">⏭</span>
+              </div>
+            </div>
+            <div style="margin-top:.8rem;height:4px;border-radius:2px;background:rgba(255,255,255,.14)"><div style="{{ musicBar }}"></div></div>
+            <div style="margin-top:.4rem;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.5);text-align:right">{{ musicTime }} / 4:26</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ IRIS (center orb) ═══ -->
+        <sc-if value="{{ m.t_iris }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCenter }}">
+            <div style="width:3.6rem;height:3.6rem;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgb(var(--peach-rgb)),rgb(var(--accent2-rgb)) 55%,rgb(var(--orb-rgb)));animation:orbPulse 3s ease-in-out infinite"></div>
+            <div style="margin-top:1rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.34em;color:rgb(var(--accent3-rgb))">IRIS · IDLE</div>
+            <div style="margin-top:.5rem;font-family:'JetBrains Mono',monospace;font-size:.7rem;letter-spacing:.14em;color:rgba(var(--text-rgb),.5)">UPTIME {{ uptimeTxt }}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;letter-spacing:.14em;color:rgba(var(--text-rgb),.5)">{{ queueTxt }}</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ TASKS ═══ -->
+        <sc-if value="{{ m.t_tasks }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">TASKS</div>
+            <div style="display:flex;flex-direction:column;gap:.65rem;margin-top:.7rem">
+              <sc-for list="{{ taskItems }}" as="tsk" hint-placeholder-count="3">
+                <div onClick="{{ tsk.toggle }}" style="display:flex;gap:.65rem;align-items:center;cursor:pointer">
+                  <span style="{{ tsk.boxStyle }}"></span>
+                  <span style="{{ tsk.txtStyle }}">{{ tsk.t }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ AGENDA ═══ -->
+        <sc-if value="{{ m.t_agenda }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">AGENDA · TODAY</div>
+            <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:.7rem">
+              <div style="display:flex;gap:.8rem"><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgb(var(--accent-rgb));width:3rem;flex-shrink:0">19:00</span><span style="font-size:.95rem;color:rgb(var(--text-rgb))">Dinner w/ Sam — Linger</span></div>
+              <div style="display:flex;gap:.8rem"><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgb(var(--accent-rgb));width:3rem;flex-shrink:0">21:30</span><span style="font-size:.95rem;color:rgb(var(--text-rgb))">Deploy window opens</span></div>
+              <div style="display:flex;gap:.8rem"><span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgba(var(--text-rgb),.4);width:3rem;flex-shrink:0">08:00</span><span style="font-size:.95rem;color:rgba(var(--text-rgb),.5)">Tomorrow — standup</span></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ IMAGE ═══ -->
+        <sc-if value="{{ m.t_image }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleImage }}">
+            <sc-if value="{{ m.hasImg }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ m.imgStyle }}"></div>
+            </sc-if>
+            <sc-if value="{{ m.noImg }}" hint-placeholder-val="{{ false }}">
+              <label style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:.5rem;cursor:pointer;padding:.4rem .8rem">
+                <span style="width:2.4rem;height:2.4rem;border-radius:50%;border:1px solid rgba(var(--accent-rgb),.7);color:rgb(var(--accent-rgb));font-size:1.3rem;font-weight:300;display:flex;align-items:center;justify-content:center">+</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.2em;color:rgba(var(--text-rgb),.5)">ADD IMAGE</span>
+                <input type="file" accept="image/*" onChange="{{ m.onImg }}" style="display:none">
+              </label>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ═══ CHART ═══ -->
+        <sc-if value="{{ m.t_chart }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">PORTFOLIO · 1M</div>
+              <div style="font-size:1.2rem;font-weight:600;color:rgb(var(--text-rgb))">$128,410 <span style="font-size:.85rem;color:#9be8b8">▲4.2%</span></div>
+            </div>
+            <div style="flex:1;display:flex;align-items:flex-end;gap:.5rem;margin-top:.8rem">
+              <sc-for list="{{ chartBars }}" as="bar" hint-placeholder-count="8">
+                <div style="{{ bar.style }}"></div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ NOTES ═══ -->
+        <sc-if value="{{ m.t_notes }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">NOTES</div>
+            <div style="margin-top:.7rem;font-size:.95rem;line-height:1.7;color:rgba(var(--text-rgb),.85)">Sunset palette locked. Grid gutters keep modules apart — linked ones move together.</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ FOCUS TIMER ═══ -->
+        <sc-if value="{{ m.t_timer }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">FOCUS TIMER</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:1.8rem;color:rgb(var(--text-rgb));margin-top:.5rem">{{ focusTxt }}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgb(var(--accent-rgb));margin-top:.4rem;letter-spacing:.14em">DEEP WORK · RUNNING</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ CONSOLE ═══ -->
+        <sc-if value="{{ m.t_console }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyle }}">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb));margin-bottom:.3rem">AGENT CONSOLE</div>
+            <sc-for list="{{ logItems }}" as="lg" hint-placeholder-count="3">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:.8rem;line-height:1.9;color:rgba(var(--text-rgb),.65)"><span style="{{ lg.tsStyle }}">{{ lg.ts }}</span> {{ lg.msg }}<span style="{{ lg.caretStyle }}">▌</span></div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- ═══ CORTANA STATUS ═══ -->
+        <sc-if value="{{ m.t_cortana }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.6rem">
+              <span style="{{ cortanaOrbStyle }}"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:{{ cortanaLabelColor }}">{{ cortanaStatusTxt }}</span>
+            </div>
+            <div style="flex:1;overflow-y:auto;margin-top:.7rem;display:flex;flex-direction:column;gap:.4rem;min-height:0">
+              <sc-for list="{{ cortanaLog }}" as="cl" hint-placeholder-count="5">
+                <div style="display:flex;gap:.55rem;align-items:baseline">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:.62rem;color:rgba(var(--text-rgb),.35);flex-shrink:0">{{ cl.ts }}</span>
+                  <span style="{{ cl.txtStyle }}">{{ cl.text }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.6rem;padding-top:.5rem;border-top:1px solid rgba(var(--text-rgb),.12)">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem;color:rgb(var(--accent-rgb))">&gt;</span>
+              <input value="{{ cortanaInput }}" onInput="{{ cortanaOnInput }}" onKeyDown="{{ cortanaOnKey }}" placeholder="type a command…" style="flex:1;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:.85rem;color:rgb(var(--text-rgb))">
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ EDIT CONTROLS ═══ -->
+        <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;top:2px;right:2px;display:flex;gap:6px;z-index:30">
+            <span onPointerDown="{{ m.linkBtn }}" title="Link / unlink module" style="{{ m.linkBtnStyle }}">∞</span>
+            <span onPointerDown="{{ m.surfaceBtn }}" title="Surface: light → dark → clear" style="{{ m.surfaceBtnStyle }}">◐</span>
+            <span onPointerDown="{{ m.removeBtn }}" title="Remove module (tap twice)" style="{{ m.removeBtnStyle }}">✕</span>
+          </div>
+          <span onPointerDown="{{ m.resizeBtn }}" style="position:absolute;bottom:2px;right:2px;width:1.7rem;height:1.7rem;border-radius:50%;background:rgba(20,16,32,.75);border:1px solid rgba(var(--accent3-rgb),.6);color:rgb(var(--accent3-rgb));display:flex;align-items:center;justify-content:center;cursor:nwse-resize;font-size:.75rem;z-index:30">◢</span>
+        </sc-if>
+      </div>
+    </sc-for>
+
+    <!-- drag/resize snap previews (whole link-group) -->
+    <sc-if value="{{ previewOn }}" hint-placeholder-val="{{ false }}">
+      <sc-for list="{{ previews }}" as="pv" hint-placeholder-count="1">
+        <div style="{{ pv.style }}"></div>
+      </sc-for>
+    </sc-if>
+  </div>
+
+  <!-- edit toggle + add tray -->
+  <div style="position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;z-index:50;max-width:92%">
+    <sc-if value="{{ toastOn }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:.45rem 1.1rem;border-radius:999px;background:rgba(240,80,90,.22);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent2-rgb),.65);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:#ffd3da">{{ toastTxt }}</div>
+    </sc-if>
+    <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <sc-for list="{{ addables }}" as="ad" hint-placeholder-count="4">
+          <span onClick="{{ ad.add }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(255,242,236,.12);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.3);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--text-rgb));cursor:pointer">+ {{ ad.label }}</span>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <label style="padding:.45rem 1rem;border-radius:999px;background:rgba(20,16,32,.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.55);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--accent3-rgb));cursor:pointer">CHANGE BACKGROUND<input type="file" accept="image/*" onChange="{{ setBg }}" style="display:none"></label>
+        <sc-if value="{{ bgCustomOn }}" hint-placeholder-val="{{ false }}">
+          <span onClick="{{ resetBg }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(20,16,32,.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.4);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.7);cursor:pointer">RESET BACKGROUND</span>
+        </sc-if>
+        <span onClick="{{ toggleColors }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(20,16,32,.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--peach-rgb),.55);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--peach-rgb));cursor:pointer">{{ colorsPillTxt }}</span>
+        <span onClick="{{ resetLayout }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(20,16,32,.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent2-rgb),.5);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--accent2-rgb));cursor:pointer">RESET LAYOUT</span>
+      </div>
+      <sc-if value="{{ colorsOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:1.1rem;flex-wrap:wrap;justify-content:center;align-items:center;padding:.7rem 1.1rem;border-radius:14px;background:rgba(20,16,32,.7);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.18)">
+          <sc-for list="{{ colorRows }}" as="cr" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:.5rem">
+              <input type="color" value="{{ cr.hex }}" onChange="{{ cr.onPick }}" style="width:1.9rem;height:1.9rem;border:1px solid rgba(255,255,255,.3);border-radius:8px;background:none;padding:1px;cursor:pointer">
+              <div style="display:flex;flex-direction:column;gap:1px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.8)">{{ cr.label }}</span>
+                <span onClick="{{ cr.unpin }}" title="Click PINNED to return this color to auto" style="{{ cr.pinStyle }}">{{ cr.pinTxt }}</span>
+              </div>
+            </div>
+          </sc-for>
+          <span onClick="{{ resetColors }}" style="padding:.35rem .8rem;border-radius:999px;border:1px solid rgba(var(--accent2-rgb),.5);font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.1em;color:rgb(var(--accent2-rgb));cursor:pointer">ALL AUTO</span>
+        </div>
+      </sc-if>
+    </sc-if>
+    <span onClick="{{ toggleEdit }}" style="{{ editPillStyle }}">{{ editPillTxt }}</span>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;bgBlur&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:7,&quot;min&quot;:0,&quot;max&quot;:24,&quot;step&quot;:1,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Background&quot;},&quot;glassAlpha&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:10,&quot;min&quot;:3,&quot;max&quot;:30,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Modules&quot;},&quot;gutterPx&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:20,&quot;min&quot;:8,&quot;max&quot;:28,&quot;step&quot;:2,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Grid&quot;},&quot;frameless&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Modules&quot;}}">
+// ════════════════════════════════════════════════════════════════════
+// DUSK DASHBOARD — see MODULES.md before editing.
+// Sections marked ENGINE are HARD STOPS: do not modify them.
+// To add a module type: edit DEFS + the template + renderVals only.
+// ════════════════════════════════════════════════════════════════════
+
+const COLS = 24, ROWS = 16;              // ENGINE — never change
+const MAX_MODULES = 40;                   // ENGINE
+const LS_KEY = 'dusk.layout.v3';          // ENGINE — never rename
+const LS_BG = 'dusk.bg.v1';               // ENGINE
+const SPRING = 'cubic-bezier(.3,1.4,.5,1)';
+const SURFACES = ['light', 'dark', 'clear'];
+const LS_THEME = 'dusk.theme.v1';         // ENGINE — user-pinned colors
+const LS_CORTANA = 'dusk.cortana.v1';     // CORTANA module — own key
+const THEME_DEFAULTS = {
+  '--accent-rgb': '255,171,143', '--accent2-rgb': '240,138,155', '--accent3-rgb': '201,184,232',
+  '--peach-rgb': '255,217,196', '--orb-rgb': '143,123,184', '--text-rgb': '253,243,236'
+};
+const COLOR_ROWS = [
+  ['--accent-rgb', 'ACCENT'], ['--accent2-rgb', 'ROSE'], ['--accent3-rgb', 'LAVENDER'],
+  ['--peach-rgb', 'HIGHLIGHT'], ['--orb-rgb', 'ORB'], ['--text-rgb', 'TEXT']
+];
+function rgbStr2hex(str) {
+  const p = String(str).split(',').map(n => Math.max(0, Math.min(255, parseInt(n, 10) || 0)));
+  return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
+}
+function hex2rgbStr(hex) {
+  const h = String(hex).replace('#', '');
+  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) || 0).join(',');
+}
+
+// ── MODULE REGISTRY (safe to extend — add new types here) ──
+const DEFS = {
+  clock:   { w: 4,  h: 2, label: 'CLOCK' },
+  date:    { w: 5,  h: 2, label: 'DATE' },
+  ticker:  { w: 15, h: 2, label: 'TICKER' },
+  weather: { w: 6,  h: 4, label: 'WEATHER' },
+  cpu:     { w: 6,  h: 2, label: 'CPU' },
+  ram:     { w: 6,  h: 2, label: 'RAM' },
+  music:   { w: 6,  h: 3, label: 'MUSIC' },
+  iris:    { w: 6,  h: 5, label: 'IRIS' },
+  tasks:   { w: 6,  h: 4, label: 'TASKS' },
+  agenda:  { w: 6,  h: 4, label: 'AGENDA' },
+  image:   { w: 6,  h: 3, label: 'IMAGE' },
+  chart:   { w: 6,  h: 3, label: 'CHART' },
+  notes:   { w: 6,  h: 3, label: 'NOTES' },
+  timer:   { w: 6,  h: 3, label: 'TIMER' },
+  console: { w: 24, h: 3, label: 'CONSOLE' },
+  cortana: { w: 10, h: 7, label: 'CORTANA' }
+};
+
+const DEFAULT_MODULES = [
+  { id: 'd1a', type: 'clock',   x: 0,  y: 0,  w: 4,  h: 2, surface: 'light', link: 'bar' },
+  { id: 'd1b', type: 'date',    x: 4,  y: 0,  w: 5,  h: 2, surface: 'light', link: 'bar' },
+  { id: 'd1c', type: 'ticker',  x: 9,  y: 0,  w: 15, h: 2, surface: 'light', link: 'bar' },
+  { id: 'd2',  type: 'weather', x: 0,  y: 2,  w: 7,  h: 2, surface: 'light', link: null },
+  { id: 'd3a', type: 'cpu',     x: 0,  y: 4,  w: 7,  h: 2, surface: 'light', link: 'sys' },
+  { id: 'd3b', type: 'ram',     x: 0,  y: 6,  w: 7,  h: 2, surface: 'light', link: 'sys' },
+  { id: 'd4',  type: 'music',   x: 0,  y: 8,  w: 7,  h: 3, surface: 'light', link: null },
+  { id: 'dci', type: 'iris',    x: 7,  y: 2,  w: 10, h: 2, surface: 'clear', link: null },
+  { id: 'dco', type: 'cortana', x: 7,  y: 4,  w: 10, h: 7, surface: 'dark',  link: null },
+  { id: 'd6',  type: 'tasks',   x: 17, y: 2,  w: 7,  h: 4, surface: 'light', link: null },
+  { id: 'd7',  type: 'agenda',  x: 17, y: 6,  w: 7,  h: 3, surface: 'clear', link: null },
+  { id: 'd8',  type: 'image',   x: 17, y: 9,  w: 7,  h: 4, surface: 'light', link: null },
+  { id: 'dch', type: 'chart',   x: 0,  y: 11, w: 7,  h: 2, surface: 'light', link: null },
+  { id: 'dnt', type: 'notes',   x: 7,  y: 11, w: 10, h: 2, surface: 'light', link: null },
+  { id: 'd9',  type: 'console', x: 0,  y: 13, w: 24, h: 3, surface: 'dark',  link: null }
+];
+
+// ── ENGINE: layout sanitizer (guards against corrupt/hostile saved data) ──
+function sanitizeLayout(arr) {
+  if (!Array.isArray(arr)) return null;
+  const seen = new Set();
+  const out = [];
+  const ci = (v, lo, hi, dflt) => { v = Math.round(+v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; };
+  for (const m of arr) {
+    if (!m || typeof m !== 'object' || !DEFS[m.type]) continue;
+    let id = typeof m.id === 'string' && m.id ? m.id : 'r' + Math.random().toString(36).slice(2, 8);
+    if (seen.has(id)) id = id + '_' + out.length;
+    seen.add(id);
+    const w = ci(m.w, 2, COLS, DEFS[m.type].w);
+    const h = ci(m.h, 1, ROWS, DEFS[m.type].h);
+    out.push({
+      id, type: m.type,
+      x: ci(m.x, 0, COLS - w, 0), y: ci(m.y, 0, ROWS - h, 0), w, h,
+      surface: SURFACES.includes(m.surface) ? m.surface : 'light',
+      link: typeof m.link === 'string' && m.link ? m.link : null,
+      img: (typeof m.img === 'string' && m.img.startsWith('data:image')) ? m.img : undefined
+    });
+    if (out.length >= MAX_MODULES) break;
+  }
+  return out.length ? out : null;
+}
+
+function migrateV2(arr) {
+  const out = [];
+  for (const m of arr) {
+    const surface = m.surface || (m.ghost ? 'clear' : (m.type === 'console' ? 'dark' : 'light'));
+    if (m.type === 'topbar') {
+      out.push({ id: m.id + 'a', type: 'clock',  x: m.x,     y: m.y, w: 4, h: m.h, surface, link: 'bar' });
+      out.push({ id: m.id + 'b', type: 'date',   x: m.x + 4, y: m.y, w: 5, h: m.h, surface, link: 'bar' });
+      out.push({ id: m.id + 'c', type: 'ticker', x: m.x + 9, y: m.y, w: Math.max(4, m.w - 9), h: m.h, surface, link: 'bar' });
+    } else if (m.type === 'stats') {
+      const h2 = Math.max(2, Math.floor(m.h / 2));
+      out.push({ id: m.id + 'a', type: 'cpu', x: m.x, y: m.y,      w: m.w, h: h2,       surface, link: 'sys' });
+      out.push({ id: m.id + 'b', type: 'ram', x: m.x, y: m.y + h2, w: m.w, h: m.h - h2, surface, link: 'sys' });
+    } else {
+      out.push({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface, link: m.link || null, img: m.img });
+    }
+  }
+  return out;
+}
+
+// ── theme helpers (code-only palette extraction, no AI) ──
+function hsl2rgbStr(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)].join(',');
+}
+function extractThemeFromImage(img) {
+  const c = document.createElement('canvas');
+  c.width = 48; c.height = 48;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, 48, 48);
+  const d = ctx.getImageData(0, 0, 48, 48).data;
+  const bins = new Array(18).fill(0);
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), v = mx, sat = mx === 0 ? 0 : (mx - mn) / mx;
+    if (sat < 0.12 || v < 0.18) continue;
+    let hDeg;
+    if (mx === mn) hDeg = 0;
+    else if (mx === r) hDeg = (60 * ((g - b) / (mx - mn)) + 360) % 360;
+    else if (mx === g) hDeg = 60 * ((b - r) / (mx - mn)) + 120;
+    else hDeg = 60 * ((r - g) / (mx - mn)) + 240;
+    bins[Math.floor(hDeg / 20) % 18] += sat * v;
+  }
+  let best = 0;
+  for (let i = 1; i < 18; i++) if (bins[i] > bins[best]) best = i;
+  const H = best * 20 + 10;
+  return {
+    '--accent-rgb':  hsl2rgbStr(H, 72, 72),
+    '--accent2-rgb': hsl2rgbStr((H + 330) % 360, 62, 66),
+    '--accent3-rgb': hsl2rgbStr((H + 45) % 360, 48, 78),
+    '--peach-rgb':   hsl2rgbStr((H + 18) % 360, 85, 83),
+    '--orb-rgb':     hsl2rgbStr((H + 70) % 360, 32, 58)
+  };
+}
+function applyThemeVars(vars) {
+  const st = document.documentElement.style;
+  Object.entries(vars).forEach(([k, v]) => st.setProperty(k, v));
+}
+
+
+class Component extends DCLogic {
+  gridRef = React.createRef();
+
+  state = (() => {
+    let modules = null;
+    try {
+      const raw3 = localStorage.getItem(LS_KEY);
+      if (raw3) modules = sanitizeLayout(JSON.parse(raw3));
+      if (!modules) {
+        const raw2 = localStorage.getItem('dusk.layout.v2');
+        if (raw2) modules = sanitizeLayout(migrateV2(JSON.parse(raw2)));
+      }
+    } catch (e) {}
+    if (!modules) modules = DEFAULT_MODULES.map(m => ({ ...m }));
+    let boot = 0;
+    try {
+      boot = +localStorage.getItem('dusk.boot') || 0;
+      if (!boot) { boot = Date.now(); localStorage.setItem('dusk.boot', String(boot)); }
+    } catch (e) { boot = Date.now(); }
+    let bgCustom = false, bgImg = null, themeAuto = null, themeCustom = {};
+    try {
+      const rawBg = localStorage.getItem(LS_BG);
+      if (rawBg) {
+        const saved = JSON.parse(rawBg);
+        if (saved && typeof saved.img === 'string' && saved.img.startsWith('data:image')) { bgImg = saved.img; bgCustom = true; }
+        if (saved && saved.vars && typeof saved.vars === 'object') themeAuto = saved.vars;
+      }
+    } catch (e) {}
+    try {
+      const rawTh = localStorage.getItem(LS_THEME);
+      if (rawTh) {
+        const saved = JSON.parse(rawTh);
+        if (saved && typeof saved === 'object') {
+          for (const k of Object.keys(saved)) if (THEME_DEFAULTS[k] && typeof saved[k] === 'string') themeCustom[k] = saved[k];
+        }
+      }
+    } catch (e) {}
+    return {
+      modules, boot, bgCustom, bgImg, themeAuto, themeCustom, colorsOpen: false, edit: false, now: new Date(), drag: null, linking: null, toast: null, armRemove: null,
+      playing: true, progress: 112, focus: 1471,
+      cpu: 34, mem: 57,
+      tickers: [
+        { s: 'NASDAQ', v: 21482.11, c: 0.84, dec: 1 },
+        { s: 'S&P',    v: 6214.5,   c: 0.42, dec: 1 },
+        { s: 'AAPL',   v: 232.18,   c: -0.31, dec: 2 },
+        { s: 'NVDA',   v: 168.90,   c: 2.10, dec: 2 },
+        { s: 'BTC',    v: 118204,   c: 0.6,  dec: 0 }
+      ],
+      tasks: [
+        { t: 'Ship weekly report', done: true },
+        { t: 'Review dashboard mockups', done: false },
+        { t: 'Call HVAC — 3:30 PM', done: false },
+        { t: 'Backup NAS drive', done: false }
+      ],
+      logs: [
+        { ts: '18:41:12', msg: 'weather.sync → OK · next poll 15m', warn: false },
+        { ts: '18:41:58', msg: 'yfinance.tick → 5 symbols updated', warn: false },
+        { ts: '18:42:07', msg: 'reminder queued: "Call HVAC 3:30 PM"', warn: true }
+      ],
+      cortanaOnline: false,
+      cortanaInput: '',
+      cortanaLog: (() => {
+        try {
+          const raw = localStorage.getItem(LS_CORTANA);
+          if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a.slice(-20); }
+        } catch (e) {}
+        return [];
+      })(),
+      nextId: 100
+    };
+  })();
+
+  componentDidMount() {
+    // apply theme: defaults ← auto-extracted ← user-pinned
+    this.applyTheme();
+    this._clock = setInterval(() => {
+      this.setState(s => ({
+        now: new Date(),
+        progress: s.playing ? Math.min(266, s.progress + 1) : s.progress,
+        focus: s.focus + 1,
+        cpu: Math.max(8, Math.min(92, s.cpu + (Math.random() * 8 - 4))),
+        mem: Math.max(30, Math.min(85, s.mem + (Math.random() * 3 - 1.5)))
+      }));
+    }, 1000);
+    this._tick = setInterval(() => {
+      this.setState(s => ({
+        tickers: s.tickers.map(t => {
+          const drift = t.v * (Math.random() * 0.002 - 0.001);
+          return { ...t, v: t.v + drift, c: +(t.c + (Math.random() * 0.1 - 0.05)).toFixed(2) };
+        })
+      }));
+    }, 5000);
+    const MSGS = [
+      'net.watch → latency 12ms, stable',
+      'yfinance.tick → 5 symbols updated',
+      'calendar.poll → no new events',
+      'backup.check → NAS reachable',
+      'weather.sync → OK · next poll 15m',
+      'iris.idle → awaiting instruction'
+    ];
+    this._log = setInterval(() => {
+      this.setState(s => {
+        const d = new Date();
+        const p = n => String(n).padStart(2, '0');
+        const line = { ts: p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()), msg: MSGS[Math.floor(Math.random() * MSGS.length)], warn: Math.random() < 0.18 };
+        return { logs: [...s.logs, line].slice(-3) };
+      });
+    }, 9000);
+    this._key = (e) => {
+      if ((e.key === 'e' || e.key === 'E') && !e.repeat && (e.metaKey || e.ctrlKey || e.target === document.body)) {
+        e.preventDefault();
+        this.setState(s => ({ edit: !s.edit, linking: null, armRemove: null }));
+      }
+    };
+    window.addEventListener('keydown', this._key);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log);
+    clearTimeout(this._toastT); clearTimeout(this._armT);
+    window.removeEventListener('keydown', this._key);
+    this.unbindDrag();
+  }
+
+  persist(modules) {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(modules.map(m => ({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface: m.surface || 'light', link: m.link || null, img: m.img || undefined }))));
+    } catch (e) { this.showToast('SAVE FAILED — STORAGE FULL (LARGE IMAGES?)'); }
+  }
+
+  groupOf(m) {
+    if (!m.link) return [m];
+    return this.state.modules.filter(o => o.link === m.link && !o.removing);
+  }
+
+  // ══════════ ENGINE: drag / resize / snap (DO NOT MODIFY) ══════════
+  bindDrag() {
+    this._mv = (ev) => this.setState(s => s.drag ? { drag: { ...s.drag, dx: ev.clientX - s.drag.sx, dy: ev.clientY - s.drag.sy } } : null);
+    this._up = () => { this.unbindDrag(); this.commitDrag(); };
+    window.addEventListener('pointermove', this._mv);
+    window.addEventListener('pointerup', this._up);
+  }
+  unbindDrag() {
+    if (this._mv) window.removeEventListener('pointermove', this._mv);
+    if (this._up) window.removeEventListener('pointerup', this._up);
+    this._mv = this._up = null;
+  }
+  startDrag(e, id, mode) {
+    if (!this.state.edit) return;
+    e.preventDefault(); e.stopPropagation();
+    this.setState({ drag: { id, mode, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 } });
+    this.bindDrag();
+  }
+  cellSize() {
+    const el = this.gridRef.current;
+    if (!el) return { cw: 60, ch: 50 };
+    const r = el.getBoundingClientRect();
+    return { cw: r.width / COLS, ch: r.height / ROWS };
+  }
+  snapTarget() {
+    const d = this.state.drag;
+    if (!d) return null;
+    const m = this.state.modules.find(x => x.id === d.id);
+    if (!m) return null;
+    const { cw, ch } = this.cellSize();
+    let rects, movedIds;
+    if (d.mode === 'move') {
+      const members = this.groupOf(m);
+      movedIds = members.map(o => o.id);
+      let dxc = Math.round(d.dx / cw), dyc = Math.round(d.dy / ch);
+      const minX = Math.min(...members.map(o => o.x));
+      const maxX = Math.max(...members.map(o => o.x + o.w));
+      const minY = Math.min(...members.map(o => o.y));
+      const maxY = Math.max(...members.map(o => o.y + o.h));
+      dxc = Math.max(-minX, Math.min(COLS - maxX, dxc));
+      dyc = Math.max(-minY, Math.min(ROWS - maxY, dyc));
+      rects = members.map(o => ({ id: o.id, x: o.x + dxc, y: o.y + dyc, w: o.w, h: o.h }));
+    } else {
+      movedIds = [m.id];
+      const w = Math.max(3, Math.min(COLS - m.x, Math.round(m.w + d.dx / cw)));
+      const h = Math.max(2, Math.min(ROWS - m.y, Math.round(m.h + d.dy / ch)));
+      rects = [{ id: m.id, x: m.x, y: m.y, w, h }];
+    }
+    const others = this.state.modules.filter(o => !movedIds.includes(o.id) && !o.removing);
+    const valid = !rects.some(r => others.some(o => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h));
+    const bx0 = Math.min(...rects.map(r => r.x)), bx1 = Math.max(...rects.map(r => r.x + r.w));
+    const by0 = Math.min(...rects.map(r => r.y)), by1 = Math.max(...rects.map(r => r.y + r.h));
+    return {
+      rects, valid, movedIds,
+      bounds: { bx0, bx1, by0, by1 },
+      region: { x0: Math.max(0, bx0 - 3), x1: Math.min(COLS, bx1 + 3), y0: Math.max(0, by0 - 3), y1: Math.min(ROWS, by1 + 3) }
+    };
+  }
+  commitDrag() {
+    const t = this.snapTarget();
+    if (t && t.valid) {
+      const byId = {};
+      t.rects.forEach(r => { byId[r.id] = r; });
+      const modules = this.state.modules.map(m => byId[m.id] ? { ...m, x: byId[m.id].x, y: byId[m.id].y, w: byId[m.id].w, h: byId[m.id].h } : m);
+      this.setState({ modules, drag: null });
+      this.persist(modules);
+    } else {
+      this.setState({ drag: null });
+    }
+  }
+  // ══════════ END ENGINE ══════════
+
+  // ── module ops ──
+  cycleSurface(id) {
+    const modules = this.state.modules.map(m => {
+      if (m.id !== id) return m;
+      const cur = SURFACES.indexOf(m.surface || 'light');
+      return { ...m, surface: SURFACES[(cur + 1) % SURFACES.length] };
+    });
+    this.setState({ modules }); this.persist(modules);
+  }
+  onLink(id) {
+    const s = this.state;
+    const m = s.modules.find(x => x.id === id);
+    if (!m) return;
+    if (s.linking === id) { this.setState({ linking: null }); this.showToast('LINK CANCELLED'); return; }
+    if (s.linking) {
+      const src = s.modules.find(x => x.id === s.linking);
+      const grp = (src && src.link) || m.link || ('g' + Date.now());
+      const modules = s.modules.map(x => (x.id === id || x.id === s.linking) ? { ...x, link: grp } : x);
+      this.setState({ modules, linking: null }); this.persist(modules);
+      this.showToast('MODULES LINKED — THEY NOW MOVE TOGETHER');
+      return;
+    }
+    if (m.link) {
+      let modules = s.modules.map(x => x.id === id ? { ...x, link: null } : x);
+      const counts = {};
+      modules.forEach(x => { if (x.link) counts[x.link] = (counts[x.link] || 0) + 1; });
+      modules = modules.map(x => (x.link && counts[x.link] < 2) ? { ...x, link: null } : x);
+      this.setState({ modules }); this.persist(modules);
+      this.showToast('UNLINKED');
+      return;
+    }
+    this.setState({ linking: id });
+    this.showToast('NOW TAP ∞ ON ANOTHER MODULE TO LINK');
+  }
+  // double-tap guard: first tap arms, second tap (within 2.5s) removes
+  requestRemove(id) {
+    if (this.state.armRemove === id) {
+      clearTimeout(this._armT);
+      this.setState({ armRemove: null });
+      this.removeModule(id);
+      return;
+    }
+    clearTimeout(this._armT);
+    this.setState({ armRemove: id });
+    this.showToast('TAP ✕ AGAIN TO CONFIRM REMOVE');
+    this._armT = setTimeout(() => this.setState({ armRemove: null }), 2500);
+  }
+  removeModule(id) {
+    this.setState(s => ({ modules: s.modules.map(m => m.id === id ? { ...m, removing: true } : m) }));
+    setTimeout(() => {
+      const modules = this.state.modules.filter(m => m.id !== id);
+      this.setState({ modules }); this.persist(modules);
+    }, 320);
+  }
+  findFreeSlot(w, h) {
+    const mods = this.state.modules.filter(m => !m.removing);
+    for (let y = 0; y <= ROWS - h; y++) for (let x = 0; x <= COLS - w; x++) {
+      if (!mods.some(o => x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h)) return { x, y };
+    }
+    return null;
+  }
+  showToast(msg) {
+    clearTimeout(this._toastT);
+    this.setState({ toast: msg });
+    this._toastT = setTimeout(() => this.setState({ toast: null }), 2800);
+  }
+  addModule(type) {
+    if (!DEFS[type]) { this.showToast('UNKNOWN MODULE TYPE: ' + type); return; }
+    if (this.state.modules.length >= MAX_MODULES) { this.showToast('MODULE LIMIT REACHED (' + MAX_MODULES + ')'); return; }
+    const def = DEFS[type];
+    const slot = this.findFreeSlot(def.w, def.h);
+    if (!slot) { this.showToast('NO ROOM — CLEAR OR SHRINK MODULES FIRST'); return; }
+    const id = 'm' + this.state.nextId;
+    const modules = [...this.state.modules, { id, type, x: slot.x, y: slot.y, w: def.w, h: def.h, surface: 'light', link: null, fresh: true }];
+    this.setState({ modules, nextId: this.state.nextId + 1 });
+    this.persist(modules);
+  }
+  setImage(id, file) {
+    if (!file) return;
+    if (file.size > 3.5 * 1024 * 1024) { this.showToast('IMAGE TOO LARGE — MAX 3.5MB'); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const modules = this.state.modules.map(m => m.id === id ? { ...m, img: rd.result } : m);
+      this.setState({ modules }); this.persist(modules);
+    };
+    rd.readAsDataURL(file);
+  }
+  // background swap + code-only palette extraction
+  setBackground(file) {
+    if (!file) return;
+    if (file.size > 3.5 * 1024 * 1024) { this.showToast('IMAGE TOO LARGE — MAX 3.5MB'); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let vars = null;
+        try { vars = extractThemeFromImage(img); } catch (e) {}
+        this.setState({ bgCustom: true, bgImg: rd.result, themeAuto: vars });
+        this.applyTheme(vars);   // pinned colors survive the swap
+        try {
+          localStorage.setItem(LS_BG, JSON.stringify({ img: rd.result, vars }));
+          this.showToast('BACKGROUND + COLOR SCHEME UPDATED');
+        } catch (e) { this.showToast('BACKGROUND SET (TOO LARGE TO SAVE — WON\'T PERSIST)'); }
+      };
+      img.onerror = () => this.showToast('COULD NOT READ IMAGE');
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  }
+  resetBackground() {
+    try { localStorage.removeItem(LS_BG); } catch (e) {}
+    this.setState({ bgCustom: false, bgImg: null, themeAuto: null });
+    this.applyTheme(null);
+    this.showToast('BACKGROUND + PALETTE RESTORED');
+  }
+  // theme = defaults ← auto-extracted (from bg image) ← user-pinned colors
+  applyTheme(auto, custom) {
+    if (auto === undefined) auto = this.state.themeAuto;
+    if (custom === undefined) custom = this.state.themeCustom;
+    applyThemeVars({ ...THEME_DEFAULTS, ...(auto || {}), ...(custom || {}) });
+  }
+  persistTheme(custom) {
+    try { localStorage.setItem(LS_THEME, JSON.stringify(custom)); } catch (e) {}
+  }
+  setCustomColor(k, hex) {
+    const custom = { ...this.state.themeCustom, [k]: hex2rgbStr(hex) };
+    this.setState({ themeCustom: custom });
+    this.applyTheme(undefined, custom);
+    this.persistTheme(custom);
+  }
+  unpinColor(k) {
+    if (!(k in this.state.themeCustom)) return;
+    const custom = { ...this.state.themeCustom };
+    delete custom[k];
+    this.setState({ themeCustom: custom });
+    this.applyTheme(undefined, custom);
+    this.persistTheme(custom);
+    this.showToast('COLOR BACK TO AUTO');
+  }
+
+  // ── render ──
+  renderVals() {
+    const s = this.state;
+    const g = this.props.gutterPx ?? 20;
+    const blur = this.props.bgBlur ?? 7;
+    const ga = (this.props.glassAlpha ?? 10) / 100;
+    const frameless = this.props.frameless ?? false;
+    const p2 = n => String(n).padStart(2, '0');
+    const now = s.now;
+
+    const glass = {
+      background: `rgba(255,242,236,${ga})`, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+      border: '1px solid rgba(255,255,255,.24)', borderRadius: 14, boxShadow: '0 8px 32px rgba(20,16,40,.25)'
+    };
+    const dark = {
+      background: `rgba(20,16,32,${Math.min(.9, .35 + ga * 2)})`, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+      border: '1px solid rgba(255,255,255,.14)', borderRadius: 14, boxShadow: '0 8px 32px rgba(20,16,40,.3)'
+    };
+    const clear = { background: 'transparent', border: '1px solid transparent', borderRadius: 14 };
+    const surfaceStyle = (m) => frameless ? clear : (m.surface === 'dark' ? dark : (m.surface === 'clear' ? clear : glass));
+
+    const drag = s.drag;
+    const target = drag ? this.snapTarget() : null;
+    const movedIds = target ? target.movedIds : [];
+
+    const modules = s.modules.map((m, i) => {
+      const base = surfaceStyle(m);
+      const dragging = drag && movedIds.includes(m.id);
+      const isLinkSrc = s.linking === m.id;
+      const armed = s.armRemove === m.id;
+      const editOutline = s.edit
+        ? (isLinkSrc
+          ? { outline: '2px solid rgba(var(--accent-rgb),.9)', outlineOffset: 2 }
+          : (m.link
+            ? { outline: '1px dashed rgba(var(--accent3-rgb),.75)', outlineOffset: 2 }
+            : { outline: '1px dashed rgba(var(--accent-rgb),.55)', outlineOffset: 2 }))
+        : {};
+      const pad = { padding: '1rem 1.2rem', boxSizing: 'border-box', width: '100%', height: '100%', position: 'relative', overflow: 'hidden' };
+
+      const wrapStyle = {
+        position: 'absolute',
+        left: (m.x / COLS * 100) + '%', top: (m.y / ROWS * 100) + '%',
+        width: (m.w / COLS * 100) + '%', height: (m.h / ROWS * 100) + '%',
+        padding: g / 2, boxSizing: 'border-box',
+        transition: dragging ? 'none' : `left .45s ${SPRING}, top .45s ${SPRING}, width .35s ${SPRING}, height .35s ${SPRING}, opacity .3s ease, transform .3s ease`,
+        transform: (dragging && drag.mode === 'move') ? `translate(${drag.dx}px,${drag.dy}px)` : (m.removing ? 'scale(.86)' : 'none'),
+        opacity: m.removing ? 0 : 1,
+        zIndex: dragging ? 20 : (m.type === 'iris' ? 5 : 1),
+        cursor: s.edit ? 'grab' : 'default',
+        touchAction: s.edit ? 'none' : 'auto',
+        animation: `popIn .5s ${SPRING} both`,
+        animationDelay: m.fresh ? '0ms' : (i * 55) + 'ms'
+      };
+
+      return {
+        ...m,
+        t_clock: m.type === 'clock', t_date: m.type === 'date', t_ticker: m.type === 'ticker',
+        t_weather: m.type === 'weather', t_cpu: m.type === 'cpu', t_ram: m.type === 'ram',
+        t_music: m.type === 'music', t_iris: m.type === 'iris', t_tasks: m.type === 'tasks',
+        t_agenda: m.type === 'agenda', t_image: m.type === 'image', t_chart: m.type === 'chart',
+        t_notes: m.type === 'notes', t_timer: m.type === 'timer', t_console: m.type === 'console', t_cortana: m.type === 'cortana',
+        hasImg: !!m.img, noImg: !m.img,
+        wrapStyle,
+        cardStyle: { ...base, ...editOutline, ...pad },
+        cardStyleCol: { ...base, ...editOutline, ...pad, display: 'flex', flexDirection: 'column' },
+        cardStyleCenter: { ...base, ...editOutline, ...pad, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
+        cardStyleRow: { ...base, ...editOutline, ...pad, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem' },
+        cardStyleTicker: { ...base, ...editOutline, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '0 1.4rem', boxSizing: 'border-box', fontFamily: "'JetBrains Mono',monospace", fontSize: '.82rem' },
+        cardStyleImage: { ...(m.img ? { borderRadius: 14, overflow: 'hidden', boxShadow: glass.boxShadow } : { ...base, borderStyle: (frameless || m.surface === 'clear') ? 'solid' : 'dashed' }), ...editOutline, width: '100%', height: '100%', position: 'relative', boxSizing: 'border-box' },
+        drag: (e) => { if (e.target.closest('label,input')) return; this.startDrag(e, m.id, 'move'); },
+        resizeBtn: (e) => this.startDrag(e, m.id, 'resize'),
+        surfaceBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.cycleSurface(m.id); },
+        removeBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.requestRemove(m.id); },
+        linkBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.onLink(m.id); },
+        linkBtnStyle: {
+          width: '1.7rem', height: '1.7rem', borderRadius: '50%',
+          background: isLinkSrc ? 'rgba(var(--accent-rgb),.5)' : (m.link ? 'rgba(var(--accent3-rgb),.45)' : 'rgba(20,16,32,.75)'),
+          border: '1px solid rgba(var(--accent3-rgb),.8)', color: isLinkSrc ? 'rgb(var(--text-rgb))' : 'rgb(var(--accent3-rgb))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '.85rem',
+          animation: isLinkSrc ? 'linkPulse 1.2s ease-in-out infinite' : 'none'
+        },
+        surfaceBtnStyle: {
+          width: '1.7rem', height: '1.7rem', borderRadius: '50%',
+          background: m.surface === 'dark' ? 'rgba(20,16,32,.9)' : (m.surface === 'clear' ? 'transparent' : 'rgba(255,242,236,.35)'),
+          border: '1px solid rgba(var(--accent-rgb),.7)', color: 'rgb(var(--accent-rgb))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '.85rem'
+        },
+        removeBtnStyle: {
+          width: '1.7rem', height: '1.7rem', borderRadius: '50%',
+          background: armed ? 'rgba(240,80,90,.9)' : 'rgba(20,16,32,.75)',
+          border: '1px solid rgba(var(--accent2-rgb),.7)', color: armed ? '#fff' : 'rgb(var(--accent2-rgb))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '.8rem',
+          transform: armed ? 'scale(1.15)' : 'none', transition: 'transform .15s ease, background .15s ease'
+        },
+        onImg: (e) => this.setImage(m.id, e.target.files && e.target.files[0]),
+        imgStyle: m.img
+          ? { position: 'absolute', inset: 0, backgroundImage: `url(${m.img})`, backgroundSize: 'cover', backgroundPosition: 'center', borderRadius: 13 }
+          : { display: 'none' }
+      };
+    });
+
+    // localized grid lines: brightest over the module, fading to nothing outward
+    const gridLines = [];
+    if (target) {
+      const { x0, x1, y0, y1 } = target.region;
+      const { bx0, bx1, by0, by1 } = target.bounds;
+      const BASE = 0.32;
+      for (let x = x0; x <= x1; x++) {
+        const dist = x < bx0 ? bx0 - x : (x > bx1 ? x - bx1 : 0);
+        const a = BASE * (1 - dist / 3.5);
+        if (a <= 0.015) continue;
+        gridLines.push({ style: {
+          position: 'absolute', left: (x / COLS * 100) + '%', top: (y0 / ROWS * 100) + '%',
+          width: 1, height: ((y1 - y0) / ROWS * 100) + '%',
+          background: `linear-gradient(180deg, transparent, rgba(var(--text-rgb),${a.toFixed(3)}) 30%, rgba(var(--text-rgb),${a.toFixed(3)}) 70%, transparent)`,
+          zIndex: 3, pointerEvents: 'none'
+        }});
+      }
+      for (let y = y0; y <= y1; y++) {
+        const dist = y < by0 ? by0 - y : (y > by1 ? y - by1 : 0);
+        const a = BASE * (1 - dist / 3.5);
+        if (a <= 0.015) continue;
+        gridLines.push({ style: {
+          position: 'absolute', left: (x0 / COLS * 100) + '%', top: (y / ROWS * 100) + '%',
+          width: ((x1 - x0) / COLS * 100) + '%', height: 1,
+          background: `linear-gradient(90deg, transparent, rgba(var(--text-rgb),${a.toFixed(3)}) 30%, rgba(var(--text-rgb),${a.toFixed(3)}) 70%, transparent)`,
+          zIndex: 3, pointerEvents: 'none'
+        }});
+      }
+    }
+
+    // snap previews
+    let previewOn = false, previews = [];
+    if (target) {
+      previewOn = true;
+      previews = target.rects.map(r => ({ style: {
+        position: 'absolute',
+        left: `calc(${r.x / COLS * 100}% + ${g / 2}px)`,
+        top: `calc(${r.y / ROWS * 100}% + ${g / 2}px)`,
+        width: `calc(${r.w / COLS * 100}% - ${g}px)`,
+        height: `calc(${r.h / ROWS * 100}% - ${g}px)`,
+        border: `1.5px dashed ${target.valid ? 'rgba(var(--accent-rgb),.85)' : 'rgba(240,80,90,.9)'}`,
+        background: target.valid ? 'rgba(var(--accent-rgb),.08)' : 'rgba(240,80,90,.1)',
+        borderRadius: 14, zIndex: 15, pointerEvents: 'none',
+        transition: 'left .15s ease, top .15s ease, width .15s ease, height .15s ease'
+      }}));
+    }
+
+    const up = Math.max(0, Date.now() - s.boot);
+    const ud = Math.floor(up / 86400000), uh = Math.floor(up / 3600000) % 24, um = Math.floor(up / 60000) % 60;
+    const openTasks = s.tasks.filter(t => !t.done).length;
+
+    const chartHeights = [34, 42, 38, 55, 49, 63, 58, 71, 67, 85, 79, 92];
+    const chartCols = ['rgb(var(--accent-rgb))', 'rgb(var(--accent-rgb))', 'rgb(var(--accent-rgb))', 'rgb(var(--accent2-rgb))', 'rgb(var(--accent2-rgb))', 'rgb(var(--accent2-rgb))', 'rgb(var(--accent3-rgb))', 'rgb(var(--accent3-rgb))', 'rgb(var(--accent3-rgb))', 'rgb(var(--peach-rgb))', 'rgb(var(--peach-rgb))', 'rgb(var(--peach-rgb))'];
+
+    return {
+      bgFilter: `blur(${blur}px) saturate(1.05)`,
+      gridRef: this.gridRef,
+      modules,
+      gridLinesOn: gridLines.length > 0, gridLines,
+      editOn: s.edit,
+      previewOn, previews,
+      toastOn: !!s.toast,
+      toastTxt: s.toast,
+      bgCustomOn: !!(s.bgCustom && s.bgImg),
+      colorsOpen: s.colorsOpen,
+      colorsPillTxt: s.colorsOpen ? '✓ COLORS' : 'COLORS',
+      toggleColors: () => this.setState(x => ({ colorsOpen: !x.colorsOpen })),
+      colorRows: COLOR_ROWS.map(([k, label]) => {
+        const pinned = k in s.themeCustom;
+        const cur = s.themeCustom[k] || (s.themeAuto && s.themeAuto[k]) || THEME_DEFAULTS[k];
+        return {
+          label, hex: rgbStr2hex(cur),
+          pinTxt: pinned ? 'PINNED' : 'AUTO',
+          onPick: (e) => this.setCustomColor(k, e.target.value),
+          unpin: () => this.unpinColor(k),
+          pinStyle: {
+            fontFamily: "'JetBrains Mono',monospace", fontSize: '.58rem', letterSpacing: '.08em',
+            color: pinned ? 'rgb(var(--accent-rgb))' : 'rgba(var(--text-rgb),.4)',
+            cursor: pinned ? 'pointer' : 'default', userSelect: 'none',
+            textDecoration: pinned ? 'underline' : 'none'
+          }
+        };
+      }),
+      resetColors: () => {
+        this.setState({ themeCustom: {} });
+        this.applyTheme(undefined, {});
+        this.persistTheme({});
+        this.showToast('ALL COLORS BACK TO AUTO');
+      },
+      bgLayerStyle: s.bgImg ? {
+        position: 'absolute', inset: -28,
+        backgroundImage: `url("${s.bgImg}")`, backgroundSize: 'cover', backgroundPosition: 'center',
+        filter: `blur(${blur}px) saturate(1.05)`
+      } : { display: 'none' },
+      setBg: (e) => this.setBackground(e.target.files && e.target.files[0]),
+      resetBg: () => this.resetBackground(),
+      clockHM: p2(now.getHours()) + ':' + p2(now.getMinutes()),
+      clockS: p2(now.getSeconds()),
+      dateLine: now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+      dateSub: 'WEEK ' + Math.ceil(((now - new Date(now.getFullYear(), 0, 1)) / 86400000 + 1) / 7) + ' · DAY ' + Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000),
+      tickerItems: s.tickers.map(t => ({
+        s: t.s,
+        vTxt: t.v.toLocaleString('en-US', { minimumFractionDigits: t.dec, maximumFractionDigits: t.dec }),
+        chgTxt: (t.c >= 0 ? '▲' : '▼') + Math.abs(t.c).toFixed(2) + '%',
+        chgStyle: { color: t.c >= 0 ? '#9be8b8' : 'rgb(var(--accent2-rgb))' }
+      })),
+      cpuTxt: Math.round(s.cpu) + '%',
+      memTxt: (s.mem / 100 * 32).toFixed(1) + ' / 32 GB',
+      cpuBar: { width: Math.round(s.cpu) + '%', height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,rgb(var(--accent-rgb)),rgb(var(--accent2-rgb)))', transition: 'width 1s ease' },
+      memBar: { width: Math.round(s.mem) + '%', height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,rgb(var(--accent3-rgb)),rgb(var(--accent2-rgb)))', transition: 'width 1s ease' },
+      togglePlay: () => this.setState(x => ({ playing: !x.playing })),
+      playIcon: s.playing ? '❚❚' : '▶',
+      musicBar: { width: (s.progress / 266 * 100) + '%', height: '100%', borderRadius: 2, background: 'rgb(var(--accent-rgb))', transition: 'width 1s linear' },
+      musicTime: Math.floor(s.progress / 60) + ':' + p2(s.progress % 60),
+      uptimeTxt: ud + 'D ' + p2(uh) + 'H ' + p2(um) + 'M',
+      queueTxt: openTasks + ' TASKS QUEUED',
+      taskItems: s.tasks.map((t, i) => ({
+        t: t.t,
+        toggle: () => this.setState(x => ({ tasks: x.tasks.map((tt, j) => j === i ? { ...tt, done: !tt.done } : tt) })),
+        boxStyle: t.done
+          ? { width: '.9rem', height: '.9rem', borderRadius: 4, border: '1px solid rgb(var(--accent-rgb))', background: 'rgba(var(--accent-rgb),.5)', flexShrink: 0 }
+          : { width: '.9rem', height: '.9rem', borderRadius: 4, border: '1px solid rgba(255,255,255,.4)', flexShrink: 0 },
+        txtStyle: t.done
+          ? { fontSize: '.95rem', color: 'rgba(var(--text-rgb),.45)', textDecoration: 'line-through' }
+          : { fontSize: '.95rem', color: 'rgb(var(--text-rgb))' }
+      })),
+      chartBars: chartHeights.map((h, i) => ({
+        style: { flex: 1, height: h + '%', borderRadius: '5px 5px 2px 2px', background: `linear-gradient(180deg,${chartCols[i]},transparent)` }
+      })),
+      focusTxt: '00:' + p2(Math.floor(s.focus / 60) % 60) + ':' + p2(s.focus % 60),
+      logItems: s.logs.map((l, i) => ({
+        ts: l.ts, msg: l.msg,
+        tsStyle: { color: l.warn ? 'rgb(var(--accent2-rgb))' : 'rgb(var(--accent-rgb))' },
+        caretStyle: i === s.logs.length - 1 ? { color: 'rgb(var(--accent3-rgb))', animation: 'caret 1.1s step-end infinite' } : { display: 'none' }
+      })),
+      addables: ['clock', 'date', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'notes', 'timer', 'console', 'iris', 'cortana'].map(t => ({
+        label: DEFS[t].label,
+        add: () => this.addModule(t)
+      })),
+      resetLayout: () => {
+        const modules = DEFAULT_MODULES.map(m => ({ ...m, fresh: true }));
+        this.setState({ modules, linking: null, armRemove: null }); this.persist(modules);
+      },
+      toggleEdit: () => this.setState(x => ({ edit: !x.edit, linking: null, armRemove: null })),
+      editPillTxt: s.edit ? '✓ DONE EDITING' : '⌘E — EDIT LAYOUT',
+      cortanaOrbStyle: { width: '.85rem', height: '.85rem', borderRadius: '50%', flexShrink: 0, background: s.cortanaOnline ? '#9be8b8' : 'rgba(240,80,90,.85)', boxShadow: s.cortanaOnline ? '0 0 8px 2px rgba(155,232,184,.6)' : '0 0 8px 2px rgba(240,80,90,.4)', transition: 'background .5s,box-shadow .5s' },
+      cortanaLabelColor: s.cortanaOnline ? '#9be8b8' : 'rgba(240,80,90,.9)',
+      cortanaStatusTxt: 'CORTANA \u00b7 ' + (s.cortanaOnline ? 'ONLINE' : 'OFFLINE'),
+      cortanaLog: s.cortanaLog.slice().reverse().slice(0, 8).map((e, i) => ({
+        txt: e.txt, tsTxt: e.ts,
+        rowStyle: { display: 'flex', gap: '.5rem', alignItems: 'baseline', opacity: i === 0 ? 1 : Math.max(0.3, 1 - i * 0.1) }
+      })),
+      cortanaOnInput: (e) => this.setState({ cortanaInput: e.target.value }),
+      cortanaOnKey: (e) => {
+        if (e.key !== 'Enter') return;
+        const txt = (this.state.cortanaInput || '').trim();
+        if (!txt) return;
+        const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const entry = { txt: '\u2192 ' + txt, ts };
+        const cortanaLog = [...this.state.cortanaLog, entry].slice(-20);
+        try { localStorage.setItem(LS_CORTANA, JSON.stringify(cortanaLog)); } catch (err) {}
+        this.setState({ cortanaInput: '', cortanaLog });
+        try { window.postMessage({ source: 'dusk', type: 'command', payload: txt }, '*'); } catch (err) {}
+      },
+      editPillStyle: {
+        padding: '.55rem 1.4rem', borderRadius: 999,
+        background: s.edit ? 'rgba(var(--accent-rgb),.28)' : 'rgba(20,16,32,.55)',
+        backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+        border: '1px solid rgba(var(--accent-rgb),.45)',
+        fontFamily: "'JetBrains Mono',monospace", fontSize: '.72rem', letterSpacing: '.14em',
+        color: 'rgb(var(--accent-rgb))', cursor: 'pointer', userSelect: 'none'
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
