@@ -16,7 +16,10 @@ ExecStart=%h/cortana/Dashboard/app/dusk-dash.sh
 Restart=on-failure
 RestartSec=3
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/run/user/1001/gdm/Xauthority
+# %t = /run/user/<uid> (never hardcode the uid). GDM-on-Xorg keeps the cookie
+# here; on other display managers point this at your $XAUTHORITY (echo it in a
+# terminal) or drop the line if ~/.Xauthority is used.
+Environment=XAUTHORITY=%t/gdm/Xauthority
 
 [Install]
 WantedBy=default.target

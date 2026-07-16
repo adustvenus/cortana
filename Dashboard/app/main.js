@@ -62,13 +62,17 @@ function readAgent(a) {
     }
   } catch (e) { /* missing/corrupt file -> offline defaults */ }
   // NOTE: hud_state.py only rewrites the file when the payload changes, so ts
-  // freezes while the agent idles. Staleness is therefore advisory; the
-  // renderer treats the systemd unit state as the liveness authority.
-  const stale = !st.ts || (Date.now() / 1000 - st.ts) > Math.max(a.staleAfterSec, 600);
+  // freezes while the agent idles. For systemd-managed agents the unit state is
+  // the liveness authority and staleness gets a generous 600s floor; for
+  // status-only agents (no unit) the configured staleAfterSec is honored as-is,
+  // since the state file is all we have.
+  const ageSec = st.ts ? (Date.now() / 1000 - st.ts) : Infinity;
+  const staleCutoff = a.systemdUnit ? Math.max(a.staleAfterSec, 600) : a.staleAfterSec;
   return {
     id: a.id, name: a.name,
     state: st.state, agent: st.agent, detail: st.detail, thoughts: st.thoughts,
-    ts: st.ts, stale,
+    ts: st.ts, stale: ageSec > staleCutoff,
+    fresh: ageSec < 10,   // actively writing right now (e.g. run manually outside systemd)
     service: a.systemdUnit ? (serviceState[a.id] || 'unknown') : 'unknown'
   };
 }
@@ -107,21 +111,46 @@ function externalDisplay() {
   return screen.getAllDisplays().find(d => d.id !== primary.id) || null;
 }
 
+let userBubbled = false;   // explicit Esc/minimize/close: display hotplug must not override it
+
 function showMain() {
-  if (!mainWin) return;
+  if (!mainWin || mainWin.isDestroyed()) return;
+  userBubbled = false;
   const ext = externalDisplay();
   const target = ext || screen.getPrimaryDisplay();
-  mainWin.setFullScreen(false);            // leave fullscreen before moving displays
-  mainWin.setBounds(target.bounds);
-  mainWin.setFullScreen(true);
-  mainWin.show();
-  mainWin.focus();
-  if (bubbleWin && !bubbleWin.isDestroyed()) bubbleWin.hide();
+  // Leaving fullscreen, moving displays, and re-entering fullscreen in one
+  // synchronous burst races the X11 WM on a visible window (hotplug case).
+  // Sequence it: drop fullscreen only if needed, let the WM settle, then
+  // set bounds and re-enter fullscreen on the next tick.
+  if (mainWin.isMinimized()) mainWin.restore();
+  const enter = () => {
+    if (!mainWin || mainWin.isDestroyed()) return;
+    mainWin.setBounds(target.bounds);
+    mainWin.setFullScreen(true);
+    mainWin.show();
+    mainWin.focus();
+    if (bubbleWin && !bubbleWin.isDestroyed()) bubbleWin.hide();
+  };
+  if (mainWin.isFullScreen()) {
+    // setFullScreen is async on X11 (a _NET_WM_STATE round-trip): wait for the
+    // WM to confirm leaving before moving displays, or its geometry restore
+    // clobbers our setBounds. Timeout fallback in case the event never fires.
+    let entered = false;
+    const once = () => { if (!entered) { entered = true; enter(); } };
+    mainWin.once('leave-full-screen', once);
+    setTimeout(once, 400);
+    mainWin.setFullScreen(false);
+  } else enter();
 }
 
-function toBubble() {
+function toBubble(explicit = false) {
+  if (explicit) userBubbled = true;
   if (mainWin && !mainWin.isDestroyed()) mainWin.hide();
   if (bubbleWin && !bubbleWin.isDestroyed()) {
+    // Pin the bubble to the PRIMARY display's top-left (global (14,14) lands on
+    // the leftmost display, which may be a TV across the room).
+    const wa = screen.getPrimaryDisplay().workArea;
+    bubbleWin.setPosition(wa.x + 14, wa.y + 14);
     bubbleWin.showInactive();
     lastSent = '';            // force a fresh push so the bubble paints current state
     broadcast();
@@ -129,7 +158,10 @@ function toBubble() {
 }
 
 function placeForDisplays() {
-  if (externalDisplay()) showMain();
+  // Hotplug policy: auto-open on an external display, but never override an
+  // explicit user minimize-to-bubble (TV power-save re-handshakes fire
+  // display-removed/added and would otherwise keep stealing focus).
+  if (externalDisplay() && !userBubbled) showMain();
   else toBubble();
 }
 
@@ -148,10 +180,10 @@ function createWindows() {
   });
   mainWin.loadFile(PAGE);
   mainWin.on('close', (e) => {
-    if (!quitting) { e.preventDefault(); toBubble(); }   // accidental-close guard
+    if (!quitting) { e.preventDefault(); toBubble(true); }   // accidental-close guard
   });
-  mainWin.on('minimize', (e) => { e.preventDefault(); toBubble(); });
-  mainWin.webContents.on('render-process-gone', () => { if (!quitting) mainWin.reload(); });
+  mainWin.on('minimize', () => { mainWin.restore(); toBubble(true); });
+  mainWin.webContents.on('render-process-gone', crashGuard(() => mainWin));
 
   bubbleWin = new BrowserWindow({
     width: 72, height: 72, x: 14, y: 14,
@@ -167,13 +199,42 @@ function createWindows() {
     webPreferences: {
       preload: path.join(APP_DIR, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false          // same preload as main: sandboxed require('fs') would throw
     }
   });
   bubbleWin.loadFile(path.join(APP_DIR, 'bubble.html'));
   bubbleWin.setAlwaysOnTop(true, 'screen-saver');   // stay above fullscreen apps on X11
   bubbleWin.on('close', (e) => { if (!quitting) { e.preventDefault(); bubbleWin.hide(); } });
-  bubbleWin.webContents.on('render-process-gone', () => { if (!quitting) bubbleWin.reload(); });
+  bubbleWin.webContents.on('render-process-gone', crashGuard(() => bubbleWin));
+
+  // Lock both windows down: never navigate away from our local files, never
+  // open child windows (which would inherit the unsandboxed preload + bridge).
+  for (const w of [mainWin, bubbleWin]) {
+    w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    w.webContents.on('will-navigate', (e, url) => {
+      if (!url.startsWith('file://')) e.preventDefault();
+    });
+  }
+}
+
+// Reload a crashed renderer, but never in a tight loop: cap at 3 reloads per
+// minute, and don't fight deliberate kills.
+const crashLog = { times: [] };
+function crashGuard(getWin) {
+  return (_e, details) => {
+    if (quitting) return;
+    if (details && (details.reason === 'killed' || details.reason === 'clean-exit')) return;
+    const now = Date.now();
+    crashLog.times = crashLog.times.filter(t => now - t < 60000);
+    if (crashLog.times.length >= 3) {
+      console.error('[dusk] renderer crash-looping; not reloading (restart the service)');
+      return;
+    }
+    crashLog.times.push(now);
+    const w = getWin();
+    if (w && !w.isDestroyed()) setTimeout(() => w.reload(), 1000);
+  };
 }
 
 function createTray() {
@@ -182,12 +243,12 @@ function createTray() {
     tray = new Tray(img);
     tray.setToolTip('Dusk Dashboard');
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Open dashboard', click: showMain },
-      { label: 'Minimize to bubble', click: toBubble },
+      { label: 'Open dashboard', click: () => showMain() },
+      { label: 'Minimize to bubble', click: () => toBubble(true) },
       { type: 'separator' },
       { label: 'Quit Dusk Dashboard', click: () => { quitting = true; app.quit(); } }
     ]));
-    tray.on('click', showMain);
+    tray.on('click', () => showMain());
   } catch (e) { console.error('[dusk] tray unavailable:', e.message); }
 }
 
@@ -222,7 +283,9 @@ if (!app.requestSingleInstanceLock()) {
     if (!VALID_ACTIONS.has(action)) return { ok: false, error: 'invalid action' };
     if (!agent.systemdUnit) return { ok: false, error: 'agent is status-only' };
     return new Promise(resolve => {
-      execFile('systemctl', ['--user', action, agent.systemdUnit], { timeout: 15000 },
+      // stop/restart can legitimately take up to systemd's 90s unit stop
+      // timeout; a short exec timeout would misreport slow success as FAILED.
+      execFile('systemctl', ['--user', action, agent.systemdUnit], { timeout: 120000 },
         (err, stdout, stderr) => {
           if (err) resolve({ ok: false, error: String(stderr || err.message).trim().slice(0, 200) });
           else resolve({ ok: true, output: String(stdout).trim() });
@@ -231,8 +294,8 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
-  ipcMain.on('ui:open', showMain);
-  ipcMain.on('ui:bubble', toBubble);
+  ipcMain.on('ui:open', () => showMain());
+  ipcMain.on('ui:bubble', () => toBubble(true));
   ipcMain.on('ui:ctx', () => {
     Menu.buildFromTemplate([
       { label: 'Open dashboard', click: showMain },

@@ -50,9 +50,21 @@ TOOL_DEFS = {
     "remember": _schema("remember", "Save a permanent fact/preference about the user.",
                         {"key": {"type": "string"}, "value": {"type": "string"}},
                         ["key", "value"]),
-    "delegate": _schema("delegate", "Hand a task to a specialist subagent. Agents: research (web), email (gmail), trading (markets), video (editing), dev (coding/apps).",
-                        {"agent": {"type": "string"}, "task": {"type": "string"}},
-                        ["agent", "task"]),
+    "delegate": _schema("delegate",
+                        "Hand a task to a specialist subagent. Agents: research (web), email (gmail), "
+                        "trading (markets), video (editing), dev (coding/apps). background=true runs it "
+                        "on a worker and returns instantly - you MUST then tell the user it's underway; "
+                        "the result is announced automatically when done. background=false blocks and "
+                        "returns the result inline - ONLY for quick lookups (one search, one quote) "
+                        "whose answer you need to finish THIS reply.",
+                        {"agent": {"type": "string"}, "task": {"type": "string"},
+                         "background": {"type": "boolean"}},
+                        ["agent", "task", "background"]),
+    "task_status": _schema("task_status",
+                           "Status of background tasks. Optional id for one task's detail.",
+                           {"id": {"type": "integer"}}, []),
+    "cancel_task": _schema("cancel_task", "Cancel a running background task by id.",
+                           {"id": {"type": "integer"}}, ["id"]),
     "self_update": _schema("self_update", "Edit Cortana's OWN source code. Provide the FULL new content of each file. Small safe edits apply automatically; large ones ask the user to confirm out loud. Always git-checkpointed and auto-reverted if it fails to compile.",
                            {"files": {"type": "array", "items": {
                                "type": "object",
@@ -109,9 +121,10 @@ AGENTS = {
     },
 }
 
-LEAD_TOOL_NAMES = ["delegate", "remember", "shell", "read_file", "write_file",
-                   "list_files", "screenshot", "self_update", "confirm_pending",
-                   "cancel_pending", "revert_change", "restart", "shutdown"]
+LEAD_TOOL_NAMES = ["delegate", "task_status", "cancel_task", "remember", "shell",
+                   "read_file", "write_file", "list_files", "screenshot",
+                   "self_update", "confirm_pending", "cancel_pending",
+                   "revert_change", "restart", "shutdown"]
 LEAD_TOOLS = [TOOL_DEFS[n] for n in LEAD_TOOL_NAMES]
 
 
@@ -124,8 +137,27 @@ def lead_system():
         pass
     return (f"{md}\n\n## Saved memory\n{memory.recall_all()}\n\n"
             f"## Operating notes\nWorkspace: {WORKSPACE}\n"
-            "Quick things (screenshots, small file ops, shell one-liners): do directly. "
-            "Bigger or specialist work: delegate (research/email/trading/video/dev). "
+            "You are the chief of staff, not the workforce. The user talks to YOU; "
+            "specialists do the work. Your job on every request: acknowledge, route, "
+            "get back to listening.\n"
+            "- Routing: anything multi-step, slow, or specialist-shaped goes to "
+            "delegate with background=true - coding/app changes -> dev, web lookups/"
+            "summaries -> research, inbox work -> email, market analysis -> trading, "
+            "media -> video. When you hand off, SAY SO in a few words and end your "
+            "turn ('On it - dev is making that change. I'll tell you when it's done.'). "
+            "Do not wait for the result.\n"
+            "- Do directly ONLY what is faster to do than to explain: a screenshot, "
+            "one shell one-liner, reading one file, answering from knowledge or "
+            "conversation memory.\n"
+            "- delegate background=false is reserved for a single quick lookup whose "
+            "answer the CURRENT sentence needs (one quote, one search).\n"
+            "- When you call a tool, any text you write alongside it is spoken aloud "
+            "first - use it for a short acknowledgment or nothing at all.\n"
+            "- Completed background tasks are announced automatically and appear in "
+            "the conversation log as [background task N ...]. Use task_status when "
+            "asked how work is going; cancel_task to stop one.\n"
+            "- Before using the restart tool, check task_status; if tasks are "
+            "running, say what would be lost and get a confirmation first.\n"
             "Act first, report after - do not ask permission for workspace actions. "
             f"{_SPOKEN}")
 
@@ -136,7 +168,18 @@ def dispatch(name, args, run_agent=None):
         agent = args.get("agent", "")
         if agent not in AGENTS:
             return f"Unknown agent '{agent}'. Options: {', '.join(AGENTS)}"
-        return run_agent(agent, args.get("task", ""))
+        task_text = args.get("task", "")
+        if bool(args.get("background", True)):
+            import tasks
+            return tasks.start(agent, task_text,
+                               runner=lambda a, t, c: run_agent(a, t, cancel=c))
+        return run_agent(agent, task_text)
+    if name == "task_status":
+        import tasks
+        return tasks.status_summary(args.get("id"))
+    if name == "cancel_task":
+        import tasks
+        return tasks.cancel(int(args["id"]))
     if name == "shell":
         return F.run_shell(args["command"])
     if name == "read_file":
@@ -152,14 +195,21 @@ def dispatch(name, args, run_agent=None):
         return memory.remember(args["key"], args["value"])
     if name in ("self_update", "confirm_pending", "cancel_pending", "revert_change"):
         import selfedit
-        if name == "self_update":
-            _, msg = selfedit.apply_edit(args["files"], args.get("description", "update"))
-            return msg
-        if name == "confirm_pending":
-            return selfedit.confirm_pending()[1]
-        if name == "cancel_pending":
-            return selfedit.cancel_pending()[1]
-        return selfedit.revert_last()[1]
+        import tasks
+        # Code writes are serialized with background dev tasks - concurrent
+        # writers would corrupt selfedit's git checkpoint/rollback chain.
+        with tasks.code_lock() as got:
+            if not got:
+                return ("A dev task is editing code right now - wait for it to "
+                        "finish (task_status) or cancel it first.")
+            if name == "self_update":
+                _, msg = selfedit.apply_edit(args["files"], args.get("description", "update"))
+                return msg
+            if name == "confirm_pending":
+                return selfedit.confirm_pending()[1]
+            if name == "cancel_pending":
+                return selfedit.cancel_pending()[1]
+            return selfedit.revert_last()[1]
     if name == "restart":
         raise RestartRequested()
     if name == "shutdown":

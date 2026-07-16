@@ -28,7 +28,9 @@ billionaire's executive assistant: fast, discreet, confident, zero fluff.
 
 
 def _c():
-    return sqlite3.connect(DB_PATH)
+    # timeout: background task threads write concurrently with the main loop;
+    # a brief writer overlap should wait, not raise "database is locked".
+    return sqlite3.connect(DB_PATH, timeout=5)
 
 
 def init():
@@ -38,6 +40,8 @@ def init():
     CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
     CREATE TABLE IF NOT EXISTS usage(ts REAL, model TEXT, tin INT, tout INT, cost REAL);
     CREATE TABLE IF NOT EXISTS address_log(ts REAL, text TEXT, decision TEXT);
+    CREATE TABLE IF NOT EXISTS tasks(id INT, ts REAL, agent TEXT, description TEXT,
+                                     status TEXT, result TEXT);
     """)
     con.commit()
     con.close()
@@ -110,6 +114,15 @@ def month_spend():
     (total,) = con.execute("SELECT COALESCE(SUM(cost),0) FROM usage WHERE ts>=?", (start,)).fetchone()
     con.close()
     return float(total)
+
+
+def log_task(tid, agent, description, status, result):
+    """Background-task audit trail (one row per state change)."""
+    con = _c()
+    con.execute("INSERT INTO tasks VALUES(?,?,?,?,?,?)",
+                (tid, time.time(), agent, description[:500], status, result))
+    con.commit()
+    con.close()
 
 
 def log_address_decision(text, decision):
