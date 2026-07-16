@@ -1438,13 +1438,18 @@ class Component extends DCLogic {
         return {
           spShowPlayer: bridged && connected && active,
           spShowPrompt: !(bridged && connected && active),
-          spShowConnect: bridged && configured && !connected,
-          spBadge: !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE' : active ? 'SPOTIFY' : 'IDLE',
-          spDotColor: (bridged && connected) ? '#1db954' : 'rgba(var(--text-rgb),.4)',
+          // Offer Connect when not logged in, or when the token went stale (401).
+          spShowConnect: bridged && configured && (!connected || (sp && sp.error === 401)),
+          spBadge: !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE'
+            : (sp && sp.error) ? ('ERR ' + sp.error) : active ? 'SPOTIFY' : 'IDLE',
+          spDotColor: (bridged && connected && !(sp && sp.error)) ? '#1db954' : 'rgba(var(--text-rgb),.4)',
           spPromptTxt: !bridged ? 'open in the Dusk app for Spotify'
             : !configured ? 'add your Client ID in Dashboard/app/spotify.json, then restart'
             : !connected ? 'connect your Spotify account'
-            : 'nothing playing — start a track on any Spotify device',
+            : (sp && sp.error === 401) ? 'Spotify session expired — click Connect Spotify again'
+            : (sp && sp.error === 403) ? 'Spotify 403 — token scope issue; reconnect Spotify'
+            : (sp && sp.error) ? ('Spotify API error ' + sp.error + ' — is the same account playing?')
+            : 'nothing playing — play a track in the Spotify app on this account',
           spTrack: (sp && sp.track) || '—',
           spArtist: (sp && sp.artist) || '',
           spPlayIcon: (sp && sp.playing) ? '❚❚' : '▶',
