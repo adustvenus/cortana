@@ -4,38 +4,17 @@ First call opens a browser for Google login - run once interactively before daem
 import base64
 from email.mime.text import MIMEText
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from config import GMAIL_CREDS, GMAIL_TOKEN
-
-SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.compose",
-]
+from tools import google_auth
 
 _service = None
 
 
 def _svc():
     global _service
-    if _service:
-        return _service
-    creds = None
-    if GMAIL_TOKEN.exists():
-        creds = Credentials.from_authorized_user_file(str(GMAIL_TOKEN), SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not GMAIL_CREDS.exists():
-                raise RuntimeError("credentials.json missing - see SETUP.md step 6")
-            flow = InstalledAppFlow.from_client_secrets_file(str(GMAIL_CREDS), SCOPES)
-            creds = flow.run_local_server(port=0)
-        GMAIL_TOKEN.write_text(creds.to_json())
-    _service = build("gmail", "v1", credentials=creds)
+    if _service is None:
+        _service = build("gmail", "v1", credentials=google_auth.creds())
     return _service
 
 

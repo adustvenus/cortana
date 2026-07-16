@@ -267,14 +267,49 @@ def text_loop():
         sys.exit(state["exit"])
 
 
+def _calendar_loop():
+    """Refresh today's calendar events for the dashboard Agenda every 10 min.
+    Never triggers the interactive Google consent from here (that would pop a
+    browser unexpectedly) - if not connected yet, writes a helpful error and
+    keeps trying. Run `python main.py --google-auth` once to connect."""
+    import calendar_state
+    while state["exit"] is None:
+        try:
+            if not config.GMAIL_TOKEN.exists():
+                calendar_state.write_error("Google not connected - run: python main.py --google-auth")
+            else:
+                from tools import calendar_tool
+                calendar_state.write(calendar_tool.today_events())
+        except Exception as e:
+            calendar_state.write_error(e)
+        for _ in range(600):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
+
+
+def _google_auth():
+    """Force a fresh Google consent covering all scopes (Gmail + Calendar)."""
+    from tools import google_auth
+    config.GMAIL_TOKEN.unlink(missing_ok=True)
+    google_auth.creds()
+    print("Google connected (Gmail + Calendar). Token saved.")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", action="store_true", help="text mode (no mic/hotkeys)")
+    ap.add_argument("--google-auth", action="store_true",
+                    help="re-authorize Google (Gmail + Calendar) in a browser, then exit")
     args = ap.parse_args()
+    if args.google_auth:
+        _google_auth()
+        sys.exit(0)
     memory.init()
     speech.init(voice=not args.text,
                 quiet_gate=lambda: not state["busy"] and not state["capturing"]
                                    and not state["ptt"])
+    threading.Thread(target=_calendar_loop, daemon=True, name="calendar").start()
     if args.text:
         text_loop()
     else:

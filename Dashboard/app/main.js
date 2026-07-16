@@ -19,6 +19,7 @@ const { execFile } = require('child_process');
 
 const APP_DIR = __dirname;
 const PAGE = path.join(APP_DIR, '..', 'package', 'Dusk Dashboard.dc.html');
+const CALENDAR_FILE = path.join(APP_DIR, '..', '..', 'calendar_state.json');
 const ICON = path.join(APP_DIR, 'icons', 'dusk.png');
 const POLL_STATE_MS = 300;
 const POLL_SERVICE_MS = 2500;
@@ -314,6 +315,16 @@ if (!app.requestSingleInstanceLock()) {
       run('branch', ['rev-parse', '--abbrev-ref', 'HEAD'],
           (e, s) => s || 'unknown');
     });
+  });
+  // Today's calendar events, written by Cortana's calendar loop. Read-only.
+  ipcMain.handle('calendar:today', () => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(CALENDAR_FILE, 'utf8'));
+      return { events: Array.isArray(raw.events) ? raw.events : [],
+               error: typeof raw.error === 'string' ? raw.error : '' };
+    } catch (e) {
+      return { events: [], error: 'no calendar data yet' };
+    }
   });
   ipcMain.on('ui:open', showMain);
   ipcMain.on('ui:bubble', toBubble);
