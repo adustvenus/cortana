@@ -294,10 +294,6 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
-<<<<<<< HEAD
-  ipcMain.on('ui:open', () => showMain());
-  ipcMain.on('ui:bubble', () => toBubble(true));
-=======
 
   ipcMain.handle('git:status', () => {
     const REPO = path.join(os.homedir(), 'cortana');
@@ -320,7 +316,6 @@ if (!app.requestSingleInstanceLock()) {
   });
   ipcMain.on('ui:open', showMain);
   ipcMain.on('ui:bubble', toBubble);
->>>>>>> 9c472195 (dash: add GIT STATUS module — branch, clean/dirty, last 5 commits, 30s poll)
   ipcMain.on('ui:ctx', () => {
     Menu.buildFromTemplate([
       { label: 'Open dashboard', click: showMain },
