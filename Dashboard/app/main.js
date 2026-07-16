@@ -48,7 +48,7 @@ try {
 const serviceState = {};   // agentId -> 'active' | 'inactive' | 'failed' | 'unknown'
 
 function readAgent(a) {
-  let st = { state: 'offline', agent: '', detail: '', thoughts: [], ts: 0 };
+  let st = { state: 'offline', agent: '', detail: '', thoughts: [], ts: 0, mode: '' };
   try {
     const raw = JSON.parse(fs.readFileSync(a.stateFile, 'utf8'));
     if (raw && typeof raw === 'object') {
@@ -57,7 +57,8 @@ function readAgent(a) {
         agent: typeof raw.agent === 'string' ? raw.agent : '',
         detail: typeof raw.detail === 'string' ? raw.detail : '',
         thoughts: Array.isArray(raw.thoughts) ? raw.thoughts.slice(-6).map(String) : [],
-        ts: Number(raw.ts) || 0
+        ts: Number(raw.ts) || 0,
+        mode: typeof raw.mode === 'string' ? raw.mode : ''   // talking mode: ptt|wake|open
       };
     }
   } catch (e) { /* missing/corrupt file -> offline defaults */ }
@@ -70,7 +71,7 @@ function readAgent(a) {
   const staleCutoff = a.systemdUnit ? Math.max(a.staleAfterSec, 600) : a.staleAfterSec;
   return {
     id: a.id, name: a.name,
-    state: st.state, agent: st.agent, detail: st.detail, thoughts: st.thoughts,
+    state: st.state, agent: st.agent, detail: st.detail, thoughts: st.thoughts, mode: st.mode,
     ts: st.ts, stale: ageSec > staleCutoff,
     fresh: ageSec < 10,   // actively writing right now (e.g. run manually outside systemd)
     service: a.systemdUnit ? (serviceState[a.id] || 'unknown') : 'unknown'
