@@ -14,7 +14,7 @@ from pathlib import Path
 STATE_FILE = Path(__file__).resolve().parent / "hud_state.json"
 _MAX_THOUGHTS = 6
 
-_state = {"state": "idle", "agent": "", "detail": ""}
+_state = {"state": "idle", "agent": "", "detail": "", "mode": ""}
 _thoughts = []                 # rolling reasoning feed shown in the HUD
 _last_written = None           # last payload flushed to disk (minus timestamp)
 
@@ -43,10 +43,17 @@ def clear_thoughts():
     _write()
 
 
+def set_mode(mode):
+    """Broadcast the current talking mode (ptt|wake|open) for the dashboard."""
+    _state["mode"] = mode or ""
+    _write()
+
+
 def _write():
     global _last_written
     payload = {"state": _state["state"], "agent": _state["agent"],
-               "detail": _state["detail"], "thoughts": list(_thoughts)}
+               "detail": _state["detail"], "mode": _state["mode"],
+               "thoughts": list(_thoughts)}
     if payload == _last_written:
         return                 # nothing changed - skip the disk write
     _last_written = payload

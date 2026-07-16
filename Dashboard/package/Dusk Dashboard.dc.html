@@ -133,13 +133,17 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         <!-- ═══ WEATHER ═══ -->
         <sc-if value="{{ m.t_weather }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyle }}">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">WEATHER · DENVER</div>
+            <div style="display:flex;align-items:center;gap:.5rem">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">WEATHER · {{ wxPlace }}</span>
+              <span style="flex:1"></span>
+              <input value="{{ weatherInput }}" onInput="{{ wxOnInput }}" onKeyDown="{{ wxOnKey }}" placeholder="{{ wxZip }}" maxlength="5" inputmode="numeric" title="Enter a US ZIP and press Enter" style="width:3.6rem;text-align:right;background:transparent;border:none;border-bottom:1px solid rgba(var(--text-rgb),.2);outline:none;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.7)">
+            </div>
             <div style="display:flex;align-items:baseline;gap:.7rem;margin-top:.5rem">
-              <span style="font-size:3rem;font-weight:300;color:rgb(var(--text-rgb))">72°</span>
-              <span style="font-size:1rem;color:rgb(var(--accent-rgb))">Clear dusk</span>
+              <span style="font-size:3rem;font-weight:300;color:rgb(var(--text-rgb))">{{ wxTemp }}</span>
+              <span style="font-size:1rem;color:rgb(var(--accent-rgb))">{{ wxDesc }}</span>
             </div>
             <div style="display:flex;gap:1.1rem;margin-top:.7rem;font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgba(var(--text-rgb),.6)">
-              <span>H 84°</span><span>L 61°</span><span>WIND 6mph</span><span>UV 1</span>
+              <span>H {{ wxHi }}</span><span>L {{ wxLo }}</span><span>WIND {{ wxWind }}</span><span>UV {{ wxUv }}</span>
             </div>
           </div>
         </sc-if>
@@ -185,15 +189,25 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 
         <!-- ═══ TASKS ═══ -->
         <sc-if value="{{ m.t_tasks }}" hint-placeholder-val="{{ false }}">
-          <div style="{{ m.cardStyle }}">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">TASKS</div>
-            <div style="display:flex;flex-direction:column;gap:.65rem;margin-top:.7rem">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;flex-shrink:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">TASKS</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:rgba(var(--text-rgb),.4)">{{ taskCountTxt }}</span>
+            </div>
+            <div style="flex:1;overflow-y:auto;margin-top:.6rem;min-height:0;display:flex;flex-direction:column;gap:.6rem;-webkit-mask-image:linear-gradient(180deg,#000 92%,transparent);mask-image:linear-gradient(180deg,#000 92%,transparent)">
               <sc-for list="{{ taskItems }}" as="tsk" hint-placeholder-count="3">
-                <div onClick="{{ tsk.toggle }}" style="display:flex;gap:.65rem;align-items:center;cursor:pointer">
-                  <span style="{{ tsk.boxStyle }}"></span>
-                  <span style="{{ tsk.txtStyle }}">{{ tsk.t }}</span>
+                <div style="display:flex;gap:.6rem;align-items:center;group">
+                  <span onClick="{{ tsk.toggle }}" style="{{ tsk.boxStyle }}"></span>
+                  <span onClick="{{ tsk.toggle }}" style="{{ tsk.txtStyle }}">{{ tsk.t }}</span>
+                  <span style="flex:1"></span>
+                  <span onClick="{{ tsk.remove }}" title="Remove" style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:rgba(var(--text-rgb),.3);cursor:pointer;flex-shrink:0">✕</span>
                 </div>
               </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;padding-top:.5rem;border-top:1px solid rgba(var(--text-rgb),.12);flex-shrink:0">
+              <span onClick="{{ addTask }}" title="Add task" style="font-family:'JetBrains Mono',monospace;font-size:1.1rem;line-height:1;color:rgb(var(--accent-rgb));cursor:pointer;flex-shrink:0">+</span>
+              <input value="{{ taskInput }}" onInput="{{ taskOnInput }}" onKeyDown="{{ taskOnKey }}" placeholder="add a task…" style="flex:1;background:transparent;border:none;outline:none;font-family:'Space Grotesk',sans-serif;font-size:.9rem;color:rgb(var(--text-rgb))">
             </div>
           </div>
         </sc-if>
@@ -273,6 +287,22 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               </sc-for>
             </div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.35);flex-shrink:0;margin-top:.3rem">UPDATED {{ gitAge }}</div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ YOUTUBE ═══ -->
+        <sc-if value="{{ m.t_youtube }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">YOUTUBE</span>
+              <span style="flex:1"></span>
+              <input value="{{ youtubeInput }}" onInput="{{ ytOnInput }}" onKeyDown="{{ ytOnKey }}" placeholder="paste a link or ID…" style="flex:1;max-width:60%;background:transparent;border:none;border-bottom:1px solid rgba(var(--text-rgb),.2);outline:none;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:rgba(var(--text-rgb),.7)">
+            </div>
+            <div ref="{{ m.ytMount }}" style="flex:1;position:relative;margin-top:.5rem;min-height:0;border-radius:11px;overflow:hidden;background:rgba(20,16,32,.5)">
+              <sc-if value="{{ ytNoVideo }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.4)">paste a YouTube link above</div>
+              </sc-if>
+            </div>
           </div>
         </sc-if>
 
@@ -407,6 +437,15 @@ const COLOR_ROWS = [
   ['--accent-rgb', 'ACCENT'], ['--accent2-rgb', 'ROSE'], ['--accent3-rgb', 'LAVENDER'],
   ['--peach-rgb', 'HIGHLIGHT'], ['--orb-rgb', 'ORB'], ['--text-rgb', 'TEXT']
 ];
+// WMO weather interpretation codes -> short human labels (Open-Meteo current.weather_code)
+const WMO_DESC = {
+  0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast',
+  45: 'Fog', 48: 'Rime fog', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+  56: 'Freezing drizzle', 57: 'Freezing drizzle', 61: 'Light rain', 63: 'Rain', 65: 'Heavy rain',
+  66: 'Freezing rain', 67: 'Freezing rain', 71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
+  77: 'Snow grains', 80: 'Light showers', 81: 'Showers', 82: 'Violent showers',
+  85: 'Snow showers', 86: 'Snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm'
+};
 function rgbStr2hex(str) {
   const p = String(str).split(',').map(n => Math.max(0, Math.min(255, parseInt(n, 10) || 0)));
   return '#' + p.map(n => n.toString(16).padStart(2, '0')).join('');
@@ -434,7 +473,8 @@ const DEFS = {
   // 7 wide so it fits the gap beside a centered cortana module (which leaves
   // 7-8 wide side columns); 8 wide was too wide for the side AND too tall for
   // the top/bottom bands, so findFreeSlot rightly reported no room.
-  git:     { w: 7,  h: 5, label: 'GIT STATUS' }
+  git:     { w: 7,  h: 5, label: 'GIT STATUS' },
+  youtube: { w: 8,  h: 5, label: 'YOUTUBE' }
 };
 
 // Clean home board: just the AI status module, centered. Everything else is
@@ -581,12 +621,28 @@ class Component extends DCLogic {
         { s: 'NVDA',   v: 168.90,   c: 2.10, dec: 2 },
         { s: 'BTC',    v: 118204,   c: 0.6,  dec: 0 }
       ],
-      tasks: [
-        { t: 'Ship weekly report', done: true },
-        { t: 'Review dashboard mockups', done: false },
-        { t: 'Call HVAC — 3:30 PM', done: false },
-        { t: 'Backup NAS drive', done: false }
-      ],
+      tasks: (() => {
+        // Persisted task list: {id, t, done, doneAt}. doneAt (epoch ms) drives
+        // the 1-hour auto-remove. Falls back to a small seed on first run.
+        try {
+          const raw = localStorage.getItem('dusk.tasks.v1');
+          if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a; }
+        } catch (e) {}
+        return [
+          { id: 't1', t: 'Review dashboard mockups', done: false, doneAt: 0 },
+          { id: 't2', t: 'Call HVAC — 3:30 PM', done: false, doneAt: 0 }
+        ];
+      })(),
+      taskInput: '',
+      youtubeId: (() => {
+        try { return localStorage.getItem('dusk.youtube.v1') || ''; } catch (e) { return ''; }
+      })(),
+      youtubeInput: '',
+      weatherZip: (() => {
+        try { return localStorage.getItem('dusk.weather.v1') || '80202'; } catch (e) { return '80202'; }
+      })(),
+      weatherInput: '',
+      weatherData: null,   // {place, temp, desc, hi, lo, wind, uv} from last good poll
       logs: [
         { ts: '18:41:12', msg: 'weather.sync → OK · next poll 15m', warn: false },
         { ts: '18:41:58', msg: 'yfinance.tick → 5 symbols updated', warn: false },
@@ -657,6 +713,54 @@ class Component extends DCLogic {
     pollGit();
     this._gitPoll = setInterval(pollGit, 30000);
 
+    // ── Auto-remove completed tasks 1h after they were checked off ──
+    this._taskReap = setInterval(() => {
+      const cutoff = Date.now() - 3600000;
+      const keep = this.state.tasks.filter(t => !(t.done && t.doneAt && t.doneAt < cutoff));
+      if (keep.length !== this.state.tasks.length) {
+        this.setState({ tasks: keep }, () => this.persistTasks());
+      }
+    }, 60000);
+
+    // ── Weather: ZIP -> geocode (Zippopotam, no key) -> Open-Meteo (no key).
+    // Keeps the last good reading on failure; shows placeholder until first ok.
+    const pollWeather = async () => {
+      // Only hit the network when a weather module is actually on the board.
+      if (!this.state.modules.some(m => m.type === 'weather')) return;
+      const zip = (this.state.weatherZip || '').trim();
+      if (!/^\d{5}$/.test(zip)) return;
+      try {
+        const g = await fetch('https://api.zippopotam.us/us/' + zip);
+        if (!g.ok) throw new Error('zip');
+        const gj = await g.json();
+        const place = gj.places && gj.places[0];
+        if (!place) throw new Error('place');
+        const lat = place.latitude, lon = place.longitude;
+        const name = (place['place name'] || '') + ', ' + (place['state abbreviation'] || '');
+        const w = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat +
+          '&longitude=' + lon + '&current=temperature_2m,weather_code,wind_speed_10m' +
+          '&daily=temperature_2m_max,temperature_2m_min,uv_index_max&temperature_unit=fahrenheit' +
+          '&wind_speed_unit=mph&timezone=auto&forecast_days=1');
+        if (!w.ok) throw new Error('meteo');
+        const wj = await w.json();
+        const cur = wj.current || {}, day = wj.daily || {};
+        this.setState({ weatherData: {
+          place: name.toUpperCase(),
+          temp: Math.round(cur.temperature_2m),
+          desc: WMO_DESC[cur.weather_code] || '—',
+          hi: Math.round((day.temperature_2m_max || [])[0]),
+          lo: Math.round((day.temperature_2m_min || [])[0]),
+          wind: Math.round(cur.wind_speed_10m),
+          uv: Math.round((day.uv_index_max || [])[0])
+        } });
+      } catch (e) { /* keep last good */ }
+    };
+    this._pollWeather = pollWeather;
+    pollWeather();
+    this._weatherPoll = setInterval(pollWeather, 900000);   // 15 min
+
+    this._syncYoutube();   // mount any youtube iframe present at first paint
+
     window.addEventListener('keydown', this._key);
 
     // ── AI bridge: live agent status pushed by the Dusk app (Electron preload).
@@ -723,6 +827,7 @@ class Component extends DCLogic {
 
   componentWillUnmount() {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
+    clearInterval(this._taskReap); clearInterval(this._weatherPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
@@ -735,6 +840,57 @@ class Component extends DCLogic {
       localStorage.setItem(LS_KEY, JSON.stringify(modules.map(m => ({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface: m.surface || 'light', link: m.link || null, img: m.img || undefined }))));
     } catch (e) { this.showToast('SAVE FAILED — STORAGE FULL (LARGE IMAGES?)'); }
   }
+
+  // ── TASKS module helpers (own localStorage key, small data only) ──
+  persistTasks() {
+    try { localStorage.setItem('dusk.tasks.v1', JSON.stringify(this.state.tasks)); } catch (e) {}
+  }
+  _addTask() {
+    const txt = (this.state.taskInput || '').trim();
+    if (!txt) return;
+    const id = 'u' + this.state.nextId;
+    const tasks = [...this.state.tasks, { id, t: txt.slice(0, 120), done: false, doneAt: 0 }];
+    this.setState({ tasks, taskInput: '', nextId: this.state.nextId + 1 }, () => this.persistTasks());
+  }
+
+  // ── YOUTUBE: accept a full URL (watch?v=, youtu.be/, /embed/, /shorts/) or a
+  // bare 11-char video id; store just the id.
+  _setYoutube() {
+    const raw = (this.state.youtubeInput || '').trim();
+    if (!raw) return;
+    let id = '';
+    const m = raw.match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (m) id = m[1];
+    else if (/^[A-Za-z0-9_-]{11}$/.test(raw)) id = raw;
+    if (!id) { this.showToast('COULDN’T READ THAT YOUTUBE LINK'); return; }
+    try { localStorage.setItem('dusk.youtube.v1', id); } catch (e) {}
+    this.setState({ youtubeId: id, youtubeInput: '' });
+  }
+  // Reconcile the imperatively-mounted YouTube iframe(s). Only (re)builds when
+  // the src changes, so a state tick doesn't restart the video; toggles
+  // pointerEvents so the iframe doesn't swallow drag events in edit mode.
+  _syncYoutube() {
+    const els = this._ytEls || {};
+    const id = this.state.youtubeId;
+    const src = id ? ('https://www.youtube-nocookie.com/embed/' + id + '?rel=0&modestbranding=1') : '';
+    for (const el of Object.values(els)) {
+      if (!el) continue;
+      let f = el.querySelector('iframe');
+      if (!src) { if (f) f.remove(); continue; }
+      if (!f || el._ytSrc !== src) {
+        if (f) f.remove();
+        f = document.createElement('iframe');
+        f.src = src;
+        f.allow = 'encrypted-media;picture-in-picture';
+        f.allowFullscreen = true;
+        f.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none';
+        el.appendChild(f);
+        el._ytSrc = src;
+      }
+      f.style.pointerEvents = this.state.edit ? 'none' : 'auto';
+    }
+  }
+  componentDidUpdate() { this._syncYoutube(); }
 
   groupOf(m) {
     if (!m.link) return [m];
@@ -1014,6 +1170,15 @@ class Component extends DCLogic {
         t_music: m.type === 'music', t_tasks: m.type === 'tasks',
         t_agenda: m.type === 'agenda', t_image: m.type === 'image', t_chart: m.type === 'chart',
         t_console: m.type === 'console', t_cortana: m.type === 'cortana',
+        t_youtube: m.type === 'youtube',
+        // The iframe is created imperatively (see _syncYoutube) - a raw
+        // <iframe src="{{ }}"> gets pre-fetched by the browser with the literal
+        // template hole before the runtime substitutes it (MODULES.md §6). The
+        // ref hands us the mount point; _syncYoutube manages the child iframe.
+        ytMount: (el) => {
+          const els = this._ytEls || (this._ytEls = {});
+          if (el) els[m.id] = el; else delete els[m.id];
+        },
         t_git: m.type === 'git',
         aiMenuOn: s.aiMenu === m.id,
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
@@ -1188,16 +1353,54 @@ class Component extends DCLogic {
       musicTime: Math.floor(s.progress / 60) + ':' + p2(s.progress % 60),
       uptimeTxt: ud + 'D ' + p2(uh) + 'H ' + p2(um) + 'M',
       queueTxt: openTasks + ' TASKS QUEUED',
-      taskItems: s.tasks.map((t, i) => ({
+      taskCountTxt: (() => {
+        const open = s.tasks.filter(t => !t.done).length;
+        return open + (open === 1 ? ' OPEN' : ' OPEN');
+      })(),
+      taskItems: s.tasks.map((t) => ({
         t: t.t,
-        toggle: () => this.setState(x => ({ tasks: x.tasks.map((tt, j) => j === i ? { ...tt, done: !tt.done } : tt) })),
+        // Marking done stamps doneAt (epoch ms) -> the mount interval removes
+        // it ~1h later. Unmarking clears the stamp so it sticks around again.
+        toggle: () => this.setState(x => ({
+          tasks: x.tasks.map(tt => tt.id === t.id
+            ? { ...tt, done: !tt.done, doneAt: !tt.done ? Date.now() : 0 } : tt)
+        }), () => this.persistTasks()),
+        remove: () => this.setState(x => ({ tasks: x.tasks.filter(tt => tt.id !== t.id) }),
+                                    () => this.persistTasks()),
         boxStyle: t.done
-          ? { width: '.9rem', height: '.9rem', borderRadius: 4, border: '1px solid rgb(var(--accent-rgb))', background: 'rgba(var(--accent-rgb),.5)', flexShrink: 0 }
-          : { width: '.9rem', height: '.9rem', borderRadius: 4, border: '1px solid rgba(255,255,255,.4)', flexShrink: 0 },
+          ? { width: '.9rem', height: '.9rem', borderRadius: 4, border: '1px solid rgb(var(--accent-rgb))', background: 'rgba(var(--accent-rgb),.5)', flexShrink: 0, cursor: 'pointer' }
+          : { width: '.9rem', height: '.9rem', borderRadius: 4, border: '1px solid rgba(255,255,255,.4)', flexShrink: 0, cursor: 'pointer' },
         txtStyle: t.done
-          ? { fontSize: '.95rem', color: 'rgba(var(--text-rgb),.45)', textDecoration: 'line-through' }
-          : { fontSize: '.95rem', color: 'rgb(var(--text-rgb))' }
+          ? { fontSize: '.95rem', color: 'rgba(var(--text-rgb),.45)', textDecoration: 'line-through', cursor: 'pointer' }
+          : { fontSize: '.95rem', color: 'rgb(var(--text-rgb))', cursor: 'pointer' }
       })),
+      taskOnInput: (e) => this.setState({ taskInput: e.target.value }),
+      taskOnKey: (e) => { if (e.key === 'Enter') this._addTask(); },
+      addTask: () => this._addTask(),
+
+      // ── WEATHER ──
+      wxPlace: (s.weatherData && s.weatherData.place) || s.weatherZip || '—',
+      wxZip: s.weatherZip || 'ZIP',
+      wxTemp: s.weatherData ? (s.weatherData.temp + '°') : '—',
+      wxDesc: s.weatherData ? s.weatherData.desc : (window.duskBridge ? 'loading…' : 'offline'),
+      wxHi: s.weatherData ? (s.weatherData.hi + '°') : '—',
+      wxLo: s.weatherData ? (s.weatherData.lo + '°') : '—',
+      wxWind: s.weatherData ? (s.weatherData.wind + 'mph') : '—',
+      wxUv: s.weatherData ? s.weatherData.uv : '—',
+      wxOnInput: (e) => this.setState({ weatherInput: e.target.value.replace(/\D/g, '').slice(0, 5) }),
+      wxOnKey: (e) => {
+        if (e.key !== 'Enter') return;
+        const zip = (this.state.weatherInput || '').trim();
+        if (!/^\d{5}$/.test(zip)) { this.showToast('ENTER A 5-DIGIT ZIP'); return; }
+        try { localStorage.setItem('dusk.weather.v1', zip); } catch (err) {}
+        this.setState({ weatherZip: zip, weatherInput: '', weatherData: null },
+                      () => this._pollWeather && this._pollWeather());
+      },
+
+      // ── YOUTUBE (iframe mounted imperatively in _syncYoutube) ──
+      ytNoVideo: !s.youtubeId,
+      ytOnInput: (e) => this.setState({ youtubeInput: e.target.value }),
+      ytOnKey: (e) => { if (e.key === 'Enter') this._setYoutube(); },
       chartBars: chartHeights.map((h, i) => ({
         style: { flex: 1, height: h + '%', borderRadius: '5px 5px 2px 2px', background: `linear-gradient(180deg,${chartCols[i]},transparent)` }
       })),
@@ -1213,7 +1416,7 @@ class Component extends DCLogic {
       gitDotColor: (() => { const g = s.gitData; if (!g) return 'rgba(var(--text-rgb),.25)'; return g.status.clean ? '#9be8b8' : 'rgb(var(--accent2-rgb))'; })(),
       gitCommits: (() => { const g = s.gitData; return g && g.log.length ? g.log : [{hash:'———', msg:'no data yet'}]; })(),
       gitAge: s.gitAge || '—',
-      addables: ['clock', 'date', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git'].map(t => ({
+      addables: ['clock', 'date', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),
@@ -1241,6 +1444,10 @@ class Component extends DCLogic {
         // fallback covers unknown/custom states so the animation stays valid CSS
         const speed = ({ idle: 4.5, listening: 2.2, thinking: 3, working: 3, speaking: 1.2 })[aiState] || 3.5;
         const name = (ai && ai.name) || 'CORTANA';
+        // Talking mode (ptt/wake/open) reported by Cortana in hud_state.json.
+        // Shown after the state with a dot: "CORTANA · IDLE · PTT". Only when live.
+        const MODE_LABEL = { ptt: 'PTT', wake: 'WAKE', open: 'CONVO' };
+        const modeTxt = (running && ai && MODE_LABEL[ai.mode]) ? (' · ' + MODE_LABEL[ai.mode]) : '';
         const thoughts = (ai && Array.isArray(ai.thoughts)) ? ai.thoughts.slice(-3) : [];
         const send = (id, action, label) => (e) => {
           e.stopPropagation(); e.preventDefault();
@@ -1272,7 +1479,7 @@ class Component extends DCLogic {
         return {
           aiDotStyle: dot(aiState, running),
           aiLabelColor: running ? `rgb(${rgb})` : 'rgba(240,80,90,.9)',
-          aiStatusTxt: name + ' \u00b7 ' + aiState.toUpperCase(),
+          aiStatusTxt: name + ' \u00b7 ' + aiState.toUpperCase() + modeTxt,
           aiServiceTxt: !bridged ? 'NO BRIDGE'
             : (!ai ? 'NO AGENTS'
               : (ai.fresh && ai.service !== 'active' ? 'MANUAL RUN'
