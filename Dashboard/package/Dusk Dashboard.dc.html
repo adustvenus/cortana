@@ -136,7 +136,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <div style="display:flex;align-items:center;gap:.5rem">
               <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">WEATHER · {{ wxPlace }}</span>
               <span style="flex:1"></span>
-              <input value="{{ weatherInput }}" onInput="{{ wxOnInput }}" onKeyDown="{{ wxOnKey }}" placeholder="{{ wxZip }}" maxlength="5" inputmode="numeric" title="Enter a US ZIP and press Enter" style="width:3.6rem;text-align:right;background:transparent;border:none;border-bottom:1px solid rgba(var(--text-rgb),.2);outline:none;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.7)">
+              <input value="{{ weatherInput }}" onChange="{{ wxOnInput }}" onKeyDown="{{ wxOnKey }}" placeholder="{{ wxZip }}" maxlength="5" inputmode="numeric" title="Enter a US ZIP and press Enter" style="width:3.6rem;text-align:right;background:transparent;border:none;border-bottom:1px solid rgba(var(--text-rgb),.2);outline:none;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.7)">
             </div>
             <div style="display:flex;align-items:baseline;gap:.7rem;margin-top:.5rem">
               <span style="font-size:3rem;font-weight:300;color:rgb(var(--text-rgb))">{{ wxTemp }}</span>
@@ -224,7 +224,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             </div>
             <div style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;padding-top:.5rem;border-top:1px solid rgba(var(--text-rgb),.12);flex-shrink:0">
               <span onClick="{{ addTask }}" title="Add task" style="font-family:'JetBrains Mono',monospace;font-size:1.1rem;line-height:1;color:rgb(var(--accent-rgb));cursor:pointer;flex-shrink:0">+</span>
-              <input value="{{ taskInput }}" onInput="{{ taskOnInput }}" onKeyDown="{{ taskOnKey }}" placeholder="add a task…" style="flex:1;background:transparent;border:none;outline:none;font-family:'Space Grotesk',sans-serif;font-size:.9rem;color:rgb(var(--text-rgb))">
+              <input value="{{ taskInput }}" onChange="{{ taskOnInput }}" onKeyDown="{{ taskOnKey }}" placeholder="add a task…" style="flex:1;background:transparent;border:none;outline:none;font-family:'Space Grotesk',sans-serif;font-size:.9rem;color:rgb(var(--text-rgb))">
             </div>
           </div>
         </sc-if>
@@ -316,7 +316,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
               <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">YOUTUBE</span>
               <span style="flex:1"></span>
-              <input value="{{ youtubeInput }}" onInput="{{ ytOnInput }}" onKeyDown="{{ ytOnKey }}" placeholder="paste a link or ID…" style="flex:1;max-width:60%;background:transparent;border:none;border-bottom:1px solid rgba(var(--text-rgb),.2);outline:none;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:rgba(var(--text-rgb),.7)">
+              <input value="{{ youtubeInput }}" onChange="{{ ytOnInput }}" onKeyDown="{{ ytOnKey }}" placeholder="paste a link or ID…" style="flex:1;max-width:60%;background:transparent;border:none;border-bottom:1px solid rgba(var(--text-rgb),.2);outline:none;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:rgba(var(--text-rgb),.7)">
             </div>
             <div ref="{{ m.ytMount }}" style="flex:1;position:relative;margin-top:.5rem;min-height:0;border-radius:11px;overflow:hidden;background:rgba(20,16,32,.5)">
               <sc-if value="{{ ytNoVideo }}" hint-placeholder-val="{{ false }}">
@@ -1488,6 +1488,10 @@ class Component extends DCLogic {
           ? { fontSize: '.95rem', color: 'rgba(var(--text-rgb),.45)', textDecoration: 'line-through', cursor: 'pointer' }
           : { fontSize: '.95rem', color: 'rgb(var(--text-rgb))', cursor: 'pointer' }
       })),
+      // Controlled-input values MUST be returned here - the template resolves
+      // {{ x }} against renderVals output, not state, so a value living only in
+      // state renders as empty and the field behaves read-only.
+      taskInput: s.taskInput,
       taskOnInput: (e) => this.setState({ taskInput: e.target.value }),
       taskOnKey: (e) => { if (e.key === 'Enter') this._addTask(); },
       addTask: () => this._addTask(),
@@ -1501,6 +1505,7 @@ class Component extends DCLogic {
       wxLo: s.weatherData ? (s.weatherData.lo + '°') : '—',
       wxWind: s.weatherData ? (s.weatherData.wind + 'mph') : '—',
       wxUv: s.weatherData ? s.weatherData.uv : '—',
+      weatherInput: s.weatherInput,
       wxOnInput: (e) => this.setState({ weatherInput: e.target.value.replace(/\D/g, '').slice(0, 5) }),
       wxOnKey: (e) => {
         if (e.key !== 'Enter') return;
@@ -1535,6 +1540,7 @@ class Component extends DCLogic {
 
       // ── YOUTUBE (iframe mounted imperatively in _syncYoutube) ──
       ytNoVideo: !s.youtubeId,
+      youtubeInput: s.youtubeInput,
       ytOnInput: (e) => this.setState({ youtubeInput: e.target.value }),
       ytOnKey: (e) => { if (e.key === 'Enter') this._setYoutube(); },
       chartBars: chartHeights.map((h, i) => ({
