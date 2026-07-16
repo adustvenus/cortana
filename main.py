@@ -118,6 +118,10 @@ def process(wav_path):
             _do_system(cmd)
         hud_state.set_state("idle")
         return
+    # Any ordinary utterance disarms a pending restart/shutdown confirm, so a
+    # later 'restart' re-runs the warn-once flow instead of firing silently
+    # (e.g. 'restart' -> warned -> 'never mind' -> 'restart' should warn again).
+    _pending_sys["kind"] = None
     state["busy"] = True
     try:
         reply = orchestrator.handle(text)
@@ -177,23 +181,37 @@ def voice_loop():
     hud_state.set_state("idle")
     _startup_announce()
     print(f"Cortana up. Mode: {state['mode']}. F9 hold = talk. F10 = cycle mode. Ctrl+C = quit.")
+    # Abort a capture the instant Cortana starts speaking (half-duplex: she must
+    # not record her own TTS - which can begin mid-capture now that processing is
+    # async) or when an exit is pending (so restart/shutdown isn't stuck waiting
+    # up to 30s for a segment to finish).
+    abort = lambda: speech.speaking() or state["exit"] is not None
     while state["exit"] is None:
-        if speech.speaking():          # don't listen to our own voice
+        if speech.speaking():          # don't even start listening while speaking
             time.sleep(0.05)
             continue
-        if state["mode"] == "ptt":
-            if state["ptt"]:
-                p = mic.record_while(lambda: state["ptt"] and not speech.speaking())
+        try:
+            if state["mode"] == "ptt":
+                if state["ptt"]:
+                    p = mic.record_while(lambda: state["ptt"], should_abort=abort)
+                    if p:
+                        utterances.put(p)
+                else:
+                    time.sleep(0.05)
+            else:
+                p = mic.listen_segment(
+                    on_speech_start=lambda: state.__setitem__("capturing", True),
+                    should_abort=abort)
+                state["capturing"] = False
                 if p:
                     utterances.put(p)
-            else:
-                time.sleep(0.05)
-        else:
-            p = mic.listen_segment(
-                on_speech_start=lambda: state.__setitem__("capturing", True))
+        except Exception as e:
+            # A transient audio-device error (USB hiccup, PipeWire suspend, unplug)
+            # must not kill the main thread - that would take the whole process and
+            # every in-flight background task with it. Log, settle, retry.
+            print("[main] mic error, recovering:", e)
             state["capturing"] = False
-            if p:
-                utterances.put(p)
+            time.sleep(0.5)
     speech.flush(timeout=15)
     sys.exit(state["exit"])
 
