@@ -43,8 +43,10 @@ async function exchangeCode(code) {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   if (!r.ok) throw new Error('token exchange failed: ' + r.status);
   const j = await r.json();
+  // Persist the granted scope so we can tell a scope-shortfall from an
+  // allowlist/Premium 403 at a glance.
   saveToken({ access_token: j.access_token, refresh_token: j.refresh_token,
-              expires_at: Date.now() + j.expires_in * 1000 });
+              scope: j.scope || '', expires_at: Date.now() + j.expires_in * 1000 });
 }
 
 async function refreshToken() {
@@ -80,7 +82,10 @@ function login() {
     const challenge = b64url(crypto.createHash('sha256').update(pkceVerifier).digest());
     const authUrl = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
       client_id: clientId(), response_type: 'code', redirect_uri: REDIRECT_URI,
-      code_challenge_method: 'S256', code_challenge: challenge, scope: SCOPES });
+      code_challenge_method: 'S256', code_challenge: challenge, scope: SCOPES,
+      // Force the consent screen so scopes are always freshly granted - without
+      // this Spotify silently reuses a prior grant, which can lack our scopes.
+      show_dialog: 'true' });
 
     let settled = false;
     const finish = (r) => { if (!settled) { settled = true; resolve(r); } };
@@ -131,25 +136,35 @@ function parsePlayback(j) {
   };
 }
 
+async function errBody(r) {
+  // Spotify error bodies carry the real reason: {"error":{"status,message,reason"}}
+  try { const j = await r.json(); return (j && j.error && (j.error.message || j.error.reason)) || ''; }
+  catch (e) { return ''; }
+}
+
 async function state() {
   if (!configured()) return { configured: false, connected: false };
+  const t = loadToken();
   const at = await accessToken();
   if (!at) return { configured: true, connected: false };
   const H = { Authorization: 'Bearer ' + at };
+  const grantedScope = (t && t.scope) || '';
   try {
     // /me/player is authoritative but returns 204 when no device is "active"
     // in the API's view - which happens even while playing on some devices.
     // Fall back to /me/player/currently-playing, which reports across devices.
     let r = await fetch('https://api.spotify.com/v1/me/player', { headers: H });
     if (r.ok && r.status !== 204) return parsePlayback(await r.json());
-    if (r.status !== 204 && !r.ok) return { configured: true, connected: true, error: r.status };
+    if (r.status !== 204 && !r.ok)
+      return { configured: true, connected: true, error: r.status, errorMsg: await errBody(r), grantedScope };
     const r2 = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: H });
-    if (r2.status === 204) return { configured: true, connected: true, active: false, playing: false };
-    if (!r2.ok) return { configured: true, connected: true, error: r2.status };
+    if (r2.status === 204) return { configured: true, connected: true, active: false, playing: false, grantedScope };
+    if (!r2.ok)
+      return { configured: true, connected: true, error: r2.status, errorMsg: await errBody(r2), grantedScope };
     const j2 = await r2.json();
-    if (!j2 || !j2.item) return { configured: true, connected: true, active: false, playing: false };
+    if (!j2 || !j2.item) return { configured: true, connected: true, active: false, playing: false, grantedScope };
     return parsePlayback(j2);
-  } catch (e) { return { configured: true, connected: true, error: String(e.message) }; }
+  } catch (e) { return { configured: true, connected: true, error: String(e.message), grantedScope }; }
 }
 
 async function control(action) {
