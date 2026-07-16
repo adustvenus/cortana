@@ -166,23 +166,40 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           </div>
         </sc-if>
 
-        <!-- ═══ MUSIC ═══ -->
+        <!-- ═══ MUSIC (Spotify) ═══ -->
         <sc-if value="{{ m.t_music }}" hint-placeholder-val="{{ false }}">
-          <div style="{{ m.cardStyle }}">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">NOW PLAYING</div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.5rem">
-              <div>
-                <div style="font-size:1.05rem;font-weight:600;color:rgb(var(--text-rgb))">Nightfall Divide</div>
-                <div style="font-size:.82rem;color:rgba(var(--text-rgb),.55)">Hollow Coves</div>
-              </div>
-              <div style="display:flex;gap:.9rem;align-items:center;color:rgb(var(--text-rgb));font-size:1rem">
-                <span style="cursor:pointer;opacity:.8">⏮</span>
-                <span onClick="{{ togglePlay }}" style="width:2.2rem;height:2.2rem;border-radius:50%;background:rgba(var(--accent-rgb),.25);border:1px solid rgba(var(--accent-rgb),.6);display:flex;align-items:center;justify-content:center;cursor:pointer">{{ playIcon }}</span>
-                <span style="cursor:pointer;opacity:.8">⏭</span>
-              </div>
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">NOW PLAYING</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.14em;color:{{ spDotColor }}">{{ spBadge }}</span>
             </div>
-            <div style="margin-top:.8rem;height:4px;border-radius:2px;background:rgba(255,255,255,.14)"><div style="{{ musicBar }}"></div></div>
-            <div style="margin-top:.4rem;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.5);text-align:right">{{ musicTime }} / 4:26</div>
+            <!-- connected + playing: art, meta, transport, progress -->
+            <sc-if value="{{ spShowPlayer }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:1;display:flex;gap:.9rem;align-items:center;min-height:0;margin-top:.6rem">
+                <div style="{{ m.spArtStyle }}"></div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:1.05rem;font-weight:600;color:rgb(var(--text-rgb));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ spTrack }}</div>
+                  <div style="font-size:.82rem;color:rgba(var(--text-rgb),.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ spArtist }}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:1.2rem;align-items:center;justify-content:center;margin-top:.5rem;flex-shrink:0">
+                <span onClick="{{ spPrev }}" title="Previous" style="{{ m.spBtnSide }}">⏮</span>
+                <span onClick="{{ spToggle }}" title="Play / pause" style="{{ m.spBtnMain }}">{{ spPlayIcon }}</span>
+                <span onClick="{{ spNext }}" title="Next" style="{{ m.spBtnSide }}">⏭</span>
+              </div>
+              <div style="margin-top:.7rem;height:4px;border-radius:2px;background:rgba(255,255,255,.14);flex-shrink:0"><div style="{{ spBar }}"></div></div>
+              <div style="margin-top:.4rem;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.5);display:flex;justify-content:space-between;flex-shrink:0"><span>{{ spElapsed }}</span><span>{{ spTotal }}</span></div>
+            </sc-if>
+            <!-- not connected / not configured / idle: a centered prompt -->
+            <sc-if value="{{ spShowPrompt }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8rem;min-height:0">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.5);text-align:center;padding:0 1rem">{{ spPromptTxt }}</div>
+                <sc-if value="{{ spShowConnect }}" hint-placeholder-val="{{ false }}">
+                  <span onClick="{{ spLogin }}" style="padding:.5rem 1.4rem;border-radius:999px;border:1px solid rgba(var(--accent-rgb),.6);background:rgba(var(--accent-rgb),.18);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.12em;color:rgb(var(--accent-rgb));cursor:pointer">CONNECT SPOTIFY</span>
+                </sc-if>
+              </div>
+            </sc-if>
           </div>
         </sc-if>
 
@@ -466,7 +483,7 @@ const DEFS = {
   weather: { w: 6,  h: 4, label: 'WEATHER' },
   cpu:     { w: 6,  h: 2, label: 'CPU' },
   ram:     { w: 6,  h: 2, label: 'RAM' },
-  music:   { w: 6,  h: 3, label: 'MUSIC' },
+  music:   { w: 7,  h: 4, label: 'MUSIC' },
   tasks:   { w: 6,  h: 4, label: 'TASKS' },
   agenda:  { w: 6,  h: 4, label: 'AGENDA' },
   image:   { w: 6,  h: 3, label: 'IMAGE' },
@@ -657,6 +674,8 @@ class Component extends DCLogic {
       gitData: null,       // last git:status response from main process
       gitAge: '—',         // HH:MM of last successful git poll
       calData: null,       // {events, error} from Cortana's calendar loop
+      spotify: null,       // Spotify playback state from the bridge
+      spotifyBusy: false,  // debounce a control action mid-flight
       nextId: 100
     };
   })();
@@ -728,6 +747,20 @@ class Component extends DCLogic {
     };
     pollCal();
     this._calPoll = setInterval(pollCal, 60000);
+
+    // ── Spotify (Music module): poll current playback ──
+    const pollSpotify = async () => {
+      if (!this.state.modules.some(m => m.type === 'music')) return;
+      if (this.state.spotifyBusy) return;   // don't fight an in-flight control action
+      if (!window.duskBridge || !window.duskBridge.spotify) return;
+      try {
+        const st = await window.duskBridge.spotify.state();
+        if (st && typeof st === 'object') this.setState({ spotify: st });
+      } catch (e) {}
+    };
+    pollSpotify();
+    this._spotifyPoll = setInterval(pollSpotify, 3000);
+    this._pollSpotify = pollSpotify;
 
     // ── Auto-remove completed tasks 1h after they were checked off ──
     this._taskReap = setInterval(() => {
@@ -843,7 +876,7 @@ class Component extends DCLogic {
 
   componentWillUnmount() {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
-    clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll);
+    clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearInterval(this._spotifyPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
@@ -1195,6 +1228,21 @@ class Component extends DCLogic {
           const els = this._ytEls || (this._ytEls = {});
           if (el) els[m.id] = el; else delete els[m.id];
         },
+        // Music (Spotify) per-module styles: album art + transport buttons.
+        spArtStyle: {
+          width: '3.4rem', height: '3.4rem', flexShrink: 0, borderRadius: 8,
+          backgroundImage: (s.spotify && s.spotify.art) ? `url("${s.spotify.art}")` : 'none',
+          backgroundSize: 'cover', backgroundPosition: 'center',
+          background: (s.spotify && s.spotify.art) ? undefined : 'rgba(255,255,255,.08)',
+          boxShadow: '0 4px 14px rgba(20,16,40,.35)'
+        },
+        spBtnSide: { fontSize: '1.15rem', color: 'rgba(var(--text-rgb),.75)', cursor: 'pointer', userSelect: 'none' },
+        spBtnMain: {
+          width: '2.7rem', height: '2.7rem', borderRadius: '50%', flexShrink: 0,
+          background: 'rgba(var(--accent-rgb),.22)', border: '1px solid rgba(var(--accent-rgb),.65)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          color: 'rgb(var(--accent-rgb))', fontSize: '.95rem', userSelect: 'none'
+        },
         t_git: m.type === 'git',
         aiMenuOn: s.aiMenu === m.id,
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
@@ -1363,10 +1411,60 @@ class Component extends DCLogic {
       memTxt: (s.mem / 100 * 32).toFixed(1) + ' / 32 GB',
       cpuBar: { width: Math.round(s.cpu) + '%', height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,rgb(var(--accent-rgb)),rgb(var(--accent2-rgb)))', transition: 'width 1s ease' },
       memBar: { width: Math.round(s.mem) + '%', height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,rgb(var(--accent3-rgb)),rgb(var(--accent2-rgb)))', transition: 'width 1s ease' },
-      togglePlay: () => this.setState(x => ({ playing: !x.playing })),
-      playIcon: s.playing ? '❚❚' : '▶',
-      musicBar: { width: (s.progress / 266 * 100) + '%', height: '100%', borderRadius: 2, background: 'rgb(var(--accent-rgb))', transition: 'width 1s linear' },
-      musicTime: Math.floor(s.progress / 60) + ':' + p2(s.progress % 60),
+      // ── MUSIC (Spotify) ──
+      ...(() => {
+        const sp = s.spotify;
+        const bridged = !!(window.duskBridge && window.duskBridge.spotify);
+        const configured = sp ? sp.configured !== false : true;
+        const connected = !!(sp && sp.connected);
+        const active = !!(sp && sp.active);
+        const ms = (n) => { n = Math.max(0, Math.floor((n || 0) / 1000)); return Math.floor(n / 60) + ':' + p2(n % 60); };
+        const doControl = (action) => () => {
+          if (!bridged) return;
+          this.setState({ spotifyBusy: true });
+          // optimistic play/pause flip so the icon responds instantly
+          if (action === 'toggle' && sp) {
+            const want = !sp.playing;
+            this.setState({ spotify: { ...sp, playing: want } });
+            window.duskBridge.spotify.control(want ? 'play' : 'pause')
+              .then(r => { if (r && !r.ok && r.error) this.showToast(String(r.error).toUpperCase()); })
+              .finally(() => { this.setState({ spotifyBusy: false }); this._pollSpotify && setTimeout(this._pollSpotify, 350); });
+            return;
+          }
+          window.duskBridge.spotify.control(action)
+            .then(r => { if (r && !r.ok && r.error) this.showToast(String(r.error).toUpperCase()); })
+            .finally(() => { this.setState({ spotifyBusy: false }); this._pollSpotify && setTimeout(this._pollSpotify, 350); });
+        };
+        return {
+          spShowPlayer: bridged && connected && active,
+          spShowPrompt: !(bridged && connected && active),
+          spShowConnect: bridged && configured && !connected,
+          spBadge: !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE' : active ? 'SPOTIFY' : 'IDLE',
+          spDotColor: (bridged && connected) ? '#1db954' : 'rgba(var(--text-rgb),.4)',
+          spPromptTxt: !bridged ? 'open in the Dusk app for Spotify'
+            : !configured ? 'add your Client ID in Dashboard/app/spotify.json, then restart'
+            : !connected ? 'connect your Spotify account'
+            : 'nothing playing — start a track on any Spotify device',
+          spTrack: (sp && sp.track) || '—',
+          spArtist: (sp && sp.artist) || '',
+          spPlayIcon: (sp && sp.playing) ? '❚❚' : '▶',
+          spBar: { width: (sp && sp.duration ? Math.min(100, sp.progress / sp.duration * 100) : 0) + '%',
+                   height: '100%', borderRadius: 2, background: 'rgb(var(--accent-rgb))', transition: 'width .4s linear' },
+          spElapsed: ms(sp && sp.progress),
+          spTotal: ms(sp && sp.duration),
+          spToggle: doControl('toggle'),
+          spPrev: doControl('previous'),
+          spNext: doControl('next'),
+          spLogin: () => {
+            if (!bridged) return;
+            this.showToast('OPENING SPOTIFY LOGIN…');
+            window.duskBridge.spotify.login().then(r => {
+              if (r && r.ok) { this.showToast('SPOTIFY CONNECTED'); this._pollSpotify && this._pollSpotify(); }
+              else this.showToast('SPOTIFY: ' + String((r && r.error) || 'failed').toUpperCase());
+            });
+          }
+        };
+      })(),
       uptimeTxt: ud + 'D ' + p2(uh) + 'H ' + p2(um) + 'M',
       queueTxt: openTasks + ' TASKS QUEUED',
       taskCountTxt: (() => {
