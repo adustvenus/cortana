@@ -430,14 +430,20 @@ const DEFS = {
   image:   { w: 6,  h: 3, label: 'IMAGE' },
   chart:   { w: 6,  h: 3, label: 'CHART' },
   console: { w: 24, h: 3, label: 'CONSOLE' },
-  cortana: { w: 10, h: 7, label: 'CORTANA' }
-  ,git:    { w: 8,  h: 5, label: 'GIT STATUS' }
+  cortana: { w: 10, h: 7, label: 'CORTANA' },
+  // 7 wide so it fits the gap beside a centered cortana module (which leaves
+  // 7-8 wide side columns); 8 wide was too wide for the side AND too tall for
+  // the top/bottom bands, so findFreeSlot rightly reported no room.
+  git:     { w: 7,  h: 5, label: 'GIT STATUS' }
 };
 
 // Clean home board: just the AI status module, centered. Everything else is
 // added by the user (or a module-author agent) from the edit tray.
+// Centered 8-wide cortana module: leaves 8-wide free columns on both sides so
+// added modules have somewhere to land (a 10-wide default fragmented the grid
+// into gaps too small for anything big -> "NO ROOM" on add).
 const DEFAULT_MODULES = [
-  { id: 'ai0', type: 'cortana', x: 7, y: 4, w: 10, h: 8, surface: 'dark', link: null }
+  { id: 'ai0', type: 'cortana', x: 8, y: 4, w: 8, h: 8, surface: 'dark', link: null }
 ];
 
 // ── ENGINE: layout sanitizer (guards against corrupt/hostile saved data) ──
