@@ -326,6 +326,8 @@ if (!app.requestSingleInstanceLock()) {
       return { events: [], error: 'no calendar data yet' };
     }
   });
+  require('./spotify').register(ipcMain);
+
   ipcMain.on('ui:open', showMain);
   ipcMain.on('ui:bubble', toBubble);
   ipcMain.on('ui:ctx', () => {
