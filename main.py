@@ -296,14 +296,38 @@ def _google_auth():
     print("Google connected (Gmail + Calendar). Token saved.")
 
 
+def _calendar_once():
+    """Run one calendar refresh, print the result, and write the state file the
+    dashboard reads. Diagnostic: `python main.py --calendar-once`."""
+    import calendar_state
+    print("token.json present:", config.GMAIL_TOKEN.exists())
+    try:
+        from tools import calendar_tool
+        evs = calendar_tool.today_events()
+        calendar_state.write(evs)
+        print(f"Wrote {calendar_state.STATE_FILE}")
+        print(f"{len(evs)} event(s) today:")
+        for e in evs:
+            print(f"  {e['time']}  {e['title']}" + ("  (past)" if e.get("past") else ""))
+    except Exception as e:
+        calendar_state.write_error(e)
+        print("CALENDAR ERROR:", repr(e))
+        print("Wrote error to", calendar_state.STATE_FILE)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", action="store_true", help="text mode (no mic/hotkeys)")
     ap.add_argument("--google-auth", action="store_true",
                     help="re-authorize Google (Gmail + Calendar) in a browser, then exit")
+    ap.add_argument("--calendar-once", action="store_true",
+                    help="fetch today's calendar once, print it, write the state file, then exit")
     args = ap.parse_args()
     if args.google_auth:
         _google_auth()
+        sys.exit(0)
+    if args.calendar_once:
+        _calendar_once()
         sys.exit(0)
     memory.init()
     speech.init(voice=not args.text,
