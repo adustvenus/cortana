@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('duskBridge', {
   gitStatus() { return ipcRenderer.invoke('git:status'); },
   /** Today's calendar events (read-only): {events:[{time,title,allDay,past}], error}. */
   calendar() { return ipcRenderer.invoke('calendar:today'); },
+  /** Spotify: OAuth login, current playback state, and transport control. */
+  spotify: {
+    login() { return ipcRenderer.invoke('spotify:login'); },
+    state() { return ipcRenderer.invoke('spotify:state'); },
+    control(action) { return ipcRenderer.invoke('spotify:control', String(action)); }
+  },
   open() { ipcRenderer.send('ui:open'); },
   toBubble() { ipcRenderer.send('ui:bubble'); },
   ctxMenu() { ipcRenderer.send('ui:ctx'); }
