@@ -65,8 +65,10 @@ def record_while(flag):
     return _save(audio)
 
 
-def listen_segment(silence_s=0.8, max_s=30, wait_s=5):
-    """Block up to wait_s for speech; then record until silence_s of quiet."""
+def listen_segment(silence_s=0.8, max_s=30, wait_s=5, on_speech_start=None):
+    """Block up to wait_s for speech; then record until silence_s of quiet.
+    on_speech_start fires once when voice is first detected (lets the caller
+    flag 'user is talking' so queued announcements hold politely)."""
     frames, started, silent = [], False, 0.0
     t0 = time.time()
     with sd.InputStream(samplerate=REC_RATE, channels=1, dtype="int16") as st:
@@ -76,6 +78,11 @@ def listen_segment(silence_s=0.8, max_s=30, wait_s=5):
             if not started:
                 if rms > VAD_THRESHOLD:
                     started = True
+                    if on_speech_start:
+                        try:
+                            on_speech_start()
+                        except Exception:
+                            pass
                     frames.append(data.copy())
                 elif time.time() - t0 > wait_s:
                     return None
