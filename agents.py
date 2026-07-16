@@ -118,6 +118,11 @@ AGENTS = {
                    "To change Cortana's own code use self_update with the FULL new file content - "
                    "never hand-edit via shell. Write, run, and debug code in the workspace "
                    f"autonomously. Summarize results briefly. {_SPOKEN}"),
+        # Real engineering work legitimately needs more than 15 tool calls.
+        # Safe to raise here specifically: dev almost always runs in the
+        # background (own worker thread), so a longer budget costs wall-clock
+        # time on that thread, not responsiveness for the user.
+        "max_iters": 30,
     },
 }
 
@@ -148,9 +153,14 @@ def lead_system():
             "Do not wait for the result.\n"
             "- Do directly ONLY what is faster to do than to explain: a screenshot, "
             "one shell one-liner, reading one file, answering from knowledge or "
-            "conversation memory.\n"
+            "conversation memory. If you're not sure a task fits in 2-3 tool calls, "
+            "it doesn't - delegate it instead of chaining shell/read_file/write_file "
+            "calls yourself. You have a hard step limit; running it out mid-task "
+            "wastes the user's time far more than a quick handoff would.\n"
             "- delegate background=false is reserved for a single quick lookup whose "
-            "answer the CURRENT sentence needs (one quote, one search).\n"
+            "answer the CURRENT sentence needs (one quote, one search). Coding/build "
+            "work is NEVER background=false, even if it looks small - always dev, "
+            "always background=true.\n"
             "- When you call a tool, any text you write alongside it is spoken aloud "
             "first - use it for a short acknowledgment or nothing at all.\n"
             "- Completed background tasks are announced automatically and appear in "
@@ -162,8 +172,12 @@ def lead_system():
             f"{_SPOKEN}")
 
 
-def dispatch(name, args, run_agent=None):
-    """Execute a tool. run_agent injected by orchestrator for 'delegate'."""
+def dispatch(name, args, run_agent=None, cancel=None):
+    """Execute a tool. run_agent injected by orchestrator for 'delegate'.
+    cancel: the caller's (lead's) cancel token - forwarded only to a SYNCHRONOUS
+    delegate, so interrupting the current voice turn also stops it. Background
+    delegates get their own independent cancel token from tasks.start and must
+    keep running after this turn ends - that one is untouched here."""
     if name == "delegate":
         agent = args.get("agent", "")
         if agent not in AGENTS:
@@ -173,7 +187,7 @@ def dispatch(name, args, run_agent=None):
             import tasks
             return tasks.start(agent, task_text,
                                runner=lambda a, t, c: run_agent(a, t, cancel=c))
-        return run_agent(agent, task_text)
+        return run_agent(agent, task_text, cancel=cancel)
     if name == "task_status":
         import tasks
         return tasks.status_summary(args.get("id"))

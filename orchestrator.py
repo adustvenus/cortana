@@ -22,6 +22,10 @@ _turn = {"tool_calls": 0, "sync_work": False}
 
 _BG_ONLY_TOOLS = {"task_status", "cancel_task", "remember"}
 
+# Named so callers can detect these outcomes instead of matching prose.
+CANCELLED_MSG = "Cancelled."
+STEP_LIMIT_MSG = "I hit my step limit on that task. Ask me to continue if you want more."
+
 
 def restart_requested():
     return _restart_flag["do"]
@@ -41,7 +45,7 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label="",
           is_lead=False, cancel=None):
     for _ in range(max_iters):
         if cancel is not None and cancel.is_set():
-            return "Cancelled."
+            return CANCELLED_MSG
         resp = client.messages.create(model=model, max_tokens=MAX_TOKENS,
                                       system=system, messages=messages, tools=tools)
         _track(model, resp.usage)
@@ -75,7 +79,7 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label="",
                 hud_state.set_state("working", agent=agent_label or b.name)
                 hud_state.think(f"{b.name}: {str(b.input)[:80]}")
             try:
-                out = agents.dispatch(b.name, b.input, run_agent=run_agent)
+                out = agents.dispatch(b.name, b.input, run_agent=run_agent, cancel=cancel)
             except RestartRequested:
                 _restart_flag["do"] = True
                 out = "Restarting now to load changes."
@@ -89,19 +93,21 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label="",
             results.append({"type": "tool_result", "tool_use_id": b.id,
                             "content": content})
         messages.append({"role": "user", "content": results})
-    return "I hit my step limit on that task. Ask me to continue if you want more."
+    return STEP_LIMIT_MSG
 
 
 def run_agent(name, task, cancel=None):
     """Run a subagent to completion. cancel: threading.Event checked between
-    steps (background tasks pass it; sync delegation leaves it None)."""
+    steps - background tasks pass their own task-scoped event; a synchronous
+    (background=false) delegate is passed the LEAD's cancel, so interrupting
+    the current voice turn also aborts a sync subagent mid-flight."""
     a = agents.AGENTS[name]
     tools = [agents.TOOL_DEFS[t] for t in a["tools"]] + a.get("server_tools", [])
     print(f"  [delegating -> {name}]")
     hud_state.set_state("working", agent=name)
     return _loop(a["model"], a["system"],
                  [{"role": "user", "content": task}], tools, agent_label=name,
-                 cancel=cancel)
+                 max_iters=a.get("max_iters", 15), cancel=cancel)
 
 
 def _critique(user_text, answer):
@@ -122,7 +128,11 @@ def _critique(user_text, answer):
         return ""
 
 
-def handle(user_text, max_refine=1):
+def handle(user_text, max_refine=1, cancel=None):
+    """cancel: threading.Event the caller can set to preempt this turn (e.g. a
+    newer voice command arrived). Checked between every model/tool step in the
+    lead loop; a mid-loop cancel returns None so the caller speaks nothing
+    stale and moves straight to the newer request."""
     spent = memory.month_spend()
     if spent >= BUDGET_MONTHLY_USD:
         return (f"Monthly budget cap of {BUDGET_MONTHLY_USD:.0f} dollars reached "
@@ -138,14 +148,23 @@ def handle(user_text, max_refine=1):
     hud_state.think("understanding the request")
     try:
         reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
-                      is_lead=True)
-        # Self-critique / iterate: only when SYNCHRONOUS work ran. Background
-        # handoffs skip it - the reply is just an acknowledgment, the real work
-        # reports later, and a critique pass here would re-add the very latency
-        # the async path exists to remove.
+                      is_lead=True, cancel=cancel)
+        if reply == CANCELLED_MSG:
+            memory.log_turn("assistant", "(interrupted by a newer request)")
+            return None
+        # Self-critique / iterate: only when SYNCHRONOUS work ran AND the lead
+        # actually produced a real answer. Skip it when: background-only turn
+        # (the reply is just an acknowledgment - the real work reports later
+        # and re-critiquing here would re-add the latency async exists to
+        # remove); or the lead hit its step limit (critiquing a give-up message
+        # just launches a second, equally doomed full loop - the exact "hang"
+        # this guard exists to prevent).
         if (not _restart_flag["do"] and not _shutdown_flag["do"]
-                and _turn["sync_work"] and len(reply) > 40):
+                and _turn["sync_work"] and reply != STEP_LIMIT_MSG and len(reply) > 40):
             for i in range(max_refine):
+                if cancel is not None and cancel.is_set():
+                    memory.log_turn("assistant", "(interrupted by a newer request)")
+                    return None
                 gaps = _critique(user_text, reply)
                 if not gaps:
                     break
@@ -155,7 +174,10 @@ def handle(user_text, max_refine=1):
                 msgs.append({"role": "user",
                              "content": f"Not complete yet. Fix these gaps, then give the full result:\n{gaps}"})
                 reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
-                              is_lead=True)
+                              is_lead=True, cancel=cancel)
+                if reply == CANCELLED_MSG:
+                    memory.log_turn("assistant", "(interrupted by a newer request)")
+                    return None
     except anthropic.APIStatusError as e:
         reply = f"API error: {e.status_code}. Check model names and billing in the Anthropic console."
     except Exception as e:
