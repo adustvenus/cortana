@@ -1438,8 +1438,10 @@ class Component extends DCLogic {
         return {
           spShowPlayer: bridged && connected && active,
           spShowPrompt: !(bridged && connected && active),
-          // Offer Connect when not logged in, or when the token went stale (401).
-          spShowConnect: bridged && configured && (!connected || (sp && sp.error === 401)),
+          // Offer Connect when not logged in, or on an auth error reconnecting
+          // could clear (401 expired / 403 scope). A 403 is often the app's
+          // Development-Mode allowlist instead - the prompt text says so.
+          spShowConnect: bridged && configured && (!connected || (sp && (sp.error === 401 || sp.error === 403))),
           spBadge: !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE'
             : (sp && sp.error) ? ('ERR ' + sp.error) : active ? 'SPOTIFY' : 'IDLE',
           spDotColor: (bridged && connected && !(sp && sp.error)) ? '#1db954' : 'rgba(var(--text-rgb),.4)',
@@ -1447,7 +1449,7 @@ class Component extends DCLogic {
             : !configured ? 'add your Client ID in Dashboard/app/spotify.json, then restart'
             : !connected ? 'connect your Spotify account'
             : (sp && sp.error === 401) ? 'Spotify session expired — click Connect Spotify again'
-            : (sp && sp.error === 403) ? 'Spotify 403 — token scope issue; reconnect Spotify'
+            : (sp && sp.error === 403) ? 'Spotify 403 — add your account under User Management in the Spotify dashboard (dev mode), then reconnect'
             : (sp && sp.error) ? ('Spotify API error ' + sp.error + ' — is the same account playing?')
             : 'nothing playing — play a track in the Spotify app on this account',
           spTrack: (sp && sp.track) || '—',
