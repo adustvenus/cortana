@@ -17,6 +17,11 @@ window.__resources = {
 // __resources is set - and fetch(location.href) fails on file:// anyway. So we
 // push the raw, case-preserved template ourselves right after boot: the Dusk
 // app's preload exposes duskRaw() (file://); plain-browser/http falls back to fetch.
+// Kiosk styling: only when running inside the Dusk app (bridge present).
+// Set on <html> so it survives the template re-adoption below (x-dc re-renders
+// but <html> does not), and absent in a plain browser (keeps scroll fallback).
+if (window.duskBridge) document.documentElement.classList.add('dusk-app');
+
 // The runtime boots only after its async React load, so poll until the page
 // is adopted into the registry, then push the raw template once.
 (function repair(tries) {
@@ -70,11 +75,17 @@ window.__resources = {
   @keyframes caret { 0%,55%{opacity:1} 56%,100%{opacity:0} }
   @keyframes linkPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(var(--accent-rgb),.7);} 50%{ box-shadow:0 0 0 6px rgba(var(--accent-rgb),0);} }
   @keyframes aiPulse { 0%,100%{ box-shadow:0 0 18px 4px rgba(var(--ai-glow),.35); transform:scale(1);} 50%{ box-shadow:0 0 34px 12px rgba(var(--ai-glow),.65); transform:scale(1.05);} }
+  /* Kiosk mode (running inside the Dusk app): fixed fullscreen, never scroll.
+     The <html.dusk-app> class is set at boot only when the bridge is present,
+     so a plain browser keeps the scrollable behavior for small windows. */
+  html.dusk-app, html.dusk-app body { overflow: hidden !important; width: 100%; height: 100%; }
+  html.dusk-app .dusk-scroll { overflow: hidden !important; }
+  html.dusk-app .dusk-sizer { min-width: 0 !important; min-height: 0 !important; }
 </style>
 </helmet>
 
-<div style="position:fixed;inset:0;overflow:auto;background:#221d33">
-<div style="position:relative;width:100%;height:100%;min-height:760px;min-width:1080px">
+<div class="dusk-scroll" style="position:fixed;inset:0;overflow:auto;background:#221d33">
+<div class="dusk-sizer" style="position:relative;width:100%;height:100%;min-height:760px;min-width:1080px">
   <div style="position:absolute;inset:-28px;background-image:url('assets/bg-dusk.png');background-size:cover;background-position:center;filter:{{ bgFilter }}"></div>
   <sc-if value="{{ bgCustomOn }}" hint-placeholder-val="{{ false }}">
     <div style="{{ bgLayerStyle }}"></div>
