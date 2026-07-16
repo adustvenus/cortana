@@ -167,6 +167,7 @@ def voice_loop():
             order = ["ptt", "wake", "open"]
             state["mode"] = order[(order.index(state["mode"]) + 1) % 3]
             print("MODE:", state["mode"])
+            hud_state.set_mode(state["mode"])   # reflect in the dashboard AI module
             speech.say(f"{state['mode']} mode")
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
@@ -201,6 +202,7 @@ def voice_loop():
     threading.Thread(target=processor, daemon=True, name="processor").start()
 
     hud_state.set_state("idle")
+    hud_state.set_mode(state["mode"])   # publish initial talking mode to the dashboard
     _startup_announce()
     print(f"Cortana up. Mode: {state['mode']}. F9 hold = talk. F10 = cycle mode. Ctrl+C = quit.")
     # Abort a capture the instant Cortana starts speaking (half-duplex: she must
