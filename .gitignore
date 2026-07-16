@@ -22,3 +22,6 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+
+# Self-edit backup files
+*.bak
