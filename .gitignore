@@ -31,5 +31,7 @@ venv/
 Dashboard/app/node_modules/
 Dashboard/app/package-lock.json
 
-# Spotify OAuth token (refresh token is a secret; Client ID stays in spotify.json)
+# Spotify OAuth token (refresh token is a secret) + per-machine config (holds
+# your Client ID). spotify.example.json is the committed template.
 Dashboard/app/spotify_token.json
+Dashboard/app/spotify.json
