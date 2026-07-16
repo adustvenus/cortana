@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Dusk Dashboard
+Comment=Cortana status dashboard - click to open or refocus
+Exec=__HOME__/cortana/Dashboard/app/dusk-dash.sh
+Icon=__HOME__/cortana/Dashboard/app/icons/dusk.png
+Terminal=false
+Categories=Utility;
+StartupWMClass=dusk-dash

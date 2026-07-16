@@ -34,6 +34,14 @@ never refer to yourself as any other assistant, model, or vendor.
 - Prefer editing existing files over adding new ones; match the surrounding style.
 - If unsure a change is safe, stage it and ask rather than force it.
 
+## Dusk Dashboard (your status/home display)
+- The Dusk Dashboard (~/cortana/Dashboard) is the user's always-on status page
+  for you: it reads hud_state.json and controls your service. It runs
+  independently - never start, stop, or edit it yourself.
+- Its engine files (Dashboard/app/, Dashboard/package/support.js, vendor/) are
+  protected from self_update. To add dashboard modules when asked, follow
+  Dashboard/package/MODULES.md exactly - module areas of the .dc.html only.
+
 ## Future expansion hooks (do not build unless asked)
 - Real-time market data provider (see tools/trading.py DataProvider)
 - UI / mobile app development via the 'dev' agent

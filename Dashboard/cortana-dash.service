@@ -1,0 +1,22 @@
+# Dusk Dashboard - systemd user unit. Independent of cortana.service on
+# purpose: restarting Cortana never touches the dashboard, and vice versa.
+#
+# Install (as the cortana user):
+#   cp Dashboard/cortana-dash.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now cortana-dash
+# Logs: journalctl --user -u cortana-dash -f
+[Unit]
+Description=Dusk Dashboard (Cortana status display)
+After=graphical-session.target
+
+[Service]
+WorkingDirectory=%h/cortana/Dashboard/app
+ExecStart=%h/cortana/Dashboard/app/dusk-dash.sh
+Restart=on-failure
+RestartSec=3
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/1001/gdm/Xauthority
+
+[Install]
+WantedBy=default.target
