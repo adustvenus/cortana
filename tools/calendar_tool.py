@@ -4,10 +4,29 @@ spoken summary for Cortana. Uses the shared Google auth (see google_auth.py).
 import datetime
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from tools import google_auth
 
 _service = None
+
+
+def _explain(e):
+    """Turn a Google API error into an actionable message. The two common 403s
+    look identical to users but need different fixes."""
+    s = str(e)
+    low = s.lower()
+    if "insufficient" in low or "scope" in low or "acl" in low:
+        return ("403: your Google login didn't grant Calendar access. Fix on the "
+                "box: rm ~/cortana/token.json && ./venv/bin/python main.py "
+                "--google-auth  (make sure the consent screen lists Calendar). " + s[:200])
+    if ("accessnotconfigured" in low or "has not been used" in low
+            or "not been used in project" in low or "is disabled" in low):
+        return ("403: the Google Calendar API is not enabled for your Cloud "
+                "project. Enable it at console.cloud.google.com -> APIs & Services "
+                "-> Enable APIs -> Google Calendar API (same project as "
+                "credentials.json), wait a minute, then retry. " + s[:200])
+    return s[:280]
 
 
 def _svc():
@@ -30,9 +49,12 @@ def today_events(max_results=12):
     """Return today's events as [{time, title, allDay, past}], time-ordered.
     `time` is HH:MM (24h) or 'all-day'; `past` marks events already ended."""
     time_min, time_max, tz = _local_day_bounds()
-    res = _svc().events().list(
-        calendarId="primary", timeMin=time_min, timeMax=time_max,
-        singleEvents=True, orderBy="startTime", maxResults=int(max_results)).execute()
+    try:
+        res = _svc().events().list(
+            calendarId="primary", timeMin=time_min, timeMax=time_max,
+            singleEvents=True, orderBy="startTime", maxResults=int(max_results)).execute()
+    except HttpError as e:
+        raise RuntimeError(_explain(e)) from None
     now = datetime.datetime.now().astimezone()
     out = []
     for e in res.get("items", []):
