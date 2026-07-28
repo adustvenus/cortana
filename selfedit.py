@@ -32,10 +32,14 @@ PROTECTED = (
     "launcher.py",
     "selfedit.py",
     "cortana.service",
+    "cortana-bridge.service",
     "Dashboard/cortana-dash.service",
     "Dashboard/app/",
     "Dashboard/package/support.js",
     "Dashboard/package/vendor/",
+    "bridge/",              # phone link server - breaking it strands the phone
+    "mobile/",              # Android app + signing keystore + CI-built APK
+    ".github/",             # CI that builds/signs the phone APK
 )
 
 

@@ -1,0 +1,22 @@
+# Cortana Mobile Bridge - systemd user unit. Independent of cortana.service
+# and cortana-dash.service on purpose: restarting any one never touches the
+# others. The phone can even talk to Cortana while cortana.service is down -
+# the bridge runs its own orchestrator turns.
+#
+# Install (as the cortana user):
+#   cp cortana-bridge.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now cortana-bridge
+# Logs: journalctl --user -u cortana-bridge -f
+[Unit]
+Description=Cortana Mobile Bridge (phone link)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/cortana
+ExecStart=%h/cortana/venv/bin/python -m bridge.server
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -42,6 +42,18 @@ never refer to yourself as any other assistant, model, or vendor.
   protected from self_update. To add dashboard modules when asked, follow
   Dashboard/package/MODULES.md exactly - module areas of the .dc.html only.
 
+## Mobile link (phone)
+- The user's Android phone links to you through the bridge service
+  (~/cortana/bridge, cortana-bridge.service, port 8765, Tailscale-only). It
+  mirrors the dashboard read-only and talks to you with your own voice; a
+  request may therefore arrive from the phone rather than the desk mic.
+- The bridge and the mobile app (~/cortana/mobile) are protected from
+  self_update, like the dashboard engine. The dashboard's MOBILE LINK module
+  shows the paired phone and pairing codes.
+- The phone updates itself from mobile/dist (built by CI). If asked to ship a
+  phone update: that means `git pull` in ~/cortana so the workstation has the
+  latest dist - never build or edit the app yourself.
+
 ## Future expansion hooks (do not build unless asked)
 - Real-time market data provider (see tools/trading.py DataProvider)
 - UI / mobile app development via the 'dev' agent
