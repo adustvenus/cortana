@@ -1,0 +1,61 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.cortana.mobile'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.cortana.mobile"
+        minSdk 26
+        targetSdk 34
+        // Bump BOTH on every release: versionName is what the update prompt
+        // compares; versionCode is what Android's installer compares. The CI
+        // workflow reads versionName to tag the release and mobile/dist.
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            // Persistent keystore committed at mobile/keystore/ so every CI
+            // build carries the SAME signature - otherwise Android refuses to
+            // install an update over the old version. Override the password
+            // with CORTANA_KEYSTORE_PASS if you rotate the keystore.
+            storeFile file('../keystore/cortana-release.p12')
+            storeType 'PKCS12'
+            storePassword System.getenv('CORTANA_KEYSTORE_PASS') ?: 'cortana-mobile'
+            keyAlias 'cortana'
+            keyPassword System.getenv('CORTANA_KEYSTORE_PASS') ?: 'cortana-mobile'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}

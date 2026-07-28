@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Cortana sphere: layered radial glows, used by the widget, the talk
+     screen, and (tinted) the launcher icon. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="52%p"
+                android:centerX="0.5" android:centerY="0.5"
+                android:startColor="#2a6bd4"
+                android:centerColor="#173a7a"
+                android:endColor="#0a1530" />
+        </shape>
+    </item>
+    <item android:top="8dp" android:left="8dp" android:right="8dp" android:bottom="8dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="50%p"
+                android:centerX="0.42" android:centerY="0.38"
+                android:startColor="#b8ecff"
+                android:centerColor="#59b6f2"
+                android:endColor="#00113a66" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <stroke android:width="1.5dp" android:color="#5a7fd4ff" />
+        </shape>
+    </item>
+</layer-list>
