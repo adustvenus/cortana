@@ -152,6 +152,9 @@ class MainActivity : Activity(), LinkClient.Listener {
     }
 
     private fun forceRefresh() {
+        // Pull-to-refresh means NOW: drop the 15-minute weather throttle too,
+        // or the weather card visibly lags behind everything else.
+        weatherAt = 0
         thread {
             val fresh = try { LinkClient.fetchState(this) } catch (e: Exception) { null }
             runOnUiThread {
@@ -170,8 +173,9 @@ class MainActivity : Activity(), LinkClient.Listener {
         }
     }
 
-    // Swipe right anywhere on the main screen opens Settings (swipe left
-    // there comes back). Vertical scrolling wins whenever the motion is more
+    // Settings sits to the RIGHT of the dashboard, so you swipe the page
+    // leftward (finger right-to-left) to travel right into it - the standard
+    // pager direction. Vertical scrolling wins whenever the motion is more
     // vertical than horizontal, so the list is unaffected.
     private val swipeDetector by lazy {
         android.view.GestureDetector(this,
@@ -180,7 +184,7 @@ class MainActivity : Activity(), LinkClient.Listener {
                                      vx: Float, vy: Float): Boolean {
                     e1 ?: return false
                     val dx = e2.x - e1.x; val dy = e2.y - e1.y
-                    if (dx > 220 && Math.abs(dx) > 2 * Math.abs(dy) && vx > 900) {
+                    if (dx < -220 && Math.abs(dx) > 2 * Math.abs(dy) && vx < -900) {
                         startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                         return true
                     }

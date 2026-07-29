@@ -436,7 +436,9 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <sc-if value="{{ filesTreeOn }}" hint-placeholder-val="{{ false }}">
               <div style="flex:1;overflow-y:auto;margin-top:.5rem;min-height:0;mask-image:linear-gradient(180deg,#000 90%,transparent)">
                 <sc-for list="{{ m.filesRows }}" as="fr" hint-placeholder-count="6">
-                  <div onClick="{{ fr.open }}" title="Open in the file manager" style="{{ fr.style }}">{{ fr.label }}</div>
+                  <!-- the SPAN is the click target, sized to its text - the row
+                       itself is inert so there is no invisible full-width link -->
+                  <div><span onClick="{{ fr.open }}" title="Open in the file manager" style="{{ fr.style }}">{{ fr.label }}</span></div>
                 </sc-for>
               </div>
             </sc-if>
@@ -585,6 +587,18 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 // ════════════════════════════════════════════════════════════════════
 
 const COLS = 24, ROWS = 16;              // ENGINE — never change
+
+// Collision-proof id for modules and tasks. The old scheme ('m' + nextId with
+// nextId starting at 100 in SESSION state while the ids it minted were
+// PERSISTED) re-issued the same id after every reload - and two modules
+// sharing an id act as one: surface cycling, deletion and resize all hit
+// both, and the resize validity check excludes both twins, which is how
+// "resizing snapped onto another module and they fused" kept happening.
+let _uidN = 0;
+function uid(prefix) {
+  return prefix + Date.now().toString(36) + (_uidN++).toString(36) +
+         Math.random().toString(36).slice(2, 6);
+}
 
 // True when any two live modules overlap or one leaves the grid. Used as the
 // engine's final pre-commit check and by the load-time repair below.
@@ -830,7 +844,21 @@ class Component extends DCLogic {
         // the 1-hour auto-remove. Falls back to a small seed on first run.
         try {
           const raw = localStorage.getItem('dusk.tasks.v1');
-          if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a; }
+          if (raw) {
+            const a = JSON.parse(raw);
+            if (Array.isArray(a)) {
+              // Old saves can hold colliding ids (the 'u' + session-counter
+              // scheme); give any duplicate or missing id a fresh one so a
+              // toggle can never hit two rows at once.
+              const seen = new Set();
+              return a.map(t => {
+                let id = (t && typeof t.id === 'string' && t.id) ? t.id : uid('u');
+                if (seen.has(id)) id = uid('u');
+                seen.add(id);
+                return { ...t, id };
+              });
+            }
+          }
         } catch (e) {}
         return [
           { id: 't1', t: 'Review dashboard mockups', done: false, doneAt: 0 },
@@ -860,7 +888,7 @@ class Component extends DCLogic {
       calData: null,       // {events, error} from Cortana's calendar loop
       spotify: null,       // Spotify playback state from the bridge
       spotifyBusy: false,  // debounce a control action mid-flight
-      nextId: 100
+      // (module/task ids come from uid() - collision-proof across reloads)
     };
   })();
 
@@ -1273,9 +1301,8 @@ class Component extends DCLogic {
   _addTask() {
     const txt = (this.state.taskInput || '').trim();
     if (!txt) return;
-    const id = 'u' + this.state.nextId;
-    const tasks = [...this.state.tasks, { id, t: txt.slice(0, 120), done: false, doneAt: 0 }];
-    this.setState({ tasks, taskInput: '', nextId: this.state.nextId + 1 },
+    const tasks = [...this.state.tasks, { id: uid('u'), t: txt.slice(0, 120), done: false, doneAt: 0 }];
+    this.setState({ tasks, taskInput: '' },
       () => { this.persistTasks(); this._pushBoard && this._pushBoard(); });
   }
 
@@ -1285,16 +1312,17 @@ class Component extends DCLogic {
   // back so the phone converges within a poll cycle.
   _applyTaskOps(ops) {
     let tasks = [...this.state.tasks];
-    let nextId = this.state.nextId;
     for (const op of ops) {
       if (op && op.op === 'add' && op.t) {
-        tasks.push({ id: 'u' + nextId++, t: String(op.t).slice(0, 120), done: false, doneAt: 0 });
+        tasks.push({ id: uid('u'), t: String(op.t).slice(0, 120), done: false, doneAt: 0 });
       } else if (op && op.op === 'toggle' && op.id) {
-        tasks = tasks.map(x => x.id === op.id
-          ? { ...x, done: !x.done, doneAt: !x.done ? Date.now() : 0 } : x);
+        // Toggle exactly ONE row even if ids somehow collide (old saves).
+        const i = tasks.findIndex(x => x.id === op.id);
+        if (i >= 0) tasks[i] = { ...tasks[i], done: !tasks[i].done,
+                                 doneAt: !tasks[i].done ? Date.now() : 0 };
       }
     }
-    this.setState({ tasks, nextId },
+    this.setState({ tasks },
       () => { this.persistTasks(); this._pushBoard && this._pushBoard(); });
   }
 
@@ -1512,9 +1540,9 @@ class Component extends DCLogic {
     const def = DEFS[type];
     const slot = this.findFreeSlot(def.w, def.h);
     if (!slot) { this.showToast('NO ROOM — CLEAR OR SHRINK MODULES FIRST'); return; }
-    const id = 'm' + this.state.nextId;
+    const id = uid('m');
     const modules = [...this.state.modules, { id, type, x: slot.x, y: slot.y, w: def.w, h: def.h, surface: 'light', link: null, fresh: true }];
-    this.setState({ modules, nextId: this.state.nextId + 1 });
+    this.setState({ modules });
     this.persist(modules);
   }
   setImage(id, file) {
@@ -1704,26 +1732,37 @@ class Component extends DCLogic {
         // a narrow module shows 2 levels and widening it reveals more.
         filesRows: (() => {
           if (m.type !== 'files' || !s.filesTree) return [];
-          const maxDepth = Math.max(1, Math.floor(m.w / 4));
+          // Depth = levels BELOW the root, driven by width: 2 minimum, one
+          // more per ~4 extra columns (w8->2, w12->3, w16->4; fetch caps at 4).
+          const maxDepth = Math.min(4, Math.max(2, Math.round(m.w / 4)));
           const rows = [];
+          const mkStyle = (node, rootRow) => ({
+            fontFamily: "'JetBrains Mono',monospace", fontSize: '.72rem',
+            display: 'inline-block', maxWidth: '100%', verticalAlign: 'top',
+            padding: '.12rem .3rem .12rem .2rem', borderRadius: 6, cursor: 'pointer',
+            whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis',
+            fontWeight: rootRow ? 600 : 400,
+            color: rootRow ? 'rgb(var(--accent-rgb))'
+                 : node.dir ? 'rgb(var(--text-rgb))' : 'rgba(var(--text-rgb),.6)'
+          });
+          const openFn = (p) => (e) => {
+            e.stopPropagation();
+            if (window.duskBridge && window.duskBridge.files)
+              window.duskBridge.files.open(p);
+          };
+          rows.push({ label: (s.filesTree.name || '~') + '/',
+                      open: openFn(s.filesTree.path),
+                      style: mkStyle(s.filesTree, true) });
           const walk = (node, depth) => {
             if (!node || depth > maxDepth) return;
             rows.push({
-              label: (depth > 1 ? '  '.repeat(depth - 1) + '└ ' : '') +
-                     node.name + (node.dir ? '/' : ''),
-              open: (e) => {
-                e.stopPropagation();
-                if (window.duskBridge && window.duskBridge.files)
-                  window.duskBridge.files.open(node.path);
-              },
-              style: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.72rem',
-                       padding: '.12rem .2rem', borderRadius: 6, cursor: 'pointer',
-                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                       color: node.dir ? 'rgb(var(--text-rgb))' : 'rgba(var(--text-rgb),.6)' }
+              label: '   '.repeat(depth - 1) + '\u2514 ' + node.name + (node.dir ? '/' : ''),
+              open: openFn(node.path),
+              style: mkStyle(node, false)
             });
-            (node.kids || []).forEach(k => walk(k, depth + 1));
+            if (depth < maxDepth) (node.kids || []).forEach(k => walk(k, depth + 1));
           };
-          walk(s.filesTree, 1);
+          (s.filesTree.kids || []).forEach(k => walk(k, 1));
           return rows.slice(0, 400);
         })(),
         filesNetRef: (el) => {

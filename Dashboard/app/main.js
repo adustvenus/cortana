@@ -11,7 +11,8 @@
  * Closing the main window hides to bubble instead of quitting (accidental-close
  * guard). Real quit: tray menu, or right-click the bubble.
  */
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage,
+        powerMonitor, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -270,6 +271,36 @@ if (!app.requestSingleInstanceLock()) {
 
     screen.on('display-added', placeForDisplays);
     screen.on('display-removed', placeForDisplays);
+
+    // ── Power policy: the dash is the decider. ──
+    // Always-awake: the machine hosts Cortana + the bridge, so the OS must
+    // never suspend it out from under them. The SCREEN is what sleeps, and we
+    // manage that ourselves (below + the orb's SLEEP SCREEN button).
+    try { powerSaveBlocker.start('prevent-app-suspension'); }
+    catch (e) { console.error('[dash] power-save blocker unavailable:', e.message); }
+
+    // Auto-sleep: no input for AUTO_SLEEP_MIN minutes -> screen off via
+    // sleep-screen.sh (keyboard wakes it; pointers stay dark-disabled).
+    // The script's flock makes repeat triggers harmless. Set
+    // CORTANA_AUTO_SLEEP_MIN=0 in the environment to disable.
+    const AUTO_SLEEP_MIN = Number(process.env.CORTANA_AUTO_SLEEP_MIN ?? 30);
+    if (AUTO_SLEEP_MIN > 0) {
+      let sleeping = false;
+      setInterval(() => {
+        try {
+          const idle = powerMonitor.getSystemIdleTime();   // seconds
+          if (idle >= AUTO_SLEEP_MIN * 60 && !sleeping) {
+            sleeping = true;
+            const { spawn } = require('child_process');
+            const child = spawn('bash', [path.join(APP_DIR, 'sleep-screen.sh')],
+                                { detached: true, stdio: 'ignore' });
+            child.unref();
+          } else if (idle < 5) {
+            sleeping = false;   // user is back; re-arm for the next idle span
+          }
+        } catch (e) { /* powerMonitor unavailable - auto-sleep just idles */ }
+      }, 30000);
+    }
   });
 
   app.on('before-quit', () => { quitting = true; });

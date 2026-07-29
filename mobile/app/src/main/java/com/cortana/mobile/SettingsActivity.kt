@@ -19,8 +19,8 @@ class SettingsActivity : Activity() {
     private fun toast(msg: String) =
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
-    // Swipe left = back to the dashboard (mirrors the swipe-right that opens
-    // this screen from there).
+    // Swiping the page rightward (finger left-to-right) travels back left to
+    // the dashboard - the mirror of the gesture that opened this screen.
     private val swipeDetector by lazy {
         android.view.GestureDetector(this,
             object : android.view.GestureDetector.SimpleOnGestureListener() {
@@ -28,7 +28,7 @@ class SettingsActivity : Activity() {
                                      vx: Float, vy: Float): Boolean {
                     e1 ?: return false
                     val dx = e2.x - e1.x; val dy = e2.y - e1.y
-                    if (dx < -220 && Math.abs(dx) > 2 * Math.abs(dy) && vx < -900) {
+                    if (dx > 220 && Math.abs(dx) > 2 * Math.abs(dy) && vx > 900) {
                         finish()
                         return true
                     }
