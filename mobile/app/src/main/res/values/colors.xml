@@ -1,8 +1,10 @@
 <resources>
-    <!-- Dusk dashboard palette - the single source of truth for the app's
-         theme, kept in step with the dashboard's CSS variables:
-         --accent 255,171,143 · --accent2 240,138,155 · --accent3 201,184,232
-         --peach 255,217,196 · --orb 143,123,184 · --text 253,243,236 -->
+    <!-- Dusk dashboard palette: the single source of truth for the app's theme,
+         kept in step with the dashboard's CSS variables.
+         accent 255,171,143 · accent2 240,138,155 · accent3 201,184,232
+         peach 255,217,196 · orb 143,123,184 · text 253,243,236
+         (XML forbids a double hyphen inside comments, so the CSS variable
+         names are written here without their leading dashes.) -->
     <color name="dusk_bg">#221d33</color>
     <color name="dusk_card">#2c2542</color>
     <color name="dusk_text">#fdf3ec</color>
