@@ -62,6 +62,16 @@ are status-only. State files use the `hud_state.json` shape:
   `selfedit.py PROTECTED`). Module authoring in the `.dc.html` stays allowed,
   per `package/MODULES.md`.
 
+## MOBILE LINK module (phone pairing)
+
+Add it from the edit tray. It talks (loopback-only) to the mobile bridge
+service (`cortana-bridge`, see `../mobile/README.md`) and is the dashboard end
+of the phone link: shows bridge status, each paired phone's name +
+ONLINE/OFFLINE, generates pairing codes (**PAIR A PHONE**), revokes a phone
+(✕ → CONFIRM), and pushes a board snapshot (module order, tasks, weather ZIP)
+so the phone mirrors this exact board. If it shows BRIDGE OFFLINE:
+`systemctl --user start cortana-bridge`.
+
 ## Adding modules
 
 `package/MODULES.md` is the contract — paste its bootstrap prompt plus the

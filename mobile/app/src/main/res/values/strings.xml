@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Cortana</string>
+    <string name="widget_desc">Tap the sphere to talk to Cortana</string>
+</resources>

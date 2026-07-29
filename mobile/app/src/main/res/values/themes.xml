@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.Cortana" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:colorBackground">@color/dusk_bg</item>
+        <item name="android:windowBackground">@color/dusk_bg</item>
+        <item name="colorPrimary">@color/dusk_accent</item>
+        <item name="colorSecondary">@color/dusk_lavender</item>
+        <item name="android:textColor">@color/dusk_text</item>
+        <item name="android:statusBarColor">@color/dusk_bg</item>
+        <item name="android:navigationBarColor">@color/dusk_bg</item>
+    </style>
+</resources>

@@ -1,0 +1,13 @@
+<resources>
+    <!-- Dusk dashboard palette, so the phone mirror feels like the same product -->
+    <color name="dusk_bg">#221d33</color>
+    <color name="dusk_card">#2c2542</color>
+    <color name="dusk_text">#fdf3ec</color>
+    <color name="dusk_dim">#9b93a8</color>
+    <color name="dusk_accent">#ffab8f</color>
+    <color name="dusk_rose">#f08a9b</color>
+    <color name="dusk_lavender">#c9b8e8</color>
+    <color name="dusk_green">#9be8b8</color>
+    <color name="cortana_blue">#7fd4ff</color>
+    <color name="cortana_deep">#12264f</color>
+</resources>

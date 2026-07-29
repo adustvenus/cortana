@@ -35,3 +35,12 @@ Dashboard/app/package-lock.json
 # your Client ID). spotify.example.json is the committed template.
 Dashboard/app/spotify_token.json
 Dashboard/app/spotify.json
+
+# Mobile bridge: paired-phone token hashes + device names (per-machine)
+mobile_link.json
+
+# Android build outputs (mobile/dist/ IS committed - CI publishes the APK there)
+mobile/.gradle/
+mobile/build/
+mobile/app/build/
+mobile/local.properties
