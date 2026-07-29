@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
@@ -66,7 +68,28 @@ object UpdateManager {
             .show()
     }
 
+    /** Android requires a per-app 'Install unknown apps' grant for THIS app
+     *  before the system installer will act on our APK - and without it, many
+     *  skins dismiss the install sheet silently. Check up front and walk the
+     *  user to the exact settings screen instead of failing with no feedback. */
+    private fun ensureInstallPermission(activity: Activity): Boolean {
+        if (activity.packageManager.canRequestPackageInstalls()) return true
+        AlertDialog.Builder(activity)
+            .setTitle("One-time permission needed")
+            .setMessage("Android needs you to allow Cortana to install its own " +
+                "updates. On the next screen, turn on \"Allow from this source\", " +
+                "come back, and tap CHECK FOR UPDATE again.")
+            .setPositiveButton("Open settings") { _, _ ->
+                activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${activity.packageName}")))
+            }
+            .setNegativeButton("Later", null)
+            .show()
+        return false
+    }
+
     private fun download(activity: Activity) {
+        if (!ensureInstallPermission(activity)) return
         @Suppress("DEPRECATION")
         val dlg = ProgressDialog(activity).apply {
             setTitle("Downloading update")
