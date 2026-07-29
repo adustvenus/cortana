@@ -154,7 +154,12 @@ Test sequence, in order:
 3. APIs & Services → OAuth consent screen → External → fill name/email → **Audience → Test users → add your own Gmail** (skips Google verification).
 4. Credentials → Create Credentials → OAuth client ID → **Desktop app** → Download JSON.
 5. Save it as `~/cortana/credentials.json`.
-6. Text mode: `search my email for anything from today` → browser opens → log in → allow. Creates `token.json`; never asks again.
+6. Text mode: `search my email for anything from today` → browser opens → log in → allow. Creates `token.json`.
+7. **Publish the consent screen** (do this or Google kills the token every 7 days):
+   OAuth consent screen → **PUBLISH APP** → confirm. The app stays private to
+   you; you just click through one "unverified app" warning the next time you
+   authorize. Left in "Testing", refresh tokens expire after a week and the
+   Agenda silently freezes.
 
 **GATE:** email search returns results; `ask it to draft a reply` → draft appears in Gmail Drafts folder. It can never send — drafts only, by design.
 
@@ -275,6 +280,8 @@ answers in Cortana's voice.
 | Budget message | cap hit | raise `BUDGET_MONTHLY_USD` + Anthropic console limit |
 | Gmail "app not verified" block | consent screen | add your Gmail under Test users (step 6.3) |
 | Gmail auth loop | stale token | `rm ~/cortana/token.json`, re-auth |
+| Agenda frozen: shows deleted events, misses new ones | **Google token expired.** Projects left in OAuth "Testing" status have their refresh tokens killed by Google every **7 days** | Diagnose: `./venv/bin/python main.py --calendar-debug`. Reconnect: `./venv/bin/python main.py --google-auth`. **Permanent fix:** console.cloud.google.com → APIs & Services → OAuth consent screen → **PUBLISH APP** (one "unverified app" warning, then tokens stop expiring) |
+| Agenda missing a real event | it lives on a secondary calendar | Cortana now reads every calendar ticked in Google's sidebar; confirm with `--calendar-debug` that the calendar is listed and `selected` |
 | `ES=F` returns nothing | yahoo hiccup / bad symbol | retry; symbols: ES=F NQ=F CL=F GC=F; stocks plain (AAPL) |
 | Daemon runs but deaf/blind | no DISPLAY/audio in service | auto-login ON + linger; Plan B: skip systemd, add `main.py` as a Startup Application (GUI: "Startup Applications" app) |
 | Whole machine feels at risk | injection paranoia (healthy) | she already: separate user, drafts-only email, zero trade execution. Keep it that way |

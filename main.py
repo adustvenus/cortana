@@ -327,7 +327,15 @@ def _calendar_loop():
                 from tools import calendar_tool
                 calendar_state.write(calendar_tool.today_events())
         except Exception as e:
-            calendar_state.write_error(e)
+            from tools import google_auth
+            if isinstance(e, google_auth.AuthExpired):
+                # Expired/revoked token: drop the stale events outright. Showing
+                # a week-old agenda as if it were today's is worse than showing
+                # nothing - it is what made this bug so hard to spot.
+                calendar_state.write_error_clearing(
+                    "Google access expired - run: python main.py --google-auth")
+            else:
+                calendar_state.write_error(e)
         for _ in range(600):
             if state["exit"] is not None:
                 return
@@ -338,8 +346,12 @@ def _google_auth():
     """Force a fresh Google consent covering all scopes (Gmail + Calendar)."""
     from tools import google_auth
     config.GMAIL_TOKEN.unlink(missing_ok=True)
-    google_auth.creds()
+    google_auth.creds(interactive=True)
     print("Google connected (Gmail + Calendar). Token saved.")
+    print("\nIMPORTANT: if this Cloud project's OAuth consent screen is still in")
+    print("'Testing', Google will expire this token again in 7 DAYS. Publish it:")
+    print("  console.cloud.google.com -> APIs & Services -> OAuth consent screen")
+    print("  -> PUBLISH APP   (one 'unverified app' warning, then it stops expiring)")
 
 
 def _calendar_once():
@@ -375,13 +387,26 @@ def _calendar_debug():
     from tools import calendar_tool, google_auth
     try:
         from googleapiclient.discovery import build
-        me = build("oauth2", "v2", credentials=google_auth.creds()).userinfo().get().execute()
+        me = build("oauth2", "v2",
+                   credentials=google_auth.creds()).userinfo().get().execute()
         print("Google account:", me.get("email", "(unknown)"))
+    except google_auth.AuthExpired as e:
+        # The single most common cause of a wrong/frozen agenda: nothing can be
+        # fetched, so whatever was last written keeps being displayed.
+        print("\n*** GOOGLE ACCESS EXPIRED - this is why the agenda is wrong ***")
+        print(e)
+        print("\nUntil this is fixed, the Agenda can only show whatever was last")
+        print("fetched, which is why it can list events you deleted and miss ones")
+        print("you added.")
+        return
     except Exception as e:
         print("Could not read the account email:", e)
 
     try:
         cals = calendar_tool.calendars()
+    except google_auth.AuthExpired as e:
+        print("\n*** GOOGLE ACCESS EXPIRED ***\n" + str(e))
+        return
     except Exception as e:
         print("CALENDAR LIST ERROR:", e)
         return

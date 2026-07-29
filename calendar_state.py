@@ -26,6 +26,13 @@ def write_error(msg):
             "day": prev.get("day", ""), "ts": time.time()})
 
 
+def write_error_clearing(msg):
+    """Error that INVALIDATES the cached events (auth expired/revoked). The
+    stale agenda must not survive - it would keep showing deleted events and
+    missing new ones with no visible reason."""
+    _flush({"events": [], "error": str(msg)[:200], "day": "", "ts": time.time()})
+
+
 def _flush(payload):
     tmp = tempfile.NamedTemporaryFile("w", dir=STATE_FILE.parent, delete=False, suffix=".tmp")
     json.dump(payload, tmp)
@@ -42,7 +49,12 @@ def read():
     except Exception:
         return {"events": [], "error": "", "ts": 0}
     day = d.get("day")
-    if day and day != datetime.date.today().isoformat():
+    today = datetime.date.today().isoformat()
+    if d.get("events") and day != today:
+        # No day stamp at all = written before this guard existed, or by the
+        # old write_error() that dropped it. Either way it is not today's.
+        when = day or "an earlier session"
         return {"events": [], "ts": d.get("ts", 0),
-                "error": "calendar data is from " + day + " - is Cortana running?"}
+                "error": d.get("error") or
+                         f"calendar data is from {when} - is Cortana running?"}
     return d

@@ -165,6 +165,13 @@ def calendar():
                     calendar_state.write(calendar_tool.today_events())
                     util.invalidate("cal")
             except Exception as e:
+                from tools import google_auth
+                if isinstance(e, google_auth.AuthExpired):
+                    # Same rule as the desk loop: never keep serving a stale
+                    # agenda behind an auth failure.
+                    calendar_state.write_error_clearing(
+                        "Google access expired - run: python main.py --google-auth")
+                    util.invalidate("cal")
                 log("calendar refresh failed", e)
             finally:
                 _cal_refresh["busy"] = False
