@@ -274,6 +274,7 @@ answers in Cortana's voice.
 | Phone shows LINK DOWN | workstation asleep or tailnet off | wake the machine, check `tailscale status` on both ends; the app reconnects on its own |
 | Phone never offers an update | workstation hasn't pulled CI's dist commit | `cd ~/cortana && git pull` (or ask Cortana to) |
 | "App not installed" on update | APK signed with a different key | keep `mobile/keystore/` as-is; if the keystore ever changed, uninstall then reinstall once |
+| Tap Install → nothing happens, no error | OxygenOS/ColorOS (OnePlus, OPPO, realme) blocks the installer UI silently | `bash mobile/push-update.sh` — wireless adb, no cable (see mobile/README.md) |
 
 ## FUTURE HOOKS (built-in, dormant)
 

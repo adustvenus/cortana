@@ -45,6 +45,30 @@ code rides inside the QR itself, so scanning is exactly as privileged as
 reading the code off the dashboard. Everything under `/api/*` stays
 token-guarded.
 
+## If installs fail silently (OnePlus / OPPO / realme)
+
+OxygenOS and ColorOS drop sideloads and in-app updates **with no error
+message** — you tap Install and nothing happens. It is not the APK, the
+permission grant, or the bridge; those skins block the installer UI itself.
+adb installs take the privileged path instead, so they always work.
+
+Wireless adb gives you that path with no cable:
+
+```bash
+# Phone, one time: Settings -> About device -> tap Build number 7x
+#   -> Developer options -> Wireless debugging ON
+#   -> "Pair device with pairing code"  (note the IP:PORT and 6-digit code)
+bash mobile/push-update.sh pair 192.168.1.50:41234 123456
+
+# Every update after that (phone on the same Wi-Fi, wireless debugging on):
+bash mobile/push-update.sh
+```
+
+Worth trying once on OxygenOS 15, which may restore normal installs:
+Settings → Security & privacy → More security & privacy → **Install unknown
+apps** → Cortana → allow; and Play Store → Play Protect → ⚙ → turn off
+scanning during the install.
+
 ## Getting the APK (manual path)
 
 CI (`.github/workflows/mobile-apk.yml`) builds a signed APK on every push to
