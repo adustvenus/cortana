@@ -68,6 +68,22 @@ class PairActivity : Activity() {
         col.addView(Ui.pillButton(this, "PAIR", Ui.ACCENT) { pair() })
 
         setContentView(ScrollView(this).apply { addView(col); setBackgroundColor(Ui.BG) })
+
+        // QR onboarding: the bridge's /get page deep-links cortana://pair with
+        // the host + code baked in - fill the form and pair without typing.
+        intent?.data?.let { uri ->
+            if (uri.scheme == "cortana" && uri.host == "pair") {
+                uri.getQueryParameter("host")?.let { if (it.isNotEmpty()) hostIn.setText(it) }
+                uri.getQueryParameter("port")?.let { if (it.isNotEmpty()) portIn.setText(it) }
+                uri.getQueryParameter("code")?.let { if (it.isNotEmpty()) codeIn.setText(it) }
+                if (!uri.getQueryParameter("host").isNullOrEmpty()
+                    && uri.getQueryParameter("code")?.length == 6) {
+                    status.setTextColor(Ui.DIM)
+                    status.text = "Pairing from QR link…"
+                    pair()
+                }
+            }
+        }
     }
 
     private fun field(hint: String, value: String): EditText = EditText(this).apply {

@@ -31,7 +31,21 @@ phone (Cortana Mobile)  ──Tailscale (WireGuard)──▶  workstation
    name/IP + the code. Done — the phone stores a 256-bit token in encrypted
    storage; the bridge stores only the token's SHA-256.
 
-## Getting the APK
+## Fastest install: scan the QR
+
+The MOBILE LINK module shows a **QR code** next to the pairing code (tap
+**PAIR A PHONE** first). Scan it with the phone camera → the bridge serves a
+small install page over the tailnet → **1 · DOWNLOAD THE APP** (allow the
+install when Android asks) → **2 · OPEN CORTANA & PAIR** deep-links into the
+app and pairs it automatically. No GitHub login, no typing.
+
+The `/get` page and APK download are deliberately unauthenticated — they're
+only reachable over the tailnet/LAN and serve nothing secret; the pairing
+code rides inside the QR itself, so scanning is exactly as privileged as
+reading the code off the dashboard. Everything under `/api/*` stays
+token-guarded.
+
+## Getting the APK (manual path)
 
 CI (`.github/workflows/mobile-apk.yml`) builds a signed APK on every push to
 `main` that touches `mobile/`, commits it to `mobile/dist/`, and tags a

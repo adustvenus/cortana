@@ -40,7 +40,7 @@ import hud_state
 import calendar_state
 from bridge import pairing, spotify_link
 
-BRIDGE_VERSION = "1.0.0"
+BRIDGE_VERSION = "1.1.0"
 PORT = int(os.getenv("BRIDGE_PORT", "8765"))
 BIND = os.getenv("BRIDGE_BIND", "0.0.0.0")
 HOST_NAME = os.getenv("BRIDGE_NAME", "") or socket.gethostname()
@@ -467,6 +467,83 @@ async def h_apk_download(request):
                             headers={"Content-Type": "application/vnd.android.package-archive"})
 
 
+# ── QR onboarding: /get is the page a scanned QR opens on the phone ────────
+# Unauthenticated ON PURPOSE, but only reachable over the tailnet/LAN (never
+# port-forward the bridge): it serves the public APK binary and, when the QR
+# carried an active pairing code, a deep link that auto-pairs the installed
+# app. /get without a code never reveals the stored code.
+def _reach_ip():
+    """Address phones can reach us at: Tailscale IPv4 first, then LAN IP."""
+    def go():
+        try:
+            out = _run(["tailscale", "ip", "-4"]).splitlines()
+            if out and out[0].strip():
+                return out[0].strip()
+        except Exception:
+            pass
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
+    return _cached("reach_ip", 60, go)
+
+
+async def h_get_page(request):
+    c = request.query.get("c", "")
+    c = c if (len(c) == 6 and c.isdigit()) else ""
+    host = request.host.split(":")[0]      # the address the phone actually used
+    apk = _apk_info()
+    have_apk = bool(apk.get("available"))
+    dl = ("<a class='btn' href='/get/apk'>1 · DOWNLOAD THE APP"
+          + (f" (v{apk.get('version','')})" if apk.get("version") else "") + "</a>"
+          if have_apk else
+          "<div class='warn'>No APK on this machine yet - run git pull in ~/cortana "
+          "after CI finishes, then rescan.</div>")
+    pair_link = (f"intent://pair?host={host}&port={PORT}&code={c}"
+                 "#Intent;scheme=cortana;package=com.cortana.mobile;end")
+    pair = (f"<a class='btn' href='{pair_link}'>2 · OPEN CORTANA &amp; PAIR</a>"
+            if c else
+            "<div class='warn'>No pairing code in this link - tap PAIR A PHONE on the "
+            "dashboard's MOBILE LINK module and scan the QR again.</div>")
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cortana Mobile - {HOST_NAME}</title><style>
+body{{background:#221d33;color:#fdf3ec;font-family:sans-serif;margin:0;
+     display:flex;flex-direction:column;align-items:center;gap:1.1rem;
+     padding:3rem 1.5rem;text-align:center}}
+h1{{font-size:1.15rem;letter-spacing:.18em;margin:0;color:#c9b8e8}}
+p{{color:#9b93a8;font-size:.9rem;line-height:1.55;margin:0;max-width:26rem}}
+.btn{{display:block;width:100%;max-width:22rem;box-sizing:border-box;
+     padding:1rem;border:1px solid #ffab8f;border-radius:12px;color:#ffab8f;
+     text-decoration:none;font-size:.95rem;letter-spacing:.1em}}
+.warn{{color:#f08a9b;font-size:.85rem;max-width:22rem}}
+.sphere{{width:72px;height:72px;border-radius:50%;
+        background:radial-gradient(circle at 40% 36%,#b8ecff,#59b6f2 45%,#173a7a 80%,#0a1530)}}
+</style></head><body>
+<div class="sphere"></div>
+<h1>CORTANA MOBILE</h1>
+<p>Linking to <b>{HOST_NAME}</b>. Step 1 downloads the app (allow the install
+when Android asks). Step 2 opens it and pairs this phone automatically.</p>
+{dl}
+{pair}
+<p>Already installed? Just tap step 2.</p>
+</body></html>"""
+    return web.Response(text=html, content_type="text/html")
+
+
+async def h_get_apk(request):
+    info = _apk_info()
+    if not info.get("available"):
+        return web.json_response({"error": "no APK built yet"}, status=404)
+    return web.FileResponse(DIST / info["apk"], headers={
+        "Content-Type": "application/vnd.android.package-archive",
+        "Content-Disposition": 'attachment; filename="cortana-mobile.apk"'})
+
+
 # ── handlers: dashboard (loopback only) ─────────────────────────────────────
 _CORS = {"Access-Control-Allow-Origin": "*",
          "Access-Control-Allow-Headers": "Content-Type",
@@ -510,6 +587,30 @@ async def h_local_revoke(request):
     return web.json_response({"revoked": n}, headers=_CORS)
 
 
+async def h_local_qr(request):
+    """QR for the dashboard module: encodes the /get onboarding URL carrying
+    the ACTIVE pairing code. Only exists while a code is live, so scanning is
+    exactly as privileged as reading the code off the dashboard next to it."""
+    err = _local_guard(request)
+    if err:
+        return err
+    info = pairing.pair_info()
+    if not info:
+        return web.json_response({"url": None}, headers=_CORS)
+    url = f"http://{_reach_ip()}:{PORT}/get?c={info['code']}"
+    try:
+        import qrcode
+        q = qrcode.QRCode(border=0)
+        q.add_data(url)
+        q.make(fit=True)
+        matrix = [[1 if v else 0 for v in row] for row in q.get_matrix()]
+    except ImportError:
+        return web.json_response(
+            {"url": url, "error": "qrcode lib missing - rerun bridge/install-bridge.sh"},
+            headers=_CORS)
+    return web.json_response({"url": url, "matrix": matrix}, headers=_CORS)
+
+
 async def h_local_board(request):
     err = _local_guard(request)
     if err:
@@ -545,7 +646,10 @@ def make_app():
         web.post("/api/spotify", h_spotify),
         web.get("/api/apk", h_apk),
         web.get("/api/apk/download", h_apk_download),
+        web.get("/get", h_get_page),
+        web.get("/get/apk", h_get_apk),
         web.get("/local/status", h_local_status),
+        web.get("/local/qr", h_local_qr),
         web.post("/local/pair/new", h_local_pair_new),
         web.post("/local/revoke", h_local_revoke),
         web.post("/local/board", h_local_board),

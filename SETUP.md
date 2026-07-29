@@ -224,11 +224,11 @@ Cortana with her real voice. Full guide: `mobile/README.md`. Short version:
 2. Tailscale on both devices (tailscale.com, free) — same tailnet. Note the
    workstation's Tailscale name (`tailscale status`).
 3. Dusk dashboard → edit mode (Ctrl-E) → add the **MOBILE LINK** module →
-   **PAIR A PHONE** → a 6-digit code appears.
-4. Phone: install the APK from the latest `mobile-v*` GitHub release (or
-   `~/cortana/mobile/dist/cortana-mobile.apk`), open it, enter the Tailscale
-   name + code. Add the 2x2 **Cortana sphere widget** to the home screen for
-   one-tap talking.
+   **PAIR A PHONE** → a 6-digit code + QR appear.
+4. Phone: **scan the QR with the camera** → download the app from the page it
+   opens (allow the install) → tap **OPEN CORTANA & PAIR** — done. Add the
+   2x2 **Cortana sphere widget** to the home screen for one-tap talking.
+   (Manual fallback: APK from the `mobile-v*` GitHub release, type the code.)
 5. App updates are automatic: bump the version in `mobile/app/build.gradle`,
    push to main, `git pull` here — every paired phone gets the update pop-up.
 

@@ -406,9 +406,12 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                 </div>
               </sc-for>
               <sc-if value="{{ mlCodeOn }}" hint-placeholder-val="{{ false }}">
-                <div style="display:flex;flex-direction:column;align-items:center;gap:.1rem;margin-top:.15rem;flex-shrink:0">
-                  <div style="font-family:'JetBrains Mono',monospace;font-size:1.45rem;letter-spacing:.3em;color:rgb(var(--accent-rgb))">{{ mlCodeTxt }}</div>
-                  <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.14em;color:rgba(var(--text-rgb),.45)">{{ mlCodeSub }}</div>
+                <div style="display:flex;align-items:center;justify-content:center;gap:1.1rem;margin-top:.15rem;flex-shrink:0;min-width:0">
+                  <canvas ref="{{ m.mlQrRef }}" title="Scan with the phone camera: downloads the app and pairs it" style="width:5.6rem;height:5.6rem;image-rendering:pixelated;border-radius:6px;flex-shrink:0"></canvas>
+                  <div style="display:flex;flex-direction:column;gap:.2rem;align-items:center;min-width:0">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.45rem;letter-spacing:.3em;color:rgb(var(--accent-rgb))">{{ mlCodeTxt }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.14em;color:rgba(var(--text-rgb),.45);text-align:center">{{ mlCodeSub }}</div>
+                  </div>
                 </div>
               </sc-if>
             </div>
@@ -541,7 +544,7 @@ const DEFS = {
   // the top/bottom bands, so findFreeSlot rightly reported no room.
   git:     { w: 7,  h: 5, label: 'GIT STATUS' },
   youtube: { w: 8,  h: 5, label: 'YOUTUBE' },
-  mobile:  { w: 6,  h: 3, label: 'MOBILE LINK' }
+  mobile:  { w: 6,  h: 4, label: 'MOBILE LINK' }
 };
 
 // Clean home board: just the AI status module, centered. Everything else is
@@ -878,13 +881,41 @@ class Component extends DCLogic {
       try { return JSON.parse(localStorage.getItem('dusk.mobile.v1') || '{}').port || 8765; }
       catch (e) { return 8765; }
     })();
+    // QR canvas painter: dark modules on warm-white so phone cameras lock on
+    // fast against the dusk background. Redrawn on ref attach + every poll.
+    this._drawMlQr = () => {
+      const cv = this._mlQrEl;
+      if (!cv) return;
+      const q = this.state.mlQr;
+      const ctx = cv.getContext('2d');
+      if (!q || !q.matrix || !q.matrix.length) {
+        cv.width = cv.width;   // clear
+        return;
+      }
+      const n = q.matrix.length, scale = 4, pad = 2;
+      cv.width = cv.height = (n + pad * 2) * scale;
+      ctx.fillStyle = '#fdf3ec';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#221d33';
+      for (let y = 0; y < n; y++)
+        for (let x = 0; x < n; x++)
+          if (q.matrix[y][x]) ctx.fillRect((x + pad) * scale, (y + pad) * scale, scale, scale);
+    };
     const pollMobile = async () => {
       if (!this.state.modules.some(m => m.type === 'mobile')) return;
       try {
         const r = await fetch(MB + '/local/status');
         if (!r.ok) throw new Error(r.status);
-        this.setState({ mobileData: await r.json() });
-      } catch (e) { this.setState({ mobileData: null }); }   // bridge down -> OFFLINE
+        const d = await r.json();
+        let qr = null;
+        if (d && d.pairing) {
+          try {
+            const rq = await fetch(MB + '/local/qr');
+            if (rq.ok) qr = await rq.json();
+          } catch (e) {}
+        }
+        this.setState({ mobileData: d, mlQr: qr }, () => this._drawMlQr());
+      } catch (e) { this.setState({ mobileData: null, mlQr: null }, () => this._drawMlQr()); }
     };
     pollMobile();
     this._mobilePoll = setInterval(pollMobile, 5000);
@@ -1361,6 +1392,10 @@ class Component extends DCLogic {
         },
         t_git: m.type === 'git',
         t_mobile: m.type === 'mobile',
+        mlQrRef: (el) => {
+          this._mlQrEl = el;
+          if (el && this._drawMlQr) this._drawMlQr();
+        },
         micPickStyle: {
           flex: 1, minWidth: 0, height: '1.7rem', cursor: 'pointer',
           display: 'flex', alignItems: 'center', userSelect: 'none',
@@ -1691,8 +1726,8 @@ class Component extends DCLogic {
           })),
           mlCodeOn: !!pairing,
           mlCodeTxt: pairing ? String(pairing.code).replace(/^(\d{3})(\d{3})$/, '$1 $2') : '',
-          mlCodeSub: pairing ? 'ENTER IN THE CORTANA MOBILE APP · EXPIRES IN '
-            + Math.max(1, Math.round((pairing.expires - Date.now() / 1000) / 60)) + ' MIN' : '',
+          mlCodeSub: pairing ? 'SCAN WITH THE PHONE CAMERA, OR TYPE THE CODE · '
+            + Math.max(1, Math.round((pairing.expires - Date.now() / 1000) / 60)) + ' MIN LEFT' : '',
           mlPairOn: up,
           mlNewCodeTxt: locked ? 'LOCKED ' + md.lockedFor + 'S' : pairing ? 'NEW CODE' : 'PAIR A PHONE',
           mlNewCodeStyle: { height: '1.7rem', display: 'flex', alignItems: 'center', padding: '0 .8rem',

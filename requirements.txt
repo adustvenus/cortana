@@ -10,6 +10,7 @@ pillow
 yfinance
 pynput
 aiohttp
+qrcode
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2

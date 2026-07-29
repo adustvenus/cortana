@@ -24,7 +24,16 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".PairActivity" android:exported="false" />
+        <!-- exported + BROWSABLE: the bridge's /get onboarding page (opened by
+             scanning the dashboard QR) deep-links here to auto-pair. -->
+        <activity android:name=".PairActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cortana" android:host="pair" />
+            </intent-filter>
+        </activity>
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity
             android:name=".TalkActivity"
