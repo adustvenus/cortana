@@ -17,6 +17,7 @@ import android.widget.Toast
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Collections
@@ -43,6 +44,7 @@ class MainActivity : Activity(), LinkClient.Listener {
     private val supported = listOf("cortana", "music", "agenda", "tasks", "weather", "git")
 
     private lateinit var recycler: RecyclerView
+    private lateinit var swipe: SwipeRefreshLayout
     private lateinit var adapter: CardAdapter
     private lateinit var linkDot: TextView
 
@@ -60,12 +62,39 @@ class MainActivity : Activity(), LinkClient.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Prefs.paired(this)) {
+            // Right after an app update the Android Keystore can lag a few
+            // seconds, making the stored token unreadable - which is NOT the
+            // same as being unpaired. If we know the host but can't open
+            // secure storage yet, wait it out instead of bouncing the user to
+            // a false "pair this phone" screen.
+            if (Prefs.host(this).isNotEmpty() && !Prefs.secureStorageAvailable(this)) {
+                setContentView(buildScaffold())
+                showPlaceholder("Unlocking secure storage…\n(normal for a few seconds after an update)")
+                retryPairedCheck(attempt = 0)
+                return
+            }
             startActivity(Intent(this, PairActivity::class.java))
             finish()
             return
         }
         setContentView(buildScaffold())
         showPlaceholder("Connecting to ${Prefs.dashName(this).ifEmpty { Prefs.host(this) }}…")
+    }
+
+    private fun retryPairedCheck(attempt: Int) {
+        recycler.postDelayed({
+            when {
+                Prefs.paired(this) -> {
+                    LinkClient.start(this, this)
+                    showPlaceholder("Connecting to ${Prefs.dashName(this).ifEmpty { Prefs.host(this) }}…")
+                }
+                attempt < 10 -> retryPairedCheck(attempt + 1)
+                else -> {   // ~10s of failures = genuinely gone; pair again
+                    startActivity(Intent(this, PairActivity::class.java))
+                    finish()
+                }
+            }
+        }, 1000)
     }
 
     private fun buildScaffold(): LinearLayout {
@@ -109,9 +138,36 @@ class MainActivity : Activity(), LinkClient.Listener {
             setPadding(0, 0, 0, Ui.dp(context, 24))
         }
         ItemTouchHelper(dragCallback).attachToRecyclerView(recycler)
-        root.addView(recycler,
+        // Pull down to force-refresh: one REST fetch, independent of the
+        // WebSocket - useful when a push feels stale or the link just came back.
+        swipe = SwipeRefreshLayout(this).apply {
+            addView(recycler)
+            setColorSchemeColors(Ui.ACCENT, Ui.LAVENDER)
+            setProgressBackgroundColorSchemeColor(Ui.CARD)
+            setOnRefreshListener { forceRefresh() }
+        }
+        root.addView(swipe,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
+    }
+
+    private fun forceRefresh() {
+        thread {
+            val fresh = try { LinkClient.fetchState(this) } catch (e: Exception) { null }
+            runOnUiThread {
+                swipe.isRefreshing = false
+                when {
+                    fresh != null -> {
+                        signatures.clear()          // force every card to redraw
+                        onState(fresh)
+                    }
+                    LinkClient.lastState == null ->
+                        Toast.makeText(this, "Can't reach the workstation", Toast.LENGTH_SHORT).show()
+                    else ->
+                        Toast.makeText(this, "Refresh failed - showing last known state", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     override fun onStart() {
@@ -518,8 +574,10 @@ class MainActivity : Activity(), LinkClient.Listener {
             for (i in 0 until tasks.length()) {
                 val t = tasks.optJSONObject(i) ?: continue
                 val done = t.optBoolean("done")
+                // The dashboard stores task text under "t" (see _addTask in the
+                // dc.html); the old "text"/"title" guesses rendered bare bullets.
                 addView(Ui.value(context,
-                    (if (done) "✓ " else "○ ") + t.optString("text", t.optString("title")),
+                    (if (done) "✓ " else "○ ") + t.optString("t", t.optString("text")),
                     14f, if (done) Ui.DIM else Ui.TEXT))
             }
         }

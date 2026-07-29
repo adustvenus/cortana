@@ -94,6 +94,26 @@ and is the dashboard end of the phone link:
 
 If it shows BRIDGE OFFLINE: `systemctl --user start cortana-bridge`.
 
+## Editing the board
+
+Ctrl-E toggles edit mode. Each module gets: drag to move, **◢** (bottom-right)
+and **◤** (top-left) resize handles, ∞ link, ◐ surface, ✕ remove (tap twice).
+The **▼** button beside DONE EDITING collapses the tray so the whole board is
+visible while you arrange; edit handles stay active.
+
+The engine refuses to commit a layout where modules overlap (toast: BLOCKED),
+and a saved layout that somehow contains overlaps self-heals on load —
+overlappers are relocated to free space rather than left stacked.
+
+## Sleep mode (burn-in guard)
+
+Click the AI orb → **SLEEP SCREEN**: the display turns off while the machine
+(and Cortana) keep running. It wakes on a **keyboard press only** — pointer
+devices are disabled while dark, so a nudged mouse can't relight the panel,
+and they're re-enabled automatically on wake (or on any exit path, so a crash
+can't strand the mouse off). Uses `xset` + `xinput`; without `xinput` the
+screen still sleeps, the mouse just becomes a wake source too.
+
 ## Adding modules
 
 `package/MODULES.md` is the contract — paste its bootstrap prompt plus the

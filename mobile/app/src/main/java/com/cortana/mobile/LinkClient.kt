@@ -224,6 +224,18 @@ object LinkClient {
         }
     } catch (e: Exception) { null }
 
+    /** One-shot state fetch over REST - the pull-to-refresh path, independent
+     *  of the WebSocket's health. Blocking. */
+    fun fetchState(ctx: Context): JSONObject {
+        http.newCall(authed(ctx, Request.Builder()
+            .url("${base(ctx)}/api/state")).build()).execute().use { r ->
+            if (r.code == 401) throw AuthException()
+            val j = JSONObject(r.body?.string() ?: "{}")
+            if (r.isSuccessful) lastState = j
+            return j
+        }
+    }
+
     /** Ask the workstation to git-pull so mobile/dist matches CI's latest
      *  build, then report the (possibly new) APK info. Blocking; can take a
      *  minute on a slow pull. */

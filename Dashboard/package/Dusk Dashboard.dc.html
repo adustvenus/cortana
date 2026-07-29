@@ -121,6 +121,21 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           </div>
         </sc-if>
 
+        <!-- ═══ DATE-TIME (combined clock + date; the date line appears only
+             when the module is big enough — area >= 8 cells, so 3x3 or 4x2+) -->
+        <sc-if value="{{ m.t_datetime }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCenter }}">
+            <div style="display:flex;align-items:baseline;gap:.2rem">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:1.7rem;font-weight:500;color:rgb(var(--text-rgb))">{{ clockHM }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;color:rgb(var(--accent-rgb))">:{{ clockS }}</span>
+            </div>
+            <sc-if value="{{ m.dtDateOn }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:.95rem;font-weight:600;color:rgb(var(--text-rgb));margin-top:.3rem">{{ dateLine }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.55);margin-top:.15rem">{{ dateSub }}</span>
+            </sc-if>
+          </div>
+        </sc-if>
+
         <!-- ═══ TICKER ═══ -->
         <sc-if value="{{ m.t_ticker }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleTicker }}">
@@ -457,6 +472,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <span onPointerDown="{{ m.removeBtn }}" title="Remove module (tap twice)" style="{{ m.removeBtnStyle }}">✕</span>
           </div>
           <span onPointerDown="{{ m.resizeBtn }}" style="position:absolute;bottom:2px;right:2px;width:1.7rem;height:1.7rem;border-radius:50%;background:rgba(20,16,32,.75);border:1px solid rgba(var(--accent3-rgb),.6);color:rgb(var(--accent3-rgb));display:flex;align-items:center;justify-content:center;cursor:nwse-resize;font-size:.75rem;z-index:30">◢</span>
+          <span onPointerDown="{{ m.resizeTlBtn }}" title="Resize from this corner" style="position:absolute;top:2px;left:2px;width:1.7rem;height:1.7rem;border-radius:50%;background:rgba(20,16,32,.75);border:1px solid rgba(var(--accent3-rgb),.6);color:rgb(var(--accent3-rgb));display:flex;align-items:center;justify-content:center;cursor:nwse-resize;font-size:.75rem;z-index:30">◤</span>
         </sc-if>
       </div>
     </sc-for>
@@ -474,7 +490,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
     <sc-if value="{{ toastOn }}" hint-placeholder-val="{{ false }}">
       <div style="padding:.45rem 1.1rem;border-radius:999px;background:rgba(240,80,90,.22);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent2-rgb),.65);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:#ffd3da">{{ toastTxt }}</div>
     </sc-if>
-    <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
+    <sc-if value="{{ trayOpen }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
         <sc-for list="{{ addables }}" as="ad" hint-placeholder-count="4">
           <span onClick="{{ ad.add }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(255,242,236,.12);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.3);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--text-rgb));cursor:pointer">+ {{ ad.label }}</span>
@@ -503,7 +519,12 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         </div>
       </sc-if>
     </sc-if>
-    <span onClick="{{ toggleEdit }}" style="{{ editPillStyle }}">{{ editPillTxt }}</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
+        <span onClick="{{ trayToggle }}" title="Show / hide the edit tray" style="{{ trayToggleStyle }}">{{ trayToggleTxt }}</span>
+      </sc-if>
+      <span onClick="{{ toggleEdit }}" style="{{ editPillStyle }}">{{ editPillTxt }}</span>
+    </div>
   </div>
 </div>
 </div>
@@ -516,6 +537,44 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 // ════════════════════════════════════════════════════════════════════
 
 const COLS = 24, ROWS = 16;              // ENGINE — never change
+
+// True when any two live modules overlap or one leaves the grid. Used as the
+// engine's final pre-commit check and by the load-time repair below.
+function layoutOverlaps(mods) {
+  const live = mods.filter(m => !m.removing);
+  for (let a = 0; a < live.length; a++) {
+    const A = live[a];
+    if (A.x < 0 || A.y < 0 || A.x + A.w > COLS || A.y + A.h > ROWS) return true;
+    for (let b = a + 1; b < live.length; b++) {
+      const B = live[b];
+      if (A.x < B.x + B.w && B.x < A.x + A.w && A.y < B.y + B.h && B.y < A.y + A.h) return true;
+    }
+  }
+  return false;
+}
+
+// Self-heal a saved layout that contains overlaps (an old resize bug could
+// persist them, leaving modules whose buttons all fire together): keep
+// first-comers where they are, relocate overlappers to a free slot, drop
+// what can't fit. A clean layout passes through untouched.
+function repairLayout(mods) {
+  if (!layoutOverlaps(mods)) return mods;
+  const placed = [];
+  for (const m of mods) {
+    const hits = (x, y) => placed.some(o =>
+      x < o.x + o.w && o.x < x + m.w && y < o.y + o.h && o.y < y + m.h);
+    if (m.x >= 0 && m.y >= 0 && m.x + m.w <= COLS && m.y + m.h <= ROWS && !hits(m.x, m.y)) {
+      placed.push(m);
+      continue;
+    }
+    let spot = null;
+    for (let y = 0; y <= ROWS - m.h && !spot; y++)
+      for (let x = 0; x <= COLS - m.w && !spot; x++)
+        if (!hits(x, y)) spot = { x, y };
+    if (spot) placed.push({ ...m, x: spot.x, y: spot.y });
+  }
+  return placed;
+}
 const MAX_MODULES = 40;                   // ENGINE
 const LS_KEY = 'dusk.layout.v3';          // ENGINE — never rename
 const LS_BG = 'dusk.bg.v1';               // ENGINE
@@ -552,6 +611,7 @@ function hex2rgbStr(hex) {
 const DEFS = {
   clock:   { w: 4,  h: 2, label: 'CLOCK' },
   date:    { w: 5,  h: 2, label: 'DATE' },
+  datetime:{ w: 4,  h: 2, label: 'DATE-TIME' },
   ticker:  { w: 15, h: 2, label: 'TICKER' },
   weather: { w: 6,  h: 4, label: 'WEATHER' },
   cpu:     { w: 6,  h: 2, label: 'CPU' },
@@ -679,6 +739,7 @@ class Component extends DCLogic {
         const raw2 = localStorage.getItem('dusk.layout.v2');
         if (raw2) modules = sanitizeLayout(migrateV2(JSON.parse(raw2)));
       }
+      if (modules) modules = repairLayout(modules);   // undo persisted overlaps
     } catch (e) {}
     if (!modules) modules = DEFAULT_MODULES.map(m => ({ ...m }));
     let boot = 0;
@@ -1119,19 +1180,30 @@ class Component extends DCLogic {
 
   // ══════════ ENGINE: drag / resize / snap (DO NOT MODIFY) ══════════
   bindDrag() {
+    this.unbindDrag();               // never stack listeners across drags
     this._mv = (ev) => this.setState(s => s.drag ? { drag: { ...s.drag, dx: ev.clientX - s.drag.sx, dy: ev.clientY - s.drag.sy } } : null);
     this._up = () => { this.unbindDrag(); this.commitDrag(); };
+    this._cxl = () => { this.unbindDrag(); this.setState({ drag: null }); };  // cancel = abort, never commit
     window.addEventListener('pointermove', this._mv);
     window.addEventListener('pointerup', this._up);
+    window.addEventListener('pointercancel', this._cxl);
   }
   unbindDrag() {
     if (this._mv) window.removeEventListener('pointermove', this._mv);
     if (this._up) window.removeEventListener('pointerup', this._up);
-    this._mv = this._up = null;
+    if (this._cxl) window.removeEventListener('pointercancel', this._cxl);
+    this._mv = this._up = this._cxl = null;
   }
   startDrag(e, id, mode) {
     if (!this.state.edit) return;
+    // One drag at a time: a press landing mid-drag (possible when a pointerup
+    // was lost outside the window) used to hijack the gesture onto a second
+    // module and could commit overlapping layouts.
+    if (this.state.drag) return;
     e.preventDefault(); e.stopPropagation();
+    // Capture the pointer so pointerup is delivered even when the button is
+    // released outside the window - a lost 'up' left a stale drag behind.
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
     this.setState({ drag: { id, mode, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 } });
     this.bindDrag();
   }
@@ -1159,6 +1231,12 @@ class Component extends DCLogic {
       dxc = Math.max(-minX, Math.min(COLS - maxX, dxc));
       dyc = Math.max(-minY, Math.min(ROWS - maxY, dyc));
       rects = members.map(o => ({ id: o.id, x: o.x + dxc, y: o.y + dyc, w: o.w, h: o.h }));
+    } else if (d.mode === 'resize-tl') {
+      // Top-left handle: that corner moves, the bottom-right edge stays put.
+      movedIds = [m.id];
+      const nx = Math.max(0, Math.min(m.x + m.w - 3, m.x + Math.round(d.dx / cw)));
+      const ny = Math.max(0, Math.min(m.y + m.h - 2, m.y + Math.round(d.dy / ch)));
+      rects = [{ id: m.id, x: nx, y: ny, w: m.x + m.w - nx, h: m.y + m.h - ny }];
     } else {
       movedIds = [m.id];
       const w = Math.max(3, Math.min(COLS - m.x, Math.round(m.w + d.dx / cw)));
@@ -1181,6 +1259,15 @@ class Component extends DCLogic {
       const byId = {};
       t.rects.forEach(r => { byId[r.id] = r; });
       const modules = this.state.modules.map(m => byId[m.id] ? { ...m, x: byId[m.id].x, y: byId[m.id].y, w: byId[m.id].w, h: byId[m.id].h } : m);
+      // Independent safety net: whatever the preview said, an overlapping or
+      // out-of-bounds layout is never committed or persisted. Overlapped
+      // modules stack all their buttons on the same pixels and can only be
+      // untangled by deleting both - reverting is strictly better.
+      if (layoutOverlaps(modules)) {
+        this.setState({ drag: null });
+        this.showToast('BLOCKED — MODULES WOULD OVERLAP');
+        return;
+      }
       this.setState({ modules, drag: null });
       this.persist(modules);
     } else {
@@ -1380,12 +1467,21 @@ class Component extends DCLogic {
         cursor: s.edit ? 'grab' : 'default',
         touchAction: s.edit ? 'none' : 'auto',
         animation: `popIn .5s ${SPRING} both`,
-        animationDelay: m.fresh ? '0ms' : (i * 55) + 'ms'
+        // Intro delay is assigned ONCE per module id. It used to be (i * 55),
+        // so removing a module shifted every survivor's delay, which restarted
+        // their pop-in animation - the "everything wiggles on delete" bug.
+        animationDelay: (() => {
+          const intro = this._intro || (this._intro = {});
+          if (!(m.id in intro)) intro[m.id] = m.fresh ? 0 : i * 55;
+          return intro[m.id] + 'ms';
+        })()
       };
 
       return {
         ...m,
         t_clock: m.type === 'clock', t_date: m.type === 'date', t_ticker: m.type === 'ticker',
+        t_datetime: m.type === 'datetime',
+        dtDateOn: m.w * m.h >= 8,     // 3x3=9 or 4x2=8 show the date; 3x2=6 is time-only
         t_weather: m.type === 'weather', t_cpu: m.type === 'cpu', t_ram: m.type === 'ram',
         t_music: m.type === 'music', t_tasks: m.type === 'tasks',
         t_agenda: m.type === 'agenda', t_image: m.type === 'image', t_chart: m.type === 'chart',
@@ -1464,6 +1560,7 @@ class Component extends DCLogic {
         cardStyleImage: { ...(m.img ? { borderRadius: 14, overflow: 'hidden', boxShadow: glass.boxShadow } : { ...base, borderStyle: (frameless || m.surface === 'clear') ? 'solid' : 'dashed' }), ...editOutline, width: '100%', height: '100%', position: 'relative', boxSizing: 'border-box' },
         drag: (e) => { if (e.target.closest('label,input')) return; this.startDrag(e, m.id, 'move'); },
         resizeBtn: (e) => this.startDrag(e, m.id, 'resize'),
+        resizeTlBtn: (e) => this.startDrag(e, m.id, 'resize-tl'),
         surfaceBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.cycleSurface(m.id); },
         removeBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.requestRemove(m.id); },
         linkBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.onLink(m.id); },
@@ -1881,7 +1978,9 @@ class Component extends DCLogic {
       gitDotColor: (() => { const g = s.gitData; if (!g) return 'rgba(var(--text-rgb),.25)'; return g.status.clean ? '#9be8b8' : 'rgb(var(--accent2-rgb))'; })(),
       gitCommits: (() => { const g = s.gitData; return g && g.log.length ? g.log : [{hash:'———', msg:'no data yet'}]; })(),
       gitAge: s.gitAge || '—',
-      addables: ['clock', 'date', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile'].map(t => ({
+      // clock + date stay renderable for saved layouts, but the tray offers
+      // the combined DATE-TIME module in their place.
+      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),
@@ -1889,8 +1988,20 @@ class Component extends DCLogic {
         const modules = DEFAULT_MODULES.map(m => ({ ...m, fresh: true }));
         this.setState({ modules, linking: null, armRemove: null }); this.persist(modules);
       },
-      toggleEdit: () => this.setState(x => ({ edit: !x.edit, linking: null, armRemove: null })),
+      toggleEdit: () => this.setState(x => ({ edit: !x.edit, linking: null, armRemove: null, trayMin: false })),
       editPillTxt: s.edit ? '✓ DONE EDITING' : '⌘E — EDIT LAYOUT',
+      // Tray collapse: stay in edit mode (handles/outlines remain) but hide
+      // the pill stack so the whole board is visible while arranging.
+      trayOpen: s.edit && !s.trayMin,
+      trayToggle: () => this.setState(x => ({ trayMin: !x.trayMin })),
+      trayToggleTxt: s.trayMin ? '▲' : '▼',
+      trayToggleStyle: {
+        width: '2.2rem', height: '2.2rem', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', borderRadius: '50%', cursor: 'pointer', userSelect: 'none',
+        background: 'rgba(20,16,32,.55)', backdropFilter: 'blur(14px)',
+        border: '1px solid rgba(var(--accent3-rgb),.55)',
+        color: 'rgb(var(--accent3-rgb))', fontSize: '.7rem'
+      },
       ...(() => {
         // \u2500\u2500 AI module values. Liveness authority is the systemd unit state
         // (hud_state.json's ts freezes while idle, so ts alone can't be trusted).
@@ -1986,7 +2097,22 @@ class Component extends DCLogic {
           aiMenuBtns: [
             ...(running ? [] : [menuBtn('START', 'start', '--accent-rgb')]),
             menuBtn('RESTART', 'restart', '--accent3-rgb'),
-            ...(running ? [menuBtn('SHUT DOWN', 'stop', '--accent2-rgb')] : [])
+            ...(running ? [menuBtn('SHUT DOWN', 'stop', '--accent2-rgb')] : []),
+            // Screen off, machine on (burn-in guard). Wakes on a KEY press
+            // only - pointers are disabled while dark. See sleep-screen.sh.
+            (() => {
+              const b = menuBtn('SLEEP SCREEN', null, '--peach-rgb');
+              b.click = (e) => {
+                e.stopPropagation(); e.preventDefault();
+                this.setState({ aiMenu: null });
+                if (window.duskBridge && window.duskBridge.sleepScreen) {
+                  window.duskBridge.sleepScreen().then(r => {
+                    if (r && !r.ok) this.showToast(String(r.error || 'SLEEP FAILED').toUpperCase());
+                  }).catch(() => this.showToast('SLEEP FAILED'));
+                } else this.showToast('SCREEN SLEEP NEEDS THE DUSK APP');
+              };
+              return b;
+            })()
           ],
           aiMenuNote: s.aiSent || (bridged ? 'controls the systemd user service' : 'unavailable outside the Dusk app')
         };

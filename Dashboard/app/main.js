@@ -353,6 +353,19 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) { return { ok: false, error: String(e.message) }; }
   });
 
+  // Screen off, machine on (burn-in guard): runs sleep-screen.sh detached.
+  // The script disables pointer devices, forces DPMS off, and re-enables the
+  // pointers when a keyboard press relights the panel.
+  ipcMain.handle('screen:sleep', () => {
+    try {
+      const { spawn } = require('child_process');
+      const child = spawn('bash', [path.join(APP_DIR, 'sleep-screen.sh')],
+                          { detached: true, stdio: 'ignore' });
+      child.unref();
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e.message) }; }
+  });
+
   require('./spotify').register(ipcMain);
 
   ipcMain.on('ui:open', showMain);

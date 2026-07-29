@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('duskBridge', {
     state() { return ipcRenderer.invoke('spotify:state'); },
     control(action) { return ipcRenderer.invoke('spotify:control', String(action)); }
   },
+  /** Screen off / machine on. Wakes on a keyboard press only. */
+  sleepScreen() { return ipcRenderer.invoke('screen:sleep'); },
   open() { ipcRenderer.send('ui:open'); },
   toBubble() { ipcRenderer.send('ui:bubble'); },
   ctxMenu() { ipcRenderer.send('ui:ctx'); }

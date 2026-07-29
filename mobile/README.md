@@ -146,6 +146,8 @@ set `CORTANA_KEYSTORE_PASS`.
 - **AGENDA / TASKS / GIT / WEATHER** — mirrored read-only. Tasks and the
   weather ZIP come from the board snapshot (they live in the dashboard page's
   localStorage, which nothing else can read).
+- **Pull down to refresh** — forces one fresh fetch from the bridge,
+  independent of the live stream; every card redraws from it.
 - **Reordering** — press and hold any card and drag. The order is saved on the
   phone and from then on overrides the board's layout order; MOBILE LINK stays
   pinned at the top. Modules still can't be added or removed here.
