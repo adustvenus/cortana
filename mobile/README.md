@@ -196,7 +196,7 @@ paraphrasing them.
 | ElevenLabs/OpenAI TTS both down | Reply text + Android TTS — never a dead end |
 | Speech too quiet / silence sent | Bridge's silence gate answers "didn't catch that" instead of hallucinating |
 | Spotify tokens refreshed by dash and bridge at once | Both re-read the token file before refreshing and write back atomically; a lost rotation race self-heals on re-read |
-| Encrypted prefs corrupted (Android keystore reset) | Store is recreated; user re-pairs instead of the app crash-looping |
+| Encrypted store won't open (keystore hiccup, often right after an update) | Retried, never deleted — a transient failure used to wipe the token permanently. Only the token lives there; host, device name and layout are in ordinary storage, so worst case is one scanned QR, not a re-setup. The pairing screen says so when storage is genuinely unavailable |
 | Phone asks Cortana to restart/shut down | The bridge maps it to `systemctl --user restart/stop cortana` on the workstation |
 | Voice replies while phone is on silent | MediaPlayer uses the assistant audio stream; media volume applies |
 | hud_state contention (desk turn + phone turn) | Bridge only writes orb state when the desk isn't mid-turn |

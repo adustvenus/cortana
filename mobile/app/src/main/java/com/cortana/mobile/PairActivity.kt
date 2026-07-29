@@ -55,8 +55,17 @@ class PairActivity : Activity() {
             gravity = Gravity.CENTER
         })
         col.addView(Ui.gap(this, 14))
+        // Re-link (host already known) reads differently from first-time setup:
+        // the phone keeps host, port and its own name even when the credential
+        // is gone, so this is one scan, not a re-setup.
+        val knownHost = Prefs.dashName(this).ifEmpty { Prefs.host(this) }
         col.addView(TextView(this).apply {
-            text = "On the Dusk dashboard, open the MOBILE LINK module and tap " +
+            text = if (knownHost.isNotEmpty())
+                "Re-linking to $knownHost. Open the MOBILE LINK module on the " +
+                "dashboard, tap PAIR A PHONE, and point this camera at the QR code " +
+                "— everything else is remembered."
+            else
+                "On the Dusk dashboard, open the MOBILE LINK module and tap " +
                 "PAIR A PHONE. Then just point this phone's camera at the QR code " +
                 "that appears — it downloads nothing else and links you automatically."
             textSize = 14f
@@ -67,6 +76,15 @@ class PairActivity : Activity() {
         col.addView(Ui.gap(this, 26))
         col.addView(Ui.value(this, "Make sure Tailscale is connected on this phone first.",
             12f, Ui.LAVENDER).apply { gravity = Gravity.CENTER })
+        // A keystore that won't open means pairing cannot be stored - say so
+        // rather than letting the user pair repeatedly and wonder why it drops.
+        if (!Prefs.secureStorageAvailable(this)) {
+            col.addView(Ui.gap(this, 12))
+            col.addView(Ui.value(this,
+                "Secure storage is unavailable on this phone right now, so a pairing " +
+                "can't be saved. Restart the app; if it persists, reboot the phone.",
+                12f, Ui.ROSE).apply { gravity = Gravity.CENTER })
+        }
         col.addView(Ui.gap(this, 30))
 
         // ── fallback: manual entry, hidden until asked for ──
