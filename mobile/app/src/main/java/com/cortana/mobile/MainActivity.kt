@@ -8,34 +8,43 @@ import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Collections
 import kotlin.concurrent.thread
 
 /**
  * The phone-side mirror of the Dusk dashboard: the same modules, same palette,
  * stacked in one scrolling column (a phone can't fit the 24x16 grid). Strictly
- * VIEW-ONLY by design - no layout editing, no service power controls, no task
- * editing from the phone. The two exceptions the user chose: talking to
- * Cortana, and Spotify transport control.
- *
- * Module order follows the real board when the dashboard's MOBILE LINK module
- * has pushed a snapshot; otherwise a sensible default order is used.
+ * VIEW-ONLY for content - no service power controls, no task editing. The
+ * exceptions the user chose: talking to Cortana, Spotify transport control,
+ * and (phone-local only) LONG-PRESS + DRAG to reorder the module cards. The
+ * custom order persists on the phone and overrides the board's layout order;
+ * no modules can be added or removed here.
  */
 class MainActivity : Activity(), LinkClient.Listener {
 
-    private lateinit var container: LinearLayout
+    private val supported = listOf("cortana", "music", "agenda", "tasks", "weather", "git")
+
+    private lateinit var recycler: RecyclerView
+    private lateinit var adapter: CardAdapter
     private lateinit var linkDot: TextView
     private var lastAnnounce = ""
     private val artCache = HashMap<String, Bitmap>()
     private var weather: JSONObject? = null
     private var weatherZip = ""
     private var weatherAt = 0L
+    private var dragging = false
+    private var pendingState: JSONObject? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,7 +58,7 @@ class MainActivity : Activity(), LinkClient.Listener {
             setBackgroundColor(Ui.BG)
         }
 
-        // top bar: link dot · DUSK <dashname> · sphere (talk) · settings
+        // top bar: link dot · DUSK · sphere (talk) · settings
         linkDot = TextView(this).apply { text = "●"; textSize = 14f; setTextColor(Ui.DIM) }
         val title = TextView(this).apply {
             text = "DUSK"
@@ -77,11 +86,15 @@ class MainActivity : Activity(), LinkClient.Listener {
             setPadding(Ui.dp(context, 18), Ui.dp(context, 16), Ui.dp(context, 12), Ui.dp(context, 10))
         })
 
-        container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        adapter = CardAdapter()
+        recycler = RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = this@MainActivity.adapter
+            clipToPadding = false
             setPadding(0, 0, 0, Ui.dp(context, 24))
         }
-        root.addView(ScrollView(this).apply { addView(container) },
+        ItemTouchHelper(dragCallback).attachToRecyclerView(recycler)
+        root.addView(recycler,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
         renderOffline("Connecting to ${Prefs.dashName(this).ifEmpty { Prefs.host(this) }}…")
@@ -97,15 +110,112 @@ class MainActivity : Activity(), LinkClient.Listener {
         LinkClient.stop()
     }
 
+    // ── card list + drag reorder ──
+    private inner class Holder(val frame: FrameLayout) : RecyclerView.ViewHolder(frame)
+
+    private inner class CardAdapter : RecyclerView.Adapter<Holder>() {
+        val items = ArrayList<Pair<String, LinearLayout>>()   // (type, card); "link" fixed at 0
+
+        fun setItems(next: List<Pair<String, LinearLayout>>) {
+            items.clear(); items.addAll(next)
+            notifyDataSetChanged()
+        }
+
+        fun move(from: Int, to: Int) {
+            if (from < to) for (i in from until to) Collections.swap(items, i, i + 1)
+            else for (i in from downTo to + 1) Collections.swap(items, i, i - 1)
+            notifyItemMoved(from, to)
+        }
+
+        override fun getItemCount() = items.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            Holder(FrameLayout(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(
+                    RecyclerView.LayoutParams.MATCH_PARENT,
+                    RecyclerView.LayoutParams.WRAP_CONTENT)
+            })
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            val card = items[position].second
+            (card.parent as? ViewGroup)?.removeView(card)
+            card.layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(Ui.dp(holder.frame.context, 14), Ui.dp(holder.frame.context, 6),
+                           Ui.dp(holder.frame.context, 14), Ui.dp(holder.frame.context, 6))
+            }
+            holder.frame.removeAllViews()
+            holder.frame.addView(card)
+        }
+    }
+
+    private val dragCallback = object : ItemTouchHelper.Callback() {
+        override fun isLongPressDragEnabled() = true
+
+        override fun getMovementFlags(rv: RecyclerView, vh: RecyclerView.ViewHolder) =
+            if (vh.bindingAdapterPosition <= 0) makeMovementFlags(0, 0)   // link card is pinned
+            else makeMovementFlags(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0)
+
+        override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder,
+                            target: RecyclerView.ViewHolder): Boolean {
+            val from = vh.bindingAdapterPosition
+            val to = target.bindingAdapterPosition
+            if (from <= 0 || to <= 0) return false
+            adapter.move(from, to)
+            return true
+        }
+
+        override fun onSwiped(vh: RecyclerView.ViewHolder, dir: Int) {}
+
+        override fun onSelectedChanged(vh: RecyclerView.ViewHolder?, actionState: Int) {
+            super.onSelectedChanged(vh, actionState)
+            val nowDragging = actionState == ItemTouchHelper.ACTION_STATE_DRAG
+            if (dragging && !nowDragging) {
+                // drop finished: persist the new order, then apply any state
+                // push we deferred while the finger was down
+                Prefs.setModuleOrder(this@MainActivity,
+                    adapter.items.map { it.first }.filter { it != "link" })
+                dragging = false
+                pendingState?.let { render(it) }
+                pendingState = null
+            } else {
+                dragging = nowDragging
+            }
+        }
+    }
+
+    /** Display order: the user's drag-and-drop order wins; otherwise mirror
+     *  the real board's layout; unknown/missing types fall to the end. */
+    private fun phoneOrder(state: JSONObject): List<String> {
+        val saved = Prefs.moduleOrder(this).filter { it in supported }
+        val base = saved.ifEmpty { boardOrder(state) }
+        return base + supported.filter { it !in base }
+    }
+
+    private fun boardOrder(state: JSONObject): List<String> {
+        val layout = state.optJSONObject("board")?.optJSONArray("layout") ?: return supported
+        val seen = LinkedHashSet<String>()
+        val mods = ArrayList<Pair<Int, String>>()
+        for (i in 0 until layout.length()) {
+            val m = layout.optJSONObject(i) ?: continue
+            mods.add(Pair(m.optInt("y") * 100 + m.optInt("x"), m.optString("type")))
+        }
+        mods.sortBy { it.first }
+        for ((_, t) in mods) if (t in supported) seen.add(t)
+        return seen.toList()
+    }
+
     // ── LinkClient.Listener ──
     override fun onLink(up: Boolean) {
         linkDot.setTextColor(if (up) Ui.GREEN else Ui.ROSE)
-        if (!up && LinkClient.lastState == null)
-            renderOffline("Link down - reconnecting…\nIs the workstation awake and Tailscale on?")
+        val st = LinkClient.lastState
+        if (st != null) render(st)   // re-render so the link card shows DISCONNECTED
+        else if (!up) renderOffline("Link down - reconnecting…\n" +
+            "Is Tailscale connected on this phone, and the workstation awake?")
     }
 
     override fun onAnnounce(text: String) {
-        // Background-task completions from phone-initiated work surface here.
         lastAnnounce = text
         Toast.makeText(this, "Cortana: $text", Toast.LENGTH_LONG).show()
     }
@@ -131,33 +241,19 @@ class MainActivity : Activity(), LinkClient.Listener {
 
     // ── rendering ──
     private fun renderOffline(msg: String) {
-        container.removeAllViews()
-        container.addView(Ui.card(this).apply {
-            addView(Ui.label(context, "MOBILE LINK"))
+        adapter.setItems(listOf("link" to Ui.card(this).apply {
+            addView(Ui.row(context, Ui.dot(context, Ui.ROSE),
+                Ui.label(context, "MOBILE LINK · DISCONNECTED", Ui.ROSE)))
             addView(Ui.gap(context, 8))
             addView(Ui.value(context, msg, 14f, Ui.DIM))
-        })
-    }
-
-    private fun boardOrder(state: JSONObject): List<String> {
-        val fallback = listOf("cortana", "music", "agenda", "tasks", "weather", "git")
-        val layout = state.optJSONObject("board")?.optJSONArray("layout") ?: return fallback
-        val seen = LinkedHashSet<String>()
-        val mods = ArrayList<Pair<Int, String>>()
-        for (i in 0 until layout.length()) {
-            val m = layout.optJSONObject(i) ?: continue
-            mods.add(Pair(m.optInt("y") * 100 + m.optInt("x"), m.optString("type")))
-        }
-        mods.sortBy { it.first }
-        for ((_, t) in mods) if (t in fallback) seen.add(t)
-        for (t in fallback) seen.add(t)   // supported types missing from the board go last
-        return seen.toList()
+        }))
     }
 
     private fun render(state: JSONObject) {
-        container.removeAllViews()
-        container.addView(linkCard(state))
-        for (type in boardOrder(state)) {
+        if (dragging) { pendingState = state; return }   // never yank cards mid-drag
+        val cards = ArrayList<Pair<String, LinearLayout>>()
+        cards.add("link" to linkCard(state))
+        for (type in phoneOrder(state)) {
             val card = when (type) {
                 "cortana" -> cortanaCard(state)
                 "music" -> musicCard(state)
@@ -167,19 +263,29 @@ class MainActivity : Activity(), LinkClient.Listener {
                 "git" -> gitCard(state)
                 else -> null
             }
-            card?.let { container.addView(it) }
+            card?.let { cards.add(type to it) }
         }
+        adapter.setItems(cards)
     }
 
     private fun linkCard(state: JSONObject): LinearLayout = Ui.card(this).apply {
+        val up = LinkClient.linkUp
         val host = state.optString("host", Prefs.dashName(context))
         addView(Ui.row(context,
-            Ui.dot(context, if (LinkClient.linkUp) Ui.GREEN else Ui.ROSE),
-            Ui.label(context, "MOBILE LINK"),
+            Ui.dot(context, if (up) Ui.GREEN else Ui.ROSE),
+            Ui.label(context, if (up) "MOBILE LINK" else "MOBILE LINK · DISCONNECTED",
+                if (up) Ui.LAVENDER else Ui.ROSE),
             Ui.spacer(context),
             Ui.value(context, "BRIDGE v${state.optString("bridgeVersion", "?")}", 11f, Ui.DIM, mono = true)))
         addView(Ui.gap(context, 8))
-        addView(Ui.value(context, "Linked to $host", 15f))
+        if (up) {
+            addView(Ui.value(context, "Linked to $host", 15f))
+        } else {
+            addView(Ui.value(context, "Reconnecting to $host…", 15f, Ui.ROSE))
+            addView(Ui.value(context,
+                "Check: Tailscale connected on this phone · workstation awake · bridge running",
+                12f, Ui.DIM))
+        }
         addView(Ui.value(context,
             "This phone: ${Prefs.deviceName(context).ifEmpty { Prefs.defaultDeviceName() }}",
             13f, Ui.DIM))
@@ -192,6 +298,8 @@ class MainActivity : Activity(), LinkClient.Listener {
             addView(Ui.gap(context, 6))
             addView(Ui.value(context, brainErr, 12f, Ui.ROSE))
         }
+        addView(Ui.gap(context, 6))
+        addView(Ui.value(context, "hold a card to reorder", 10f, Ui.DIM))
     }
 
     private fun cortanaCard(state: JSONObject): LinearLayout = Ui.card(this).apply {

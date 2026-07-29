@@ -79,6 +79,15 @@ object Prefs {
         open(ctx).edit().putString("skipVer", v).apply()
     }
 
+    /** Phone-local module order from drag-and-drop; empty = follow the board. */
+    fun moduleOrder(ctx: Context): List<String> =
+        (open(ctx).getString("moduleOrder", "") ?: "")
+            .split(",").filter { it.isNotEmpty() }
+
+    fun setModuleOrder(ctx: Context, order: List<String>) {
+        open(ctx).edit().putString("moduleOrder", order.joinToString(",")).apply()
+    }
+
     fun unlink(ctx: Context) {
         open(ctx).edit().remove("token").remove("dashName").apply()
     }

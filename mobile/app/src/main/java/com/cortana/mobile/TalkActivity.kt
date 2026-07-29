@@ -61,14 +61,26 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener {
             setBackgroundColor(Ui.BG)
             setPadding(Ui.dp(context, 20), Ui.dp(context, 26), Ui.dp(context, 20), Ui.dp(context, 20))
         }
-        col.addView(TextView(this).apply {
+        val back = TextView(this).apply {
+            text = "‹"
+            textSize = 30f
+            setTextColor(Ui.DIM)
+            setPadding(Ui.dp(context, 4), 0, Ui.dp(context, 18), Ui.dp(context, 4))
+            contentDescription = "Back to the dashboard"
+            setOnClickListener { finish() }
+        }
+        val header = TextView(this).apply {
             text = "CORTANA · ${Prefs.dashName(context).ifEmpty { Prefs.host(context) }}"
             typeface = Typeface.MONOSPACE
             textSize = 12f
             letterSpacing = 0.2f
             setTextColor(Ui.LAVENDER)
+        }
+        col.addView(Ui.row(this, back, header, Ui.spacer(this)).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         })
-        col.addView(Ui.gap(this, 24))
+        col.addView(Ui.gap(this, 14))
 
         sphere = ImageView(this).apply {
             setImageResource(R.drawable.sphere)
@@ -198,10 +210,20 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener {
                 }
             } catch (e: LinkClient.AuthException) {
                 runOnUiThread {
-                    setIdle("access revoked - re-pair from settings")
+                    replyTxt.text = "CORTANA: This phone's access was revoked on " +
+                        "the dashboard - re-pair me from Settings and we're back."
+                    setIdle("access revoked")
                 }
             } catch (e: Exception) {
-                runOnUiThread { setIdle("link error: ${e.message}") }
+                // Link failure answered in Cortana's voice (on screen), with the
+                // real error attached so it's debuggable - not a bare toast.
+                runOnUiThread {
+                    replyTxt.text = "CORTANA: I can't reach the workstation right " +
+                        "now - this phone probably isn't on its network. Make sure " +
+                        "Tailscale is connected (or you're on the home Wi-Fi), then " +
+                        "try me again.\n\n[link error: ${e.message}]"
+                    setIdle("link down - tap to retry when connected")
+                }
             } finally {
                 busy = false
                 wav?.delete()
