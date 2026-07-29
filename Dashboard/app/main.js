@@ -445,6 +445,27 @@ if (!app.requestSingleInstanceLock()) {
     return { ok: true };
   });
 
+  // Manual calendar pull for the AGENDA module's refresh button: runs
+  // Cortana's own one-shot fetch, which rewrites calendar_state.json. Uses her
+  // venv so it shares the same token and code path as the scheduled loop.
+  ipcMain.handle('calendar:refresh', () => {
+    const REPO = path.join(os.homedir(), 'cortana');
+    const py = ['venv/bin/python', 'cortana_venv/bin/python', '.venv/bin/python']
+      .map(v => path.join(REPO, v)).find(v => { try { return fs.existsSync(v); } catch (e) { return false; } });
+    if (!py) return { ok: false, error: 'no python venv found in ~/cortana' };
+    return new Promise(resolve => {
+      execFile(py, [path.join(REPO, 'main.py'), '--calendar-once'],
+        { cwd: REPO, timeout: 60000 }, (err, stdout, stderr) => {
+          const out = String(stdout || '') + String(stderr || '');
+          if (err) return resolve({ ok: false, error: out.trim().slice(-160) || err.message });
+          // --calendar-once prints CALENDAR ERROR on a failed fetch
+          if (/CALENDAR ERROR/i.test(out))
+            return resolve({ ok: false, error: out.split('CALENDAR ERROR:')[1].trim().slice(0, 160) });
+          resolve({ ok: true });
+        });
+    });
+  });
+
   // Screen off, machine on (burn-in guard): runs sleep-screen.sh detached.
   // The script disables pointer devices, forces DPMS off, and re-enables the
   // pointers when a keyboard press relights the panel.

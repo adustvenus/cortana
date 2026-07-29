@@ -82,24 +82,31 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
   html.dusk-app .dusk-scroll { overflow: hidden !important; }
   html.dusk-app .dusk-sizer { min-width: 0 !important; min-height: 0 !important; }
 
-  /* Glass scrollbars: invisible at rest, fading in only while the element is
-     actually being scrolled (the .scrolling class is added on scroll and
-     removed ~900ms later - see _bindGlassScroll). Overlay-sized so revealing
-     one never reflows content. */
-  * { scrollbar-width: none; }                     /* Firefox / fallback */
-  *::-webkit-scrollbar { width: 7px; height: 7px; }
-  *::-webkit-scrollbar-track { background: transparent; }
+  /* Glass scrollbars: invisible at rest, fading in only while that element is
+     scrolled (the .scrolling class is added on scroll, removed ~900ms later).
+     WEBKIT ONLY BY DESIGN: setting scrollbar-width/scrollbar-color anywhere
+     makes Chromium ignore ::-webkit-scrollbar entirely, so those two
+     properties must never appear in this file. The track keeps a FIXED 8px
+     at every state - that is what stops the reveal reflowing content; the
+     thumb is simply painted transparent at rest. */
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-button { width: 0; height: 0; display: none; }
   *::-webkit-scrollbar-thumb {
-    background: transparent; border-radius: 99px;
-    border: 2px solid transparent; background-clip: content-box;
-    transition: background-color .35s ease;
+    background-color: transparent;          /* laid out, just not painted */
+    border: 2px solid transparent;
+    background-clip: content-box;           /* -> a 4px pill inside the 8px track */
+    border-radius: 99px;
+    min-height: 28px; min-width: 28px;      /* never degrades to a dot */
+    transition: background-color .3s ease;
   }
-  .scrolling { scrollbar-width: thin; scrollbar-color: rgba(var(--accent3-rgb),.45) transparent; }
-  .scrolling::-webkit-scrollbar-thumb {
-    background-color: rgba(var(--accent3-rgb),.42);
-    box-shadow: inset 0 0 0 1px rgba(var(--text-rgb),.12);
-  }
-  .scrolling:hover::-webkit-scrollbar-thumb { background-color: rgba(var(--accent3-rgb),.6); }
+  /* Source order is load-bearing: hover and .scrolling have equal specificity,
+     so the later rule wins and an active scroll always outranks a hover. */
+  *:hover::-webkit-scrollbar-thumb { background-color: rgba(var(--text-rgb),.18); }
+  .scrolling::-webkit-scrollbar-thumb { background-color: rgba(var(--accent3-rgb),.42); }
+  .scrolling:hover::-webkit-scrollbar-thumb { background-color: rgba(var(--accent3-rgb),.58); }
+  .scrolling::-webkit-scrollbar-thumb:active { background-color: rgba(var(--accent2-rgb),.66); }
 </style>
 </helmet>
 
@@ -269,13 +276,20 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         <!-- ═══ AGENDA ═══ -->
         <sc-if value="{{ m.t_agenda }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleCol }}">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb));flex-shrink:0">AGENDA · TODAY</div>
-            <div style="flex:1;overflow-y:auto;margin-top:.7rem;min-height:0;display:flex;flex-direction:column;gap:.75rem;-webkit-mask-image:linear-gradient(180deg,#000 92%,transparent);mask-image:linear-gradient(180deg,#000 92%,transparent)">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">AGENDA</span>
+              <span style="flex:1"></span>
+              <span onClick="{{ agendaRefresh }}" title="Fetch the calendar now" style="{{ agendaRefreshStyle }}">{{ agendaRefreshTxt }}</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.35rem;margin-top:.4rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 90%,transparent)">
               <sc-for list="{{ agendaItems }}" as="ev" hint-placeholder-count="3">
-                <div style="display:flex;gap:.8rem"><span style="{{ ev.timeStyle }}">{{ ev.time }}</span><span style="{{ ev.titleStyle }}">{{ ev.title }}</span></div>
+                <div style="display:flex;gap:.6rem;align-items:baseline;min-width:0;flex-shrink:0">
+                  <span style="{{ ev.timeStyle }}">{{ ev.time }}</span>
+                  <span style="{{ ev.titleStyle }}">{{ ev.title }}</span>
+                </div>
               </sc-for>
               <sc-if value="{{ agendaEmpty }}" hint-placeholder-val="{{ false }}">
-                <div style="font-size:.9rem;color:rgba(var(--text-rgb),.4)">{{ agendaEmptyTxt }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.45);line-height:1.5">{{ agendaEmptyTxt }}</div>
               </sc-if>
             </div>
           </div>
@@ -992,6 +1006,7 @@ class Component extends DCLogic {
       } catch (e) {}
     };
     pollCal();
+    this._pollCal = pollCal;             // manual AGENDA refresh re-reads at once
     this._calPoll = setInterval(pollCal, 60000);
 
     // ── Spotify (Music module): poll current playback ──
@@ -1082,6 +1097,12 @@ class Component extends DCLogic {
     // outer ring around their parent (obsidian-style). Node positions are
     // remembered per canvas for click-to-open hit testing.
     this._filesNetNodes = {};
+    // NET view: a radial tidy tree. Every node owns an angular WEDGE sized by
+    // its subtree weight, and children are placed strictly inside their
+    // parent's wedge - so siblings and cousins can never interleave (the old
+    // fixed +/-0.28rad fan collided by construction). Laid out on an ELLIPSE
+    // so a wide module actually uses its width. Truncation is always visible
+    // as a "+N" node rather than silently dropping branches.
     this._drawFilesNet = () => {
       const els = this._filesNetEls || {};
       const tree = this.state.filesTree;
@@ -1092,43 +1113,131 @@ class Component extends DCLogic {
         const ctx = cv.getContext('2d');
         ctx.clearRect(0, 0, W, H);
         const nodes = [];
-        if (tree && this.state.filesMode === 'net') {
-          const maxDepth = Math.max(1, Math.floor((rec.w || 8) / 4));
-          const cx = W / 2, cy = H / 2;
-          const R1 = Math.min(W, H) * 0.30, R2 = Math.min(W, H) * 0.47;
-          const style = getComputedStyle(document.documentElement);
-          const acc = style.getPropertyValue('--accent-rgb').trim() || '255,171,143';
-          const lav = style.getPropertyValue('--accent3-rgb').trim() || '201,184,232';
-          const txt = style.getPropertyValue('--text-rgb').trim() || '253,243,236';
-          const kids = (tree.kids || []).slice(0, 14);
-          nodes.push({ x: cx, y: cy, r: 15, path: tree.path, name: tree.name });
-          kids.forEach((k, ki) => {
-            const a = (ki / kids.length) * Math.PI * 2 - Math.PI / 2;
-            const x = cx + Math.cos(a) * R1, y = cy + Math.sin(a) * R1;
-            ctx.strokeStyle = `rgba(${lav},.35)`;
-            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke();
-            nodes.push({ x, y, r: 10, path: k.path, name: k.name, dir: k.dir });
-            if (maxDepth >= 3) {
-              const gks = (k.kids || []).slice(0, 6);
-              gks.forEach((g, gi) => {
-                const ga = a + ((gi - (gks.length - 1) / 2) * 0.28);
-                const gx = cx + Math.cos(ga) * R2, gy = cy + Math.sin(ga) * R2;
-                ctx.strokeStyle = `rgba(${lav},.2)`;
-                ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(gx, gy); ctx.stroke();
-                nodes.push({ x: gx, y: gy, r: 6, path: g.path, name: g.name, dir: g.dir });
-              });
-            }
-          });
-          ctx.textAlign = 'center';
-          for (const n of nodes) {
-            ctx.beginPath();
-            ctx.fillStyle = n.r >= 15 ? `rgb(${acc})` : (n.dir ? `rgba(${acc},.75)` : `rgba(${txt},.4)`);
-            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = `rgba(${txt},.75)`;
-            ctx.font = (n.r >= 10 ? 11 : 9) + "px 'JetBrains Mono',monospace";
-            ctx.fillText(n.name.slice(0, 14), n.x, n.y + n.r + 11);
+        if (!tree || this.state.filesMode !== 'net') { this._filesNetNodes[id] = nodes; continue; }
+
+        const TALLY = 13;                       // reserved strip for the count
+        const HH = Math.max(20, H - TALLY);
+        const cx = W / 2, cy = HH / 2;
+        const RX = Math.max(10, W / 2 - 8), RY = Math.max(10, HH / 2 - 8);
+        const Rmin = Math.min(RX, RY);
+        const st = getComputedStyle(document.documentElement);
+        const acc = st.getPropertyValue('--accent-rgb').trim() || '255,171,143';
+        const lav = st.getPropertyValue('--accent3-rgb').trim() || '201,184,232';
+        const txt = st.getPropertyValue('--text-rgb').trim() || '253,243,236';
+        // ellipse map: a ray at angle a, normalised radius t
+        const P = (a, t) => [cx + Math.cos(a) * RX * t, cy + Math.sin(a) * RY * t];
+
+        // depth: one level per ~4 columns, then capped by available radius
+        const want = Math.min(4, Math.max(1, Math.floor((rec.w || 8) / 4)));
+        const D = Math.max(1, Math.min(want, Math.floor((Rmin * 0.86) / 26)));
+
+        // ring radii: inner rings get more room (longer names live there)
+        const gaps = [];
+        for (let d = 1; d <= D; d++) gaps.push(Math.pow(0.85, d - 1));
+        const total = gaps.reduce((a, b) => a + b, 0);
+        const outerT = 1 - Math.min(0.4, Math.max(0.12, 52 / Rmin));
+        const ringT = []; let acc2 = 0;
+        for (let d = 0; d < D; d++) { acc2 += gaps[d]; ringT.push(outerT * acc2 / total); }
+
+        // PASS 1 - weigh subtrees (weight buys angle)
+        let shown = 0, hidden = 0;
+        const weigh = (node, depth) => {
+          const kids = (node.kids || []);
+          if (depth >= D || !kids.length) {
+            if (kids.length) hidden += kids.length;
+            return { node, kids: [], w: 1, more: kids.length };
           }
+          const mapped = kids.map(k => weigh(k, depth + 1));
+          return { node, kids: mapped, more: 0,
+                   w: mapped.reduce((a, b) => a + b.w, 0) || 1 };
+        };
+        const root = weigh(tree, 0);
+
+        // PASS 2 - allocate wedges top-down and draw
+        const label = (x, y, name, r, span) => {
+          // only label when the node's arc can plausibly hold text
+          const room = span * Rmin * ringT[Math.min(ringT.length - 1, 0)];
+          if (r < 5 || room < 16) return;
+          const max = Math.max(4, Math.floor(room / 5.5));
+          ctx.fillStyle = `rgba(${txt},.78)`;
+          ctx.font = (r >= 9 ? 11 : 9) + "px 'JetBrains Mono',monospace";
+          ctx.textAlign = 'center';
+          const t = name.length > max ? name.slice(0, max - 1) + '…' : name;
+          ctx.fillText(t, x, y + r + 11);
+        };
+
+        const place = (entry, depth, a0, a1, px, py) => {
+          const mid = (a0 + a1) / 2;
+          const t = ringT[Math.min(depth, ringT.length - 1)];
+          const [x, y] = depth === 0 ? [cx, cy] : P(mid, t);
+          const r = depth === 0 ? 13 : Math.max(3.5, 11 - depth * 2.2);
+          if (depth > 0) {
+            ctx.strokeStyle = `rgba(${lav},${Math.max(0.12, 0.4 - depth * 0.08)})`;
+            ctx.lineWidth = Math.max(0.6, 1.4 - depth * 0.3);
+            ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(x, y); ctx.stroke();
+          }
+          nodes.push({ x, y, r, path: entry.node.path, name: entry.node.name,
+                       dir: entry.node.dir, depth });
+          shown++;
+
+          const kids = entry.kids;
+          if (!kids.length) return;
+          const span = a1 - a0;
+          // minimum angle so dots at THIS ring never touch (Rmin = worst-case
+          // tangential scale on the ellipse, so the bound holds all the way round)
+          const tc = ringT[Math.min(depth + 1, ringT.length - 1)];
+          const sep = Math.max(9, 18 * Math.pow(0.8, depth));
+          const minAng = sep / Math.max(1, tc * Rmin);
+          let fit = Math.max(1, Math.floor(span / minAng));
+          let list = kids, extra = 0;
+          if (kids.length > fit) {
+            // keep the heaviest branches, collapse the rest into one "+N"
+            const heavy = [...kids].sort((m, n) => n.w - m.w).slice(0, Math.max(1, fit - 1));
+            const keep = new Set(heavy.map(h => h.node));
+            list = kids.filter(k => keep.has(k.node));
+            extra = kids.length - list.length;
+            hidden += extra;
+          }
+          const units = list.reduce((a, b) => a + b.w, 0) + (extra ? 1 : 0) || 1;
+          let cur = a0;
+          for (const k of list) {
+            const w = span * (k.w / units);
+            place(k, depth + 1, cur, cur + w, x, y);
+            cur += w;
+          }
+          if (extra) {
+            const w = span * (1 / units);
+            const m2 = (cur + cur + w) / 2;
+            const [ex, ey] = P(m2, tc);
+            ctx.strokeStyle = `rgba(${lav},.18)`;
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+            ctx.fillStyle = `rgba(${txt},.32)`;
+            ctx.beginPath(); ctx.arc(ex, ey, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = `rgba(${txt},.5)`;
+            ctx.font = "9px 'JetBrains Mono',monospace";
+            ctx.textAlign = 'center';
+            ctx.fillText('+' + extra, ex, ey + 12);
+          }
+        };
+        place(root, 0, -Math.PI / 2, Math.PI * 1.5, cx, cy);
+
+        // draw dots above the links, then labels above the dots
+        for (const n of nodes) {
+          ctx.beginPath();
+          ctx.fillStyle = n.depth === 0 ? `rgb(${acc})`
+            : n.dir ? `rgba(${acc},${Math.max(0.35, 0.8 - n.depth * 0.12)})`
+                    : `rgba(${txt},.42)`;
+          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
         }
+        for (const n of nodes) {
+          if (n.depth <= 1 || n.r >= 6) label(n.x, n.y, n.name, n.r, 0.35);
+        }
+        // honest tally: never let truncation be invisible
+        ctx.fillStyle = `rgba(${txt},.4)`;
+        ctx.font = "9px 'JetBrains Mono',monospace";
+        ctx.textAlign = 'center';
+        ctx.fillText(hidden ? `${shown} shown · ${hidden} more (widen to see)`
+                            : `${shown} shown`, W / 2, H - 3);
         this._filesNetNodes[id] = nodes;
       }
     };
@@ -1256,12 +1365,12 @@ class Component extends DCLogic {
     this._glassScrollT = new WeakMap();
     this._onAnyScroll = (e) => {
       const el = e.target;
-      if (!el || !el.classList) return;
+      if (!el || el.nodeType !== 1) return;   // document-level scroll has no classList
       el.classList.add('scrolling');
       clearTimeout(this._glassScrollT.get(el));
       this._glassScrollT.set(el, setTimeout(() => el.classList.remove('scrolling'), 900));
     };
-    window.addEventListener('scroll', this._onAnyScroll, true);   // capture: catches nested scrollers
+    window.addEventListener('scroll', this._onAnyScroll, { capture: true, passive: true });
 
     this._syncYoutube();   // mount any youtube iframe present at first paint
 
@@ -1337,7 +1446,7 @@ class Component extends DCLogic {
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
     window.removeEventListener('keydown', this._key);
-    if (this._onAnyScroll) window.removeEventListener('scroll', this._onAnyScroll, true);
+    if (this._onAnyScroll) window.removeEventListener('scroll', this._onAnyScroll, { capture: true });
     this.unbindDrag();
   }
 
@@ -1383,6 +1492,8 @@ class Component extends DCLogic {
         const i = tasks.findIndex(x => x.id === op.id);
         if (i >= 0) tasks[i] = { ...tasks[i], done: !tasks[i].done,
                                  doneAt: !tasks[i].done ? Date.now() : 0 };
+      } else if (op && op.op === 'remove' && op.id) {
+        tasks = tasks.filter(x => x.id !== op.id);
       } else if (op && op.op === 'zip' && /^\d{5}$/.test(String(op.zip))) {
         // Weather ZIP set from the phone: apply here, persist, refetch, and the
         // board push below carries it back as the phone's success handshake.
@@ -2372,6 +2483,32 @@ class Component extends DCLogic {
         });
       })(),
       agendaEmpty: !(s.calData && Array.isArray(s.calData.events) && s.calData.events.length),
+      // Manual calendar pull: asks Cortana to re-fetch now rather than waiting
+      // for her 10-minute loop (or the bridge's 2-minute staleness trigger).
+      agendaRefreshTxt: s.agendaBusy ? '···' : '⟳',
+      agendaRefreshStyle: {
+        width: '1.6rem', height: '1.6rem', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', borderRadius: '50%', flexShrink: 0,
+        cursor: s.agendaBusy ? 'default' : 'pointer', userSelect: 'none',
+        fontSize: '.8rem', color: s.agendaBusy ? 'rgba(var(--text-rgb),.35)' : 'rgb(var(--accent3-rgb))',
+        border: '1px solid rgba(var(--accent3-rgb),.4)'
+      },
+      agendaRefresh: () => {
+        if (this.state.agendaBusy) return;
+        this.setState({ agendaBusy: true });
+        const done = (msg) => {
+          this.setState({ agendaBusy: false });
+          if (msg) this.showToast(msg);
+          this._pollCal && this._pollCal();
+        };
+        if (!(window.duskBridge && window.duskBridge.calendarRefresh)) {
+          done('CALENDAR REFRESH NEEDS THE DUSK APP');
+          return;
+        }
+        window.duskBridge.calendarRefresh()
+          .then(r => done(r && r.ok ? '' : ('CALENDAR: ' + String((r && r.error) || 'refresh failed').toUpperCase().slice(0, 60))))
+          .catch(() => done('CALENDAR REFRESH FAILED'));
+      },
       agendaEmptyTxt: !window.duskBridge ? 'open in the Dusk app for your calendar'
         : (s.calData && s.calData.error) ? s.calData.error
         : (s.calData ? 'nothing on the calendar today' : 'loading…'),

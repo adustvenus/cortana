@@ -64,11 +64,16 @@ class MainActivity : Activity(), LinkClient.Listener {
     // dashboard applies them and the board snapshot comes back carrying the
     // change (the handshake). On failure the optimistic state is rolled back
     // and a toast says it did not sync.
-    private val pendingToggles = HashMap<String, Boolean>()   // task id -> desired done
+    private val pendingToggles = HashMap<String, PendingToggle>()  // id -> desired state
+    private val pendingRemoves = HashMap<String, Long>()           // id -> queued at
     private val pendingAdds = ArrayList<PendingAdd>()
     private var pendingZip: String? = null
 
     private data class PendingAdd(val text: String, val at: Long)
+    private data class PendingToggle(val want: Boolean, val at: Long)
+
+    /** How long an unacknowledged edit may spin before we call it failed. */
+    private val SYNC_TIMEOUT_MS = 45_000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -412,15 +417,21 @@ class MainActivity : Activity(), LinkClient.Listener {
             byId[t.optString("id")] = t.optBoolean("done")
             texts.add(t.optString("t", t.optString("text")))
         }
-        var changed = pendingToggles.entries.removeAll { (id, want) -> byId[id] == want }
+        val now = System.currentTimeMillis()
+        // Acknowledged: the dashboard's copy now matches what we asked for.
+        var changed = pendingToggles.entries.removeAll { (id, p) -> byId[id] == p.want }
+        if (pendingRemoves.keys.removeAll { it !in byId.keys }) changed = true
         if (pendingAdds.removeAll { it.text in texts }) changed = true
 
-        val now = System.currentTimeMillis()
-        val stale = pendingAdds.filter { now - it.at > 45_000 }
-        if (stale.isNotEmpty()) {
-            pendingAdds.removeAll(stale)
+        // Timed out: nothing came back, so stop spinning and say so. Without
+        // this a toggle could spin forever when the dashboard is closed.
+        var timedOut = false
+        if (pendingToggles.entries.removeAll { now - it.value.at > SYNC_TIMEOUT_MS }) timedOut = true
+        if (pendingRemoves.entries.removeAll { now - it.value > SYNC_TIMEOUT_MS }) timedOut = true
+        if (pendingAdds.removeAll { now - it.at > SYNC_TIMEOUT_MS }) timedOut = true
+        if (timedOut) {
             changed = true
-            toastNotSynced("Task")
+            toastNotSynced("Change")
         }
         val zip = state.optJSONObject("board")?.optString("weatherZip", "")
         if (pendingZip != null && zip == pendingZip) { pendingZip = null; changed = true }
@@ -435,7 +446,7 @@ class MainActivity : Activity(), LinkClient.Listener {
         "agenda" -> state.optJSONObject("calendar")?.toString() ?: ""
         // Pending state is local, so it is part of these cards' signatures.
         "tasks" -> (state.optJSONObject("board")?.optJSONArray("tasks")?.toString() ?: "none") +
-                   "|" + pendingToggles + "|" + pendingAdds.size
+                   "|" + pendingToggles.keys + "|" + pendingRemoves.keys + "|" + pendingAdds.size
         "git" -> state.optJSONObject("git")?.toString() ?: ""
         "weather" -> (weather?.toString() ?: "") + "|" + pendingZip +
                      "|" + Prefs.weatherZip(this)
@@ -658,16 +669,19 @@ class MainActivity : Activity(), LinkClient.Listener {
             for (i in 0 until (tasks?.length() ?: 0)) {
                 val t = tasks!!.optJSONObject(i) ?: continue
                 val id = t.optString("id")
+                if (pendingRemoves.containsKey(id)) continue   // optimistically gone
                 val serverDone = t.optBoolean("done")
                 val pending = pendingToggles[id]
-                val done = pending ?: serverDone
+                val done = pending?.want ?: serverDone
                 // Dashboard stores task text under "t" (see _addTask in dc.html).
                 addView(taskRow(t.optString("t", t.optString("text")), done,
                                 syncing = pending != null,
-                                onTap = if (id.isNotEmpty()) ({ taskToggle(id, serverDone) }) else null))
+                                onTap = if (id.isNotEmpty()) ({ taskToggle(id, serverDone) }) else null,
+                                onRemove = if (id.isNotEmpty()) ({ taskRemove(id) }) else null))
             }
             // Locally-added tasks not yet echoed by the dashboard.
-            for (p in pendingAdds) addView(taskRow(p.text, false, syncing = true, onTap = null))
+            for (p in pendingAdds)
+                addView(taskRow(p.text, false, syncing = true, onTap = null, onRemove = null))
 
             addView(Ui.gap(context, 8))
             val input = android.widget.EditText(context).apply {
@@ -695,17 +709,27 @@ class MainActivity : Activity(), LinkClient.Listener {
 
     /** One task row: checkbox, text, and a spinner while the edit is in flight. */
     private fun taskRow(text: String, done: Boolean, syncing: Boolean,
-                        onTap: (() -> Unit)?): LinearLayout {
+                        onTap: (() -> Unit)?, onRemove: (() -> Unit)?): LinearLayout {
         val box = Ui.value(this, if (done) "☑" else "☐", 17f,
             if (done) Ui.GREEN else Ui.DIM).apply {
             setPadding(0, 0, Ui.dp(context, 10), 0)
         }
         val label = Ui.value(this, text, 14f,
-            if (syncing) Ui.DIM else if (done) Ui.DIM else Ui.TEXT)
+            if (syncing || done) Ui.DIM else Ui.TEXT).apply {
+            layoutParams = LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
         val row = Ui.row(this, box, label)
         if (syncing) {
-            row.addView(Ui.spacer(this))
+            // A spinner sits where the ✕ would be, so the row never implies it
+            // is idle while an edit is still in flight.
             row.addView(Ui.spinner(this))
+        } else if (onRemove != null) {
+            row.addView(Ui.value(this, "✕", 14f, Ui.DIM).apply {
+                setPadding(Ui.dp(context, 12), Ui.dp(context, 2),
+                           Ui.dp(context, 4), Ui.dp(context, 2))
+                setOnClickListener { onRemove() }
+            })
         }
         row.setPadding(0, Ui.dp(this, 5), 0, Ui.dp(this, 5))
         // A row already syncing ignores taps, so double-tapping can't queue a
@@ -715,13 +739,25 @@ class MainActivity : Activity(), LinkClient.Listener {
     }
 
     private fun taskToggle(id: String, serverDone: Boolean) {
-        pendingToggles[id] = !serverDone                      // optimistic
+        pendingToggles[id] = PendingToggle(!serverDone, System.currentTimeMillis())
         redrawTasks()
         taskOp(org.json.JSONObject().put("op", "toggle").put("id", id)) { ok ->
             if (!ok) {
                 pendingToggles.remove(id)                     // roll back
                 redrawTasks()
                 toastNotSynced("Checkbox")
+            }
+        }
+    }
+
+    private fun taskRemove(id: String) {
+        pendingRemoves[id] = System.currentTimeMillis()       // optimistic
+        redrawTasks()
+        taskOp(org.json.JSONObject().put("op", "remove").put("id", id)) { ok ->
+            if (!ok) {
+                pendingRemoves.remove(id)                     // roll back
+                redrawTasks()
+                toastNotSynced("Removal")
             }
         }
     }

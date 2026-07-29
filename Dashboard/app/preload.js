@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('duskBridge', {
     state() { return ipcRenderer.invoke('spotify:state'); },
     control(action) { return ipcRenderer.invoke('spotify:control', String(action)); }
   },
+  /** Pull the calendar now (AGENDA refresh button). Resolves {ok, error?}. */
+  calendarRefresh() { return ipcRenderer.invoke('calendar:refresh'); },
   /** Screen off / machine on. Wakes on a keyboard press only. */
   sleepScreen() { return ipcRenderer.invoke('screen:sleep'); },
   /** FILES module: read-only home-folder tree + open-in-file-manager. */
