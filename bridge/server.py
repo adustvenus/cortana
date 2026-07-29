@@ -457,6 +457,30 @@ async def h_apk(request):
     return web.json_response(_apk_info())
 
 
+def _refresh_dist():
+    """Phone-triggered 'check for updates': fast-forward the repo so mobile/dist
+    matches what CI last published - the user should never have to remember to
+    git pull just to update the phone. Only ever a --ff-only pull, and only on
+    a clean tree, so it can't create conflicts or eat local work."""
+    dirty = _run(["git", "-C", str(ROOT), "status", "--porcelain"], timeout=15)
+    if dirty:
+        return {"ok": False, "pulled": False,
+                "error": "repo has local changes - pull manually on the workstation"}
+    try:
+        out = _run(["git", "-C", str(ROOT), "pull", "--ff-only"], timeout=90)
+    except Exception as e:
+        return {"ok": False, "pulled": False, "error": f"pull failed: {e}"[:200]}
+    _cache.pop("apk", None)
+    _cache.pop("git", None)
+    return {"ok": True, "pulled": "Already up to date" not in out, "apk": _apk_info()}
+
+
+async def h_apk_refresh(request):
+    if not _device(request):
+        return _deny()
+    return web.json_response(await asyncio.to_thread(_refresh_dist))
+
+
 async def h_apk_download(request):
     if not _device(request):
         return _deny()
@@ -645,6 +669,7 @@ def make_app():
         web.post("/api/tts", h_tts),
         web.post("/api/spotify", h_spotify),
         web.get("/api/apk", h_apk),
+        web.post("/api/apk/refresh", h_apk_refresh),
         web.get("/api/apk/download", h_apk_download),
         web.get("/get", h_get_page),
         web.get("/get/apk", h_get_apk),

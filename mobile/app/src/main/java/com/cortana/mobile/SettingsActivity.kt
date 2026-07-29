@@ -74,11 +74,8 @@ class SettingsActivity : Activity() {
         col.addView(Ui.value(this, "Installed: v${BuildConfig.VERSION_NAME}", 14f, Ui.DIM))
         col.addView(Ui.gap(this, 10))
         col.addView(Ui.pillButton(this, "CHECK FOR UPDATE", Ui.LAVENDER) {
-            val st = LinkClient.lastState
-            if (st == null)
-                android.widget.Toast.makeText(this,
-                    "Not connected to the bridge right now", android.widget.Toast.LENGTH_LONG).show()
-            else UpdateManager.maybeOffer(this, st, manual = true)
+            // Pulls CI's latest build onto the workstation first, then offers it.
+            UpdateManager.checkNow(this, LinkClient.lastState)
         })
         col.addView(Ui.gap(this, 24))
 

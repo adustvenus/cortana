@@ -39,6 +39,28 @@ object UpdateManager {
         return false
     }
 
+    /** Manual CHECK FOR UPDATE: first ask the workstation to pull CI's latest
+     *  build (so the user never has to run git pull for a phone update), then
+     *  offer whatever is now in dist. */
+    fun checkNow(activity: Activity, state: JSONObject?) {
+        toast(activity, "Checking - syncing the workstation…")
+        thread {
+            val apk = try {
+                val r = LinkClient.apkRefresh(activity)
+                if (!r.optBoolean("ok") && r.has("error")) {
+                    activity.runOnUiThread { toast(activity, r.optString("error")) }
+                }
+                r.optJSONObject("apk")
+            } catch (e: Exception) {
+                activity.runOnUiThread { toast(activity, "Can't reach the workstation: ${e.message}") }
+                null
+            } ?: state?.optJSONObject("apk")
+            activity.runOnUiThread {
+                maybeOffer(activity, JSONObject().put("apk", apk ?: JSONObject()), manual = true)
+            }
+        }
+    }
+
     /** Called with each state push; shows the prompt at most once per session
      *  per version, and honors a "skip this version" choice. */
     fun maybeOffer(activity: Activity, state: JSONObject, manual: Boolean = false) {

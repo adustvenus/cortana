@@ -183,6 +183,18 @@ object LinkClient {
         }
     } catch (e: Exception) { null }
 
+    /** Ask the workstation to git-pull so mobile/dist matches CI's latest
+     *  build, then report the (possibly new) APK info. Blocking; can take a
+     *  minute on a slow pull. */
+    fun apkRefresh(ctx: Context): JSONObject {
+        val body = "{}".toRequestBody(JSON)
+        slowHttp.newCall(authed(ctx, Request.Builder()
+            .url("${base(ctx)}/api/apk/refresh").post(body)).build()).execute().use { r ->
+            if (r.code == 401) throw AuthException()
+            return JSONObject(r.body?.string() ?: "{}")
+        }
+    }
+
     fun downloadApk(ctx: Context, dest: File, onProgress: (Int) -> Unit) {
         slowHttp.newCall(authed(ctx, Request.Builder()
             .url("${base(ctx)}/api/apk/download")).build()).execute().use { r ->
