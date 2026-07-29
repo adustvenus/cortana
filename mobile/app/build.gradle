@@ -14,8 +14,8 @@ android {
         // Bump BOTH on every release: versionName is what the update prompt
         // compares; versionCode is what Android's installer compares. The CI
         // workflow reads versionName to tag the release and mobile/dist.
-        versionCode 14
-        versionName "2.0.1"
+        versionCode 15
+        versionName "2.1.0"
     }
 
     signingConfigs {

@@ -59,6 +59,17 @@ class MainActivity : Activity(), LinkClient.Listener {
     private var dragging = false
     private var pendingState: JSONObject? = null
 
+    // ── Optimistic task/ZIP sync ───────────────────────────────────────────
+    // Edits made here show INSTANTLY with a spinner, then resolve when the
+    // dashboard applies them and the board snapshot comes back carrying the
+    // change (the handshake). On failure the optimistic state is rolled back
+    // and a toast says it did not sync.
+    private val pendingToggles = HashMap<String, Boolean>()   // task id -> desired done
+    private val pendingAdds = ArrayList<PendingAdd>()
+    private var pendingZip: String? = null
+
+    private data class PendingAdd(val text: String, val at: Long)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!Prefs.paired(this)) {
@@ -344,6 +355,7 @@ class MainActivity : Activity(), LinkClient.Listener {
 
     override fun onState(state: JSONObject) {
         UpdateManager.maybeOffer(this, state)
+        reconcilePending(state)
         maybeFetchWeather(state)
         render(state)
     }
@@ -387,15 +399,46 @@ class MainActivity : Activity(), LinkClient.Listener {
         adapter.setOrder(visible)
     }
 
+    /** Reconcile optimistic state against what the dashboard sent back. A
+     *  toggle whose server value now matches the desired one, or an add whose
+     *  text now appears, has completed the handshake and stops showing as
+     *  pending. Anything still unresolved after 45s is treated as failed. */
+    private fun reconcilePending(state: JSONObject) {
+        val tasks = state.optJSONObject("board")?.optJSONArray("tasks") ?: return
+        val byId = HashMap<String, Boolean>()
+        val texts = HashSet<String>()
+        for (i in 0 until tasks.length()) {
+            val t = tasks.optJSONObject(i) ?: continue
+            byId[t.optString("id")] = t.optBoolean("done")
+            texts.add(t.optString("t", t.optString("text")))
+        }
+        var changed = pendingToggles.entries.removeAll { (id, want) -> byId[id] == want }
+        if (pendingAdds.removeAll { it.text in texts }) changed = true
+
+        val now = System.currentTimeMillis()
+        val stale = pendingAdds.filter { now - it.at > 45_000 }
+        if (stale.isNotEmpty()) {
+            pendingAdds.removeAll(stale)
+            changed = true
+            toastNotSynced("Task")
+        }
+        val zip = state.optJSONObject("board")?.optString("weatherZip", "")
+        if (pendingZip != null && zip == pendingZip) { pendingZip = null; changed = true }
+        if (changed) signatures.remove("tasks")
+    }
+
     private fun signatureFor(type: String, state: JSONObject): String = when (type) {
         "link" -> "${LinkClient.linkUp}|${state.optString("host")}|" +
                   "${state.optString("bridgeVersion")}|$lastAnnounce|${state.optString("brainError")}"
         "cortana" -> state.optJSONObject("cortana")?.toString() ?: ""
         "music" -> state.optJSONObject("spotify")?.toString() ?: ""
         "agenda" -> state.optJSONObject("calendar")?.toString() ?: ""
-        "tasks" -> state.optJSONObject("board")?.optJSONArray("tasks")?.toString() ?: ""
+        // Pending state is local, so it is part of these cards' signatures.
+        "tasks" -> (state.optJSONObject("board")?.optJSONArray("tasks")?.toString() ?: "none") +
+                   "|" + pendingToggles + "|" + pendingAdds.size
         "git" -> state.optJSONObject("git")?.toString() ?: ""
-        "weather" -> weather?.toString() ?: ""
+        "weather" -> (weather?.toString() ?: "") + "|" + pendingZip +
+                     "|" + Prefs.weatherZip(this)
         else -> ""
     }
 
@@ -590,37 +633,42 @@ class MainActivity : Activity(), LinkClient.Listener {
         }
     }
 
-    /** Two-way tasks: rows are checkboxes (toggle syncs to the dashboard via
-     *  the bridge's op queue) and new tasks are added from the input at the
-     *  bottom. The dashboard page stays the single source of truth - ops apply
-     *  there, and the board pushes back so both screens converge. */
-    private fun tasksCard(state: JSONObject): LinearLayout? {
-        val tasks = state.optJSONObject("board")?.optJSONArray("tasks") ?: return null
+    /** Two-way tasks. The dashboard page owns the list; edits here apply
+     *  optimistically with a spinner and resolve when the board snapshot comes
+     *  back carrying them. The card always renders - even with no snapshot yet -
+     *  so you can always add a task. */
+    private fun tasksCard(state: JSONObject): LinearLayout {
+        val tasks = state.optJSONObject("board")?.optJSONArray("tasks")
+        val haveBoard = tasks != null
         return Ui.card(this).apply {
-            val open = (0 until tasks.length()).count {
-                !(tasks.optJSONObject(it)?.optBoolean("done") ?: false)
-            }
+            val open = (0 until (tasks?.length() ?: 0)).count {
+                !(tasks!!.optJSONObject(it)?.optBoolean("done") ?: false)
+            } + pendingAdds.size
             addView(Ui.cardHeader(context, "TASKS", "tasks",
-                trailing = Ui.value(context, "$open OPEN", 11f, Ui.DIM, mono = true)))
+                trailing = Ui.value(context, if (haveBoard) "$open OPEN" else "…",
+                    11f, Ui.DIM, mono = true)))
             addView(Ui.gap(context, 8))
-            if (tasks.length() == 0)
-                addView(Ui.value(context, "no tasks yet - add one below", 13f, Ui.DIM))
-            for (i in 0 until tasks.length()) {
-                val t = tasks.optJSONObject(i) ?: continue
-                val done = t.optBoolean("done")
-                val id = t.optString("id")
-                // Dashboard stores task text under "t" (see _addTask in dc.html).
-                val text = t.optString("t", t.optString("text"))
-                val box = Ui.value(context, if (done) "☑" else "☐", 17f,
-                    if (done) Ui.GREEN else Ui.DIM).apply {
-                    setPadding(0, 0, Ui.dp(context, 10), 0)
-                }
-                val row = Ui.row(context, box,
-                    Ui.value(context, text, 14f, if (done) Ui.DIM else Ui.TEXT))
-                row.setPadding(0, Ui.dp(context, 5), 0, Ui.dp(context, 5))
-                if (id.isNotEmpty()) row.setOnClickListener { taskToggle(id) }
-                addView(row)
+            if (!haveBoard) {
+                addView(Ui.value(context,
+                    "waiting for the dashboard's task list — add the MOBILE LINK " +
+                    "module on the dashboard if this persists", 13f, Ui.DIM))
+            } else if (tasks!!.length() == 0 && pendingAdds.isEmpty()) {
+                addView(Ui.value(context, "no tasks yet — add one below", 13f, Ui.DIM))
             }
+            for (i in 0 until (tasks?.length() ?: 0)) {
+                val t = tasks!!.optJSONObject(i) ?: continue
+                val id = t.optString("id")
+                val serverDone = t.optBoolean("done")
+                val pending = pendingToggles[id]
+                val done = pending ?: serverDone
+                // Dashboard stores task text under "t" (see _addTask in dc.html).
+                addView(taskRow(t.optString("t", t.optString("text")), done,
+                                syncing = pending != null,
+                                onTap = if (id.isNotEmpty()) ({ taskToggle(id, serverDone) }) else null))
+            }
+            // Locally-added tasks not yet echoed by the dashboard.
+            for (p in pendingAdds) addView(taskRow(p.text, false, syncing = true, onTap = null))
+
             addView(Ui.gap(context, 8))
             val input = android.widget.EditText(context).apply {
                 hint = "add a task…"
@@ -633,10 +681,7 @@ class MainActivity : Activity(), LinkClient.Listener {
             }
             val send = {
                 val txt = input.text.toString().trim()
-                if (txt.isNotEmpty()) {
-                    input.setText("")
-                    taskAdd(txt)
-                }
+                if (txt.isNotEmpty()) { input.setText(""); taskAdd(txt) }
             }
             input.setOnEditorActionListener { _, _, _ -> send(); true }
             addView(Ui.row(context,
@@ -648,27 +693,83 @@ class MainActivity : Activity(), LinkClient.Listener {
         }
     }
 
-    private fun taskToggle(id: String) {
-        taskOp(org.json.JSONObject().put("op", "toggle").put("id", id))
+    /** One task row: checkbox, text, and a spinner while the edit is in flight. */
+    private fun taskRow(text: String, done: Boolean, syncing: Boolean,
+                        onTap: (() -> Unit)?): LinearLayout {
+        val box = Ui.value(this, if (done) "☑" else "☐", 17f,
+            if (done) Ui.GREEN else Ui.DIM).apply {
+            setPadding(0, 0, Ui.dp(context, 10), 0)
+        }
+        val label = Ui.value(this, text, 14f,
+            if (syncing) Ui.DIM else if (done) Ui.DIM else Ui.TEXT)
+        val row = Ui.row(this, box, label)
+        if (syncing) {
+            row.addView(Ui.spacer(this))
+            row.addView(Ui.spinner(this))
+        }
+        row.setPadding(0, Ui.dp(this, 5), 0, Ui.dp(this, 5))
+        // A row already syncing ignores taps, so double-tapping can't queue a
+        // second contradictory op.
+        if (onTap != null && !syncing) row.setOnClickListener { onTap() }
+        return row
+    }
+
+    private fun taskToggle(id: String, serverDone: Boolean) {
+        pendingToggles[id] = !serverDone                      // optimistic
+        redrawTasks()
+        taskOp(org.json.JSONObject().put("op", "toggle").put("id", id)) { ok ->
+            if (!ok) {
+                pendingToggles.remove(id)                     // roll back
+                redrawTasks()
+                toastNotSynced("Checkbox")
+            }
+        }
     }
 
     private fun taskAdd(text: String) {
-        taskOp(org.json.JSONObject().put("op", "add").put("t", text))
+        val entry = PendingAdd(text, System.currentTimeMillis())
+        pendingAdds.add(entry)                                // optimistic
+        redrawTasks()
+        taskOp(org.json.JSONObject().put("op", "add").put("t", text)) { ok ->
+            if (!ok) {
+                pendingAdds.remove(entry)                     // roll back
+                redrawTasks()
+                toastNotSynced("Task")
+            }
+        }
     }
 
-    private fun taskOp(op: org.json.JSONObject) {
+    private fun toastNotSynced(what: String) {
+        Toast.makeText(this, "$what not synced — the change was undone",
+            Toast.LENGTH_LONG).show()
+    }
+
+    /** Force the tasks card to rebuild (its signature covers server data only,
+     *  so local pending state needs an explicit nudge). */
+    private fun redrawTasks() {
+        signatures.remove("tasks")
+        LinkClient.lastState?.let { render(it) }
+    }
+
+    private fun taskOp(op: org.json.JSONObject, done: (Boolean) -> Unit) {
         thread {
-            try {
-                LinkClient.taskOp(this, op)
-                // The dashboard applies the op and pushes the board back;
-                // nothing to do here - the next state push redraws the card.
+            val ok = try {
+                val r = LinkClient.taskOp(this, op)
+                if (!r.optBoolean("dashboardOpen", true)) {
+                    runOnUiThread {
+                        Toast.makeText(this,
+                            "Queued — applies when the dashboard is open",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+                r.optBoolean("ok")
             } catch (e: LinkClient.AuthException) {
                 runOnUiThread { onAuthRejected() }
+                false
             } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(this, "Task sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                false
             }
+            runOnUiThread { done(ok) }
         }
     }
 
@@ -699,7 +800,11 @@ class MainActivity : Activity(), LinkClient.Listener {
     // ── weather: fetched by the phone (keyless APIs); the ZIP comes from the
     // board snapshot so both screens always show the same place ─────────────
     private fun maybeFetchWeather(state: JSONObject) {
-        val zip = state.optJSONObject("board")?.optString("weatherZip", "") ?: ""
+        // The phone's own ZIP wins, so weather works before any board snapshot
+        // arrives; otherwise follow the dashboard's.
+        val zip = Prefs.weatherZip(this).ifEmpty {
+            state.optJSONObject("board")?.optString("weatherZip", "") ?: ""
+        }
         if (!Regex("^\\d{5}$").matches(zip)) return
         val fresh = System.currentTimeMillis() - weatherAt < 15 * 60 * 1000
         if (zip == weatherZip && fresh) return
@@ -739,19 +844,88 @@ class MainActivity : Activity(), LinkClient.Listener {
         81 to "showers", 82 to "heavy showers", 95 to "thunderstorm",
         96 to "thunderstorm", 99 to "thunderstorm")
 
-    private fun weatherCard(): LinearLayout? {
-        val w = weather ?: return null
+    /** Weather always renders: readings when we have them, a ZIP prompt when we
+     *  don't. Changing the ZIP here also syncs it to the dashboard (pending
+     *  until the board snapshot echoes it back). */
+    private fun weatherCard(): LinearLayout {
+        val w = weather
+        val zip = Prefs.weatherZip(this).ifEmpty {
+            LinkClient.lastState?.optJSONObject("board")?.optString("weatherZip", "") ?: ""
+        }
         return Ui.card(this).apply {
-            addView(Ui.cardHeader(context, "WEATHER", "weather",
-                trailing = Ui.value(context, w.optString("place"), 11f, Ui.DIM, mono = true)))
+            val trailing = if (pendingZip != null)
+                Ui.row(context, Ui.value(context, "SYNCING", 11f, Ui.DIM, mono = true),
+                       Ui.spinner(context, 13))
+            else Ui.value(context, w?.optString("place") ?: "", 11f, Ui.DIM, mono = true)
+            addView(Ui.cardHeader(context, "WEATHER", "weather", trailing = trailing))
             addView(Ui.gap(context, 8))
+            if (w != null) {
+                addView(Ui.row(context,
+                    Ui.value(context, "${w.optInt("temp")}°", 30f),
+                    transportGap(),
+                    Ui.value(context, wmo[w.optInt("code")] ?: "—", 14f, Ui.DIM)))
+                addView(Ui.value(context,
+                    "H ${w.optInt("hi")}° · L ${w.optInt("lo")}° · wind ${w.optInt("wind")} mph",
+                    13f, Ui.DIM, mono = true))
+            } else {
+                addView(Ui.value(context,
+                    if (zip.isEmpty()) "enter a ZIP code below" else "loading $zip…",
+                    13f, Ui.DIM))
+            }
+            addView(Ui.gap(context, 10))
+            val input = android.widget.EditText(context).apply {
+                hint = if (zip.isEmpty()) "ZIP code" else zip
+                setTextColor(Ui.TEXT)
+                setHintTextColor(Ui.DIM)
+                textSize = 14f
+                maxLines = 1
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            }
+            val send = {
+                val v = input.text.toString().trim()
+                if (Regex("^\\d{5}$").matches(v)) { input.setText(""); setZip(v) }
+                else Toast.makeText(context, "Enter a 5-digit ZIP", Toast.LENGTH_SHORT).show()
+            }
+            input.setOnEditorActionListener { _, _, _ -> send(); true }
             addView(Ui.row(context,
-                Ui.value(context, "${w.optInt("temp")}°", 30f),
-                transportGap(),
-                Ui.value(context, wmo[w.optInt("code")] ?: "—", 14f, Ui.DIM)))
-            addView(Ui.value(context,
-                "H ${w.optInt("hi")}° · L ${w.optInt("lo")}° · wind ${w.optInt("wind")} mph",
-                13f, Ui.DIM, mono = true))
+                input.also {
+                    it.layoutParams = LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                },
+                Ui.pillButton(context, "SET") { send() }))
+        }
+    }
+
+    /** Apply a ZIP locally at once, then push it to the dashboard. The board
+     *  echoing it back is the success handshake; failure rolls back. */
+    private fun setZip(zip: String) {
+        val previous = Prefs.weatherZip(this)
+        Prefs.setWeatherZip(this, zip)
+        pendingZip = zip
+        weather = null
+        weatherAt = 0
+        signatures.remove("weather")
+        LinkClient.lastState?.let { maybeFetchWeather(it); render(it) }
+        thread {
+            val ok = try {
+                LinkClient.taskOp(this, org.json.JSONObject().put("op", "zip").put("zip", zip))
+                    .optBoolean("ok")
+            } catch (e: Exception) { false }
+            runOnUiThread {
+                if (!ok) {
+                    // The phone keeps its own ZIP (it still works locally), but
+                    // say plainly that the dashboard did not get it.
+                    pendingZip = null
+                    signatures.remove("weather")
+                    LinkClient.lastState?.let { render(it) }
+                    Toast.makeText(this,
+                        "ZIP set on this phone but not synced to the dashboard",
+                        Toast.LENGTH_LONG).show()
+                    if (previous.isEmpty() && Prefs.weatherZip(this) != zip)
+                        Prefs.setWeatherZip(this, previous)
+                }
+            }
         }
     }
 }

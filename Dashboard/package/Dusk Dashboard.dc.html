@@ -81,6 +81,25 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
   html.dusk-app, html.dusk-app body { overflow: hidden !important; width: 100%; height: 100%; }
   html.dusk-app .dusk-scroll { overflow: hidden !important; }
   html.dusk-app .dusk-sizer { min-width: 0 !important; min-height: 0 !important; }
+
+  /* Glass scrollbars: invisible at rest, fading in only while the element is
+     actually being scrolled (the .scrolling class is added on scroll and
+     removed ~900ms later - see _bindGlassScroll). Overlay-sized so revealing
+     one never reflows content. */
+  * { scrollbar-width: none; }                     /* Firefox / fallback */
+  *::-webkit-scrollbar { width: 7px; height: 7px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: transparent; border-radius: 99px;
+    border: 2px solid transparent; background-clip: content-box;
+    transition: background-color .35s ease;
+  }
+  .scrolling { scrollbar-width: thin; scrollbar-color: rgba(var(--accent3-rgb),.45) transparent; }
+  .scrolling::-webkit-scrollbar-thumb {
+    background-color: rgba(var(--accent3-rgb),.42);
+    box-shadow: inset 0 0 0 1px rgba(var(--text-rgb),.12);
+  }
+  .scrolling:hover::-webkit-scrollbar-thumb { background-color: rgba(var(--accent3-rgb),.6); }
 </style>
 </helmet>
 
@@ -93,7 +112,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
   <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(50,38,60,.18) 0%,rgba(26,24,44,.5) 100%)"></div>
 
   <!-- grid area (bottom strip reserved for edit controls) -->
-  <div ref="{{ gridRef }}" style="position:absolute;left:20px;right:20px;top:20px;bottom:64px">
+  <div ref="{{ gridRef }}" style="position:absolute;left:10px;right:10px;top:10px;bottom:34px">
 
     <!-- localized fading grid lines while dragging -->
     <sc-if value="{{ gridLinesOn }}" hint-placeholder-val="{{ false }}">
@@ -322,16 +341,18 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               <span style="flex:1"></span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.55)">{{ gitBranch }}</span>
             </div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:{{ gitStatusColor }};margin-top:.25rem;flex-shrink:0">{{ gitStatusTxt }}</div>
-            <div style="flex:1;display:flex;flex-direction:column;gap:.22rem;margin-top:.45rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 88%,transparent)">
-              <sc-for list="{{ gitCommits }}" as="gc" hint-placeholder-count="5">
-                <div style="display:flex;gap:.5rem;align-items:baseline;min-width:0;overflow:hidden">
-                  <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgb(var(--accent-rgb));flex-shrink:0">{{ gc.hash }}</span>
-                  <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:rgba(var(--text-rgb),.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ gc.msg }}</span>
+            <div style="{{ m.gitStatusStyle }}">{{ gitStatusTxt }}</div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.22rem;margin-top:.35rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 88%,transparent)">
+              <sc-for list="{{ m.gitCommitRows }}" as="gc" hint-placeholder-count="5">
+                <div style="display:flex;gap:.4rem;align-items:baseline;min-width:0;overflow:hidden;flex-shrink:0">
+                  <span style="{{ gc.hashStyle }}">{{ gc.hash }}</span>
+                  <span style="{{ gc.msgStyle }}">{{ gc.msg }}</span>
                 </div>
               </sc-for>
             </div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.35);flex-shrink:0;margin-top:.3rem">UPDATED {{ gitAge }}</div>
+            <sc-if value="{{ m.gitFooterOn }}" hint-placeholder-val="{{ false }}">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.35);flex-shrink:0;margin-top:.3rem">UPDATED {{ gitAge }}</div>
+            </sc-if>
           </div>
         </sc-if>
 
@@ -430,6 +451,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               <span onPointerDown="{{ filesHelp }}" title="What is this?" style="{{ m.helpDotStyle }}">?</span>
               <span style="flex:1"></span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:rgba(var(--text-rgb),.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ filesRootTxt }}</span>
+              <span onClick="{{ filesPickRoot }}" title="Choose the starting folder" style="{{ filesPillStyle }}">📁</span>
               <span onClick="{{ filesModeToggle }}" title="Tree / net view" style="{{ filesPillStyle }}">{{ filesModeTxt }}</span>
               <span onClick="{{ filesOpenRoot }}" title="Open in the file manager" style="{{ filesPillStyle }}">⤢</span>
             </div>
@@ -516,6 +538,13 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 
         <!-- ═══ EDIT CONTROLS ═══ -->
         <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
+          <!-- Edit-mode click shield: covers the module's CONTENT (z-index 20)
+               while the edit controls sit above it (z-index 30). In edit mode
+               the whole card is a drag handle, so every in-module target -
+               image picker, Spotify transport, files rows/canvas, task boxes,
+               inputs, the YouTube iframe, "?" dots, the AI orb - is inert.
+               pointerdown still bubbles to the wrapper, so dragging works. -->
+          <div style="position:absolute;inset:0;z-index:20;cursor:grab"></div>
           <div style="position:absolute;top:2px;right:2px;display:flex;gap:6px;z-index:30">
             <span onPointerDown="{{ m.linkBtn }}" title="Link / unlink module" style="{{ m.linkBtnStyle }}">∞</span>
             <span onPointerDown="{{ m.surfaceBtn }}" title="Surface: light → dark → clear" style="{{ m.surfaceBtnStyle }}">◐</span>
@@ -579,7 +608,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;bgBlur&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:7,&quot;min&quot;:0,&quot;max&quot;:24,&quot;step&quot;:1,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Background&quot;},&quot;glassAlpha&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:10,&quot;min&quot;:3,&quot;max&quot;:30,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Modules&quot;},&quot;gutterPx&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:20,&quot;min&quot;:8,&quot;max&quot;:28,&quot;step&quot;:2,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Grid&quot;},&quot;frameless&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Modules&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;bgBlur&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:7,&quot;min&quot;:0,&quot;max&quot;:24,&quot;step&quot;:1,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Background&quot;},&quot;glassAlpha&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:10,&quot;min&quot;:3,&quot;max&quot;:30,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Modules&quot;},&quot;gutterPx&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:10,&quot;min&quot;:4,&quot;max&quot;:28,&quot;step&quot;:2,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Grid&quot;},&quot;frameless&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Modules&quot;}}">
 // ════════════════════════════════════════════════════════════════════
 // DUSK DASHBOARD — see MODULES.md before editing.
 // Sections marked ENGINE are HARD STOPS: do not modify them.
@@ -683,7 +712,7 @@ const DEFS = {
   agenda:  { w: 6,  h: 4, label: 'AGENDA' },
   image:   { w: 6,  h: 3, label: 'IMAGE' },
   chart:   { w: 6,  h: 3, label: 'CHART' },
-  console: { w: 24, h: 3, label: 'CONSOLE' },
+  console: { w: 5,  h: 2, label: 'CONSOLE' },
   cortana: { w: 10, h: 7, label: 'CORTANA' },
   // 7 wide so it fits the gap beside a centered cortana module (which leaves
   // 7-8 wide side columns); 8 wide was too wide for the side AND too tall for
@@ -1026,17 +1055,22 @@ class Component extends DCLogic {
     try {
       const fp = JSON.parse(localStorage.getItem('dusk.files.v1') || '{}');
       if (fp.mode === 'net') this.state.filesMode = 'net';
+      if (fp.root) this.state.filesRoot = fp.root;
     } catch (e) {}
     const pollFiles = async () => {
-      if (!this.state.modules.some(m => m.type === 'files')) return;
+      const mods = this.state.modules.filter(m => m.type === 'files');
+      if (!mods.length) return;
       if (!window.duskBridge || !window.duskBridge.files) return;
+      // Fetch as deep as the widest FILES module can actually display.
+      const depth = Math.min(6, Math.max(2, Math.round(Math.max(...mods.map(m => m.w)) / 4)) + 1);
       try {
-        const r = await window.duskBridge.files.tree(4);
+        const r = await window.duskBridge.files.tree(depth, this.state.filesRoot || '');
         if (r && r.ok) this.setState({ filesTree: r.tree, filesRoot: r.root },
                                      () => this._drawFilesNet());
       } catch (e) { /* keep last good tree */ }
     };
     pollFiles();
+    this._pollFiles = pollFiles;
     this._filesPoll = setInterval(pollFiles, 30000);
 
     // Net view: root at the center, children on a ring, grandchildren on an
@@ -1211,6 +1245,19 @@ class Component extends DCLogic {
     this._pushBoard = pushBoard;          // task changes push immediately
     this._mobileBoardPush = setInterval(pushBoard, 20000);
 
+    // Glass scrollbars: reveal a themed thumb only while scrolling. One
+    // delegated capture-phase listener covers every scrollable element,
+    // including ones mounted later.
+    this._glassScrollT = new WeakMap();
+    this._onAnyScroll = (e) => {
+      const el = e.target;
+      if (!el || !el.classList) return;
+      el.classList.add('scrolling');
+      clearTimeout(this._glassScrollT.get(el));
+      this._glassScrollT.set(el, setTimeout(() => el.classList.remove('scrolling'), 900));
+    };
+    window.addEventListener('scroll', this._onAnyScroll, true);   // capture: catches nested scrollers
+
     this._syncYoutube();   // mount any youtube iframe present at first paint
 
     window.addEventListener('keydown', this._key);
@@ -1285,6 +1332,7 @@ class Component extends DCLogic {
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
     window.removeEventListener('keydown', this._key);
+    if (this._onAnyScroll) window.removeEventListener('scroll', this._onAnyScroll, true);
     this.unbindDrag();
   }
 
@@ -1310,6 +1358,16 @@ class Component extends DCLogic {
   // MOBILE LINK poll drains and applies them here (this page's localStorage is
   // the single source of truth for tasks), then pushes the board straight
   // back so the phone converges within a poll cycle.
+  _setFilesRoot(root) {
+    this.setState({ filesRoot: root, filesTree: null }, () => {
+      try {
+        const prev = JSON.parse(localStorage.getItem('dusk.files.v1') || '{}');
+        localStorage.setItem('dusk.files.v1', JSON.stringify({ ...prev, root }));
+      } catch (e) {}
+      this._pollFiles && this._pollFiles();
+    });
+  }
+
   _applyTaskOps(ops) {
     let tasks = [...this.state.tasks];
     for (const op of ops) {
@@ -1320,6 +1378,12 @@ class Component extends DCLogic {
         const i = tasks.findIndex(x => x.id === op.id);
         if (i >= 0) tasks[i] = { ...tasks[i], done: !tasks[i].done,
                                  doneAt: !tasks[i].done ? Date.now() : 0 };
+      } else if (op && op.op === 'zip' && /^\d{5}$/.test(String(op.zip))) {
+        // Weather ZIP set from the phone: apply here, persist, refetch, and the
+        // board push below carries it back as the phone's success handshake.
+        try { localStorage.setItem('dusk.weather.v1', String(op.zip)); } catch (e) {}
+        this.setState({ weatherZip: String(op.zip), weatherData: null },
+                      () => this._pollWeather && this._pollWeather());
       }
     }
     this.setState({ tasks },
@@ -1611,7 +1675,7 @@ class Component extends DCLogic {
   // ── render ──
   renderVals() {
     const s = this.state;
-    const g = this.props.gutterPx ?? 20;
+    const g = this.props.gutterPx ?? 10;   // halved: tighter board, more usable cell area
     const blur = this.props.bgBlur ?? 7;
     const ga = (this.props.glassAlpha ?? 10) / 100;
     const frameless = this.props.frameless ?? false;
@@ -1645,7 +1709,7 @@ class Component extends DCLogic {
             ? { outline: '1px dashed rgba(var(--accent3-rgb),.75)', outlineOffset: 2 }
             : { outline: '1px dashed rgba(var(--accent-rgb),.55)', outlineOffset: 2 }))
         : {};
-      const pad = { padding: '1rem 1.2rem', boxSizing: 'border-box', width: '100%', height: '100%', position: 'relative', overflow: 'hidden' };
+      const pad = { padding: '.5rem .6rem', boxSizing: 'border-box', width: '100%', height: '100%', position: 'relative', overflow: 'hidden' };
 
       const wrapStyle = {
         position: 'absolute',
@@ -1725,6 +1789,33 @@ class Component extends DCLogic {
           color: 'rgb(var(--accent-rgb))', fontSize: '.95rem', userSelect: 'none'
         },
         t_git: m.type === 'git',
+        // GIT scales with the module: type shrinks a little on small cards but
+        // never below legibility, the footer is dropped when short, and the
+        // commit list scrolls rather than clipping mid-line.
+        ...(() => {
+          if (m.type !== 'git') return {};
+          const tiny = m.w < 6 || m.h < 4;
+          const hs = tiny ? '.62rem' : '.68rem';
+          const ms = tiny ? '.66rem' : '.72rem';
+          const rows = (s.gitData && s.gitData.log && s.gitData.log.length)
+            ? s.gitData.log : [{ hash: '———', msg: 'no data yet' }];
+          const clean = s.gitData && s.gitData.status && s.gitData.status.clean;
+          return {
+            gitStatusStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: hs,
+                              color: clean ? '#9be8b8' : 'rgb(var(--accent2-rgb))',
+                              marginTop: '.2rem', flexShrink: 0, whiteSpace: 'nowrap',
+                              overflow: 'hidden', textOverflow: 'ellipsis' },
+            gitFooterOn: m.h >= 4,
+            gitCommitRows: rows.map(c => ({
+              hash: c.hash, msg: c.msg,
+              hashStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: hs,
+                           color: 'rgb(var(--accent-rgb))', flexShrink: 0 },
+              msgStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: ms,
+                          color: 'rgba(var(--text-rgb),.75)', whiteSpace: 'nowrap',
+                          overflow: 'hidden', textOverflow: 'ellipsis' }
+            }))
+          };
+        })(),
         t_mobile: m.type === 'mobile',
         t_files: m.type === 'files',
         // Tree rows flattened from the cached tree, indented per level. The
@@ -2115,6 +2206,20 @@ class Component extends DCLogic {
       filesOpenRoot: () => {
         if (window.duskBridge && window.duskBridge.files)
           window.duskBridge.files.open(this.state.filesRoot || '');
+      },
+      // Native folder chooser for the module's starting directory. Falls back
+      // to a typed path when the dialog is unavailable (plain browser).
+      filesPickRoot: async () => {
+        if (!(window.duskBridge && window.duskBridge.files && window.duskBridge.files.pick)) {
+          const typed = window.prompt('Start the FILES module from which folder?',
+                                      this.state.filesRoot || '');
+          if (typed) this._setFilesRoot(typed.trim());
+          return;
+        }
+        try {
+          const r = await window.duskBridge.files.pick();
+          if (r && r.ok && r.path) this._setFilesRoot(r.path);
+        } catch (e) { this.showToast('COULD NOT OPEN THE FOLDER PICKER'); }
       },
       filesPillStyle: {
         height: '1.7rem', display: 'flex', alignItems: 'center', padding: '0 .55rem',

@@ -44,6 +44,13 @@ def drain_task_ops():
         return ops
 
 
+def board_is_fresh(max_age=90):
+    """True when the dashboard pushed a snapshot recently - i.e. it is open and
+    will actually apply queued edits. The phone uses this to warn instead of
+    leaving a change pending forever."""
+    return bool(_board["data"]) and (time.time() - _board["ts"]) < max_age
+
+
 def cortana_state():
     """Orb state plus liveness. The unit state is authoritative for 'is she
     running' because hud_state.json intentionally stops being rewritten while

@@ -165,6 +165,16 @@ object Ui {
         setOnClickListener { onClick() }
     }
 
+    /** Small indeterminate spinner in the accent color - shown next to any
+     *  row whose change is in flight, so nobody taps twice wondering. */
+    fun spinner(ctx: Context, sizeDp: Int = 16): View =
+        android.widget.ProgressBar(ctx).apply {
+            isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(ACCENT)
+            layoutParams = LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp))
+                .apply { leftMargin = dp(ctx, 8) }
+        }
+
     fun stateColor(state: String): Int = when (state) {
         "listening" -> GREEN
         "thinking", "working" -> LAVENDER

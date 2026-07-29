@@ -81,9 +81,14 @@ async def task_op(request):
         state.queue_task_op({"op": "add", "t": str(body["t"]).strip()[:120]})
     elif op == "toggle" and str(body.get("id", "")):
         state.queue_task_op({"op": "toggle", "id": str(body["id"])[:32]})
+    elif op == "zip" and str(body.get("zip", "")).isdigit():
+        state.queue_task_op({"op": "zip", "zip": str(body["zip"])[:5]})
     else:
         return web.json_response({"error": "bad op"}, status=400)
-    return web.json_response({"ok": True, "note": "applies when the dashboard is open"})
+    # The phone treats this as "queued", not "applied" - it shows the change as
+    # pending until the board snapshot comes back carrying it (the handshake).
+    return web.json_response({"ok": True, "queued": True,
+                              "dashboardOpen": state.board_is_fresh()})
 
 
 async def converse(request):

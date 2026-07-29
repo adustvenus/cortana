@@ -139,6 +139,14 @@ object Prefs {
         plain(ctx).edit().putString("host", host).apply()
     }
 
+    /** ZIP entered on the phone. Overrides the dashboard's board ZIP so the
+     *  weather card works even before a board snapshot arrives. */
+    fun weatherZip(ctx: Context): String = plain(ctx).getString("weatherZip", "") ?: ""
+
+    fun setWeatherZip(ctx: Context, zip: String) {
+        plain(ctx).edit().putString("weatherZip", zip).apply()
+    }
+
     /** Phone-local module order from drag-and-drop; empty = follow the board. */
     fun moduleOrder(ctx: Context): List<String> =
         (plain(ctx).getString("moduleOrder", "") ?: "")

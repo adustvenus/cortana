@@ -50,8 +50,9 @@ contextBridge.exposeInMainWorld('duskBridge', {
   sleepScreen() { return ipcRenderer.invoke('screen:sleep'); },
   /** FILES module: read-only home-folder tree + open-in-file-manager. */
   files: {
-    tree(depth) { return ipcRenderer.invoke('files:tree', Number(depth) || 2); },
-    open(p) { return ipcRenderer.invoke('files:open', String(p || '')); }
+    tree(depth, root) { return ipcRenderer.invoke('files:tree', Number(depth) || 2, String(root || '')); },
+    open(p) { return ipcRenderer.invoke('files:open', String(p || '')); },
+    pick() { return ipcRenderer.invoke('files:pick'); }
   },
   open() { ipcRenderer.send('ui:open'); },
   toBubble() { ipcRenderer.send('ui:bubble'); },

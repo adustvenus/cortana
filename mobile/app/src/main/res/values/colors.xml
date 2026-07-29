@@ -1,5 +1,8 @@
 <resources>
-    <!-- Dusk dashboard palette, so the phone mirror feels like the same product -->
+    <!-- Dusk dashboard palette - the single source of truth for the app's
+         theme, kept in step with the dashboard's CSS variables:
+         --accent 255,171,143 · --accent2 240,138,155 · --accent3 201,184,232
+         --peach 255,217,196 · --orb 143,123,184 · --text 253,243,236 -->
     <color name="dusk_bg">#221d33</color>
     <color name="dusk_card">#2c2542</color>
     <color name="dusk_text">#fdf3ec</color>
@@ -7,7 +10,7 @@
     <color name="dusk_accent">#ffab8f</color>
     <color name="dusk_rose">#f08a9b</color>
     <color name="dusk_lavender">#c9b8e8</color>
+    <color name="dusk_peach">#ffd9c4</color>
+    <color name="dusk_orb">#8f7bb8</color>
     <color name="dusk_green">#9be8b8</color>
-    <color name="cortana_blue">#7fd4ff</color>
-    <color name="cortana_deep">#12264f</color>
 </resources>

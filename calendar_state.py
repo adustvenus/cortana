@@ -18,9 +18,12 @@ def write(events):
 
 
 def write_error(msg):
-    # Preserve last-known events on error if we have them; just note the error.
+    # Preserve last-known events on error, but KEEP their original `day`. Wiping
+    # it while refreshing `ts` made yesterday's agenda look like today's - the
+    # staleness guard in read() can only work if the day survives an error.
     prev = read()
-    _flush({"events": prev.get("events", []), "error": str(msg)[:200], "ts": time.time()})
+    _flush({"events": prev.get("events", []), "error": str(msg)[:200],
+            "day": prev.get("day", ""), "ts": time.time()})
 
 
 def _flush(payload):

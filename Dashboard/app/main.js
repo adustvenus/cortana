@@ -351,6 +351,14 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('calendar:today', () => {
     try {
       const raw = JSON.parse(fs.readFileSync(CALENDAR_FILE, 'utf8'));
+      // Same staleness rule the Python side enforces: never show another day's
+      // agenda as if it were today's. Without this check the dashboard happily
+      // rendered yesterday's events whenever Cortana was down.
+      const today = new Date().toLocaleDateString('en-CA');   // YYYY-MM-DD, local
+      if (raw.day && raw.day !== today) {
+        return { events: [],
+                 error: 'calendar data is from ' + raw.day + ' — is Cortana running?' };
+      }
       return { events: Array.isArray(raw.events) ? raw.events : [],
                error: typeof raw.error === 'string' ? raw.error : '' };
     } catch (e) {
@@ -393,8 +401,22 @@ if (!app.requestSingleInstanceLock()) {
     const abs = path.resolve(home, String(p || ''));
     return abs.startsWith(home) ? abs : home;
   };
-  ipcMain.handle('files:tree', (_e, depth) => {
-    const maxDepth = Math.min(4, Math.max(1, Number(depth) || 2));
+  // Native folder picker for the FILES module's starting directory.
+  ipcMain.handle('files:pick', async () => {
+    const { dialog } = require('electron');
+    try {
+      const r = await dialog.showOpenDialog(mainWin, {
+        title: 'Choose the folder this module starts from',
+        defaultPath: os.homedir(),
+        properties: ['openDirectory', 'showHiddenFiles']
+      });
+      if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+      return { ok: true, path: jailToHome(r.filePaths[0]) };
+    } catch (e) { return { ok: false, error: String(e.message) }; }
+  });
+
+  ipcMain.handle('files:tree', (_e, depth, root) => {
+    const maxDepth = Math.min(6, Math.max(1, Number(depth) || 2));
     const build = (dir, d) => {
       const node = { name: path.basename(dir) || dir, path: dir, dir: true, kids: [] };
       if (d >= maxDepth) return node;
@@ -413,8 +435,8 @@ if (!app.requestSingleInstanceLock()) {
       return node;
     };
     try {
-      const root = jailToHome('');
-      return { ok: true, root, tree: build(root, 0) };
+      const start = jailToHome(root || '');
+      return { ok: true, root: start, tree: build(start, 0) };
     } catch (e) { return { ok: false, error: String(e.message) }; }
   });
   ipcMain.handle('files:open', (_e, p) => {

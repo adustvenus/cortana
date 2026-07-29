@@ -1,39 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Cortana sphere: layered radial glows, used by the widget, the talk
-     screen, and (tinted) the launcher icon. -->
+<!-- The Cortana orb, matching the Dusk dashboard exactly. The dashboard paints
+     it as radial-gradient(circle at 35% 30%, peach, rose 55%, orb-purple):
+       --peach-rgb  255,217,196  #ffd9c4
+       --accent2-rgb 240,138,155 #f08a9b
+       --orb-rgb    143,123,184  #8f7bb8
+     Used by the launcher icon, the 2x2 widget, the talk screen and pairing. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- depth: purple base so edges fall away like the dashboard orb -->
     <item>
         <shape android:shape="oval">
             <gradient
                 android:type="radial"
-                android:gradientRadius="52%p"
+                android:gradientRadius="58%p"
                 android:centerX="0.5" android:centerY="0.5"
-                android:startColor="#2a6bd4"
-                android:centerColor="#173a7a"
-                android:endColor="#0a1530" />
+                android:startColor="#a892d6"
+                android:centerColor="#8f7bb8"
+                android:endColor="#5d4f82" />
         </shape>
     </item>
-    <item android:top="8dp" android:left="8dp" android:right="8dp" android:bottom="8dp">
+    <!-- the lit face: peach highlight into rose, offset up-left at 35%/30% -->
+    <item>
         <shape android:shape="oval">
             <gradient
                 android:type="radial"
-                android:gradientRadius="50%p"
-                android:centerX="0.42" android:centerY="0.38"
-                android:startColor="#b8ecff"
-                android:centerColor="#59b6f2"
-                android:endColor="#00113a66" />
+                android:gradientRadius="62%p"
+                android:centerX="0.35" android:centerY="0.30"
+                android:startColor="#ffd9c4"
+                android:centerColor="#f08a9b"
+                android:endColor="#008f7bb8" />
         </shape>
     </item>
+    <!-- coral rim, the dashboard's accent -->
     <item>
         <shape android:shape="oval">
-            <stroke android:width="1.5dp" android:color="#5a7fd4ff" />
-        </shape>
-    </item>
-    <!-- Dusk accent ring: ties the widget + launcher icon to the dashboard's
-         coral/lavender palette instead of reading as a stock blue orb. -->
-    <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="1dp">
-        <shape android:shape="oval">
-            <stroke android:width="1dp" android:color="#66ffab8f" />
+            <stroke android:width="1.5dp" android:color="#7dffab8f" />
         </shape>
     </item>
 </layer-list>

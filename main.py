@@ -361,9 +361,81 @@ def _calendar_once():
         print("Wrote error to", calendar_state.STATE_FILE)
 
 
+def _calendar_debug():
+    """Show exactly what Google returns, per calendar, unfiltered. Use this when
+    the Agenda shows an event you don't have, or misses one you do:
+        ./venv/bin/python main.py --calendar-debug
+    It prints which Google ACCOUNT the token belongs to, every calendar on it,
+    and today's raw events per calendar with the fields our filter looks at."""
+    import json as _json
+    print("token.json present:", config.GMAIL_TOKEN.exists())
+    if not config.GMAIL_TOKEN.exists():
+        print("Not connected. Run: python main.py --google-auth")
+        return
+    from tools import calendar_tool, google_auth
+    try:
+        from googleapiclient.discovery import build
+        me = build("oauth2", "v2", credentials=google_auth.creds()).userinfo().get().execute()
+        print("Google account:", me.get("email", "(unknown)"))
+    except Exception as e:
+        print("Could not read the account email:", e)
+
+    try:
+        cals = calendar_tool.calendars()
+    except Exception as e:
+        print("CALENDAR LIST ERROR:", e)
+        return
+    print(f"\n{len(cals)} calendar(s) on this account:")
+    for c in cals:
+        flags = []
+        if c["primary"]:
+            flags.append("PRIMARY")
+        flags.append("selected" if c["selected"] else "NOT selected")
+        print(f"  - {c['summary']!r}  [{', '.join(flags)}]  id={c['id']}")
+
+    lo, hi, _tz = calendar_tool._local_day_bounds()
+    print(f"\nWindow queried (local time): {lo}  ->  {hi}")
+    for c in cals:
+        try:
+            items = calendar_tool.raw_today(c["id"])
+        except Exception as e:
+            print(f"\n{c['summary']!r}: ERROR {e}")
+            continue
+        print(f"\n{c['summary']!r}: {len(items)} raw event(s) today")
+        for e in items:
+            start = e.get("start", {})
+            when = start.get("dateTime") or start.get("date") or "?"
+            kept = calendar_tool._is_real_event(e)
+            why = ""
+            if not kept:
+                if e.get("eventType") in calendar_tool._SKIP_TYPES:
+                    why = f"eventType={e.get('eventType')}"
+                elif e.get("status") == "cancelled":
+                    why = "status=cancelled"
+                else:
+                    why = "you declined it"
+            mine = [a for a in (e.get("attendees") or []) if a.get("self")]
+            print(f"   {'KEPT  ' if kept else 'FILTERED'} {when}  {e.get('summary','(no title)')!r}"
+                  f"  eventType={e.get('eventType','default')} status={e.get('status','')}"
+                  + (f" self={mine[0].get('responseStatus')}" if mine else "")
+                  + (f"   <- dropped because {why}" if why else ""))
+
+    print("\nWhat the Agenda will show (merged + filtered):")
+    try:
+        for e in calendar_tool.today_events():
+            print(f"   {e['time']}  {e['title']}" + ("  (past)" if e.get("past") else ""))
+    except Exception as e:
+        print("   ERROR:", e)
+    print("\nIf an event you expect is missing above, check whether its calendar "
+          "is listed and 'selected'; if the account email isn't the one you add "
+          "events in, re-run: python main.py --google-auth")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", action="store_true", help="text mode (no mic/hotkeys)")
+    ap.add_argument("--calendar-debug", action="store_true",
+                    help="diagnose the Agenda: list calendars + today's raw events, then exit")
     ap.add_argument("--google-auth", action="store_true",
                     help="re-authorize Google (Gmail + Calendar) in a browser, then exit")
     ap.add_argument("--calendar-once", action="store_true",
@@ -374,6 +446,9 @@ if __name__ == "__main__":
         sys.exit(0)
     if args.calendar_once:
         _calendar_once()
+        sys.exit(0)
+    if args.calendar_debug:
+        _calendar_debug()
         sys.exit(0)
     memory.init()
     speech.init(voice=not args.text,
