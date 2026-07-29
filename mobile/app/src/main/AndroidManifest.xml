@@ -40,6 +40,9 @@
             android:exported="false"
             android:launchMode="singleTop" />
 
+        <!-- PackageInstaller session results (silent self-update path) -->
+        <receiver android:name=".InstallReceiver" android:exported="false" />
+
         <receiver
             android:name=".SphereWidget"
             android:exported="true">

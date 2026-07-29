@@ -195,6 +195,17 @@ object LinkClient {
         }
     }
 
+    /** Ask the workstation to install the update to THIS phone over wireless
+     *  adb (the privileged path some skins force us onto). Blocking. */
+    fun apkAdbInstall(ctx: Context, port: Int): JSONObject {
+        val body = JSONObject().put("port", port).toString().toRequestBody(JSON)
+        slowHttp.newCall(authed(ctx, Request.Builder()
+            .url("${base(ctx)}/api/apk/adb").post(body)).build()).execute().use { r ->
+            if (r.code == 401) throw AuthException()
+            return JSONObject(r.body?.string() ?: "{}")
+        }
+    }
+
     fun downloadApk(ctx: Context, dest: File, onProgress: (Int) -> Unit) {
         slowHttp.newCall(authed(ctx, Request.Builder()
             .url("${base(ctx)}/api/apk/download")).build()).execute().use { r ->

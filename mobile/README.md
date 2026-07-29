@@ -45,6 +45,29 @@ code rides inside the QR itself, so scanning is exactly as privileged as
 reading the code off the dashboard. Everything under `/api/*` stays
 token-guarded.
 
+## How updates install (and why it isn't a normal app store)
+
+Android reserves *silent* installs for the Play Store and privileged apps —
+that restriction isn't a side effect of self-hosting, it's the platform's
+security model. Within it, the app uses the best available path, in order:
+
+1. **PackageInstaller session with `USER_ACTION_NOT_REQUIRED`** (Android 12+).
+   An app updating *itself*, as its own installer-of-record, may commit with
+   no prompt at all — a real silent self-update, store-like. This is the
+   default path and it also sidesteps the system installer UI that
+   OxygenOS/ColorOS drop silently.
+2. **The platform's confirmation dialog**, if it refuses the silent path
+   (`STATUS_PENDING_USER_ACTION` → we surface the prompt).
+3. **Workstation adb push** — Settings → *Install via workstation (adb)*. The
+   phone asks the bridge to install to it over wireless adb: the privileged
+   path, no terminal, no cable.
+
+If you ever want *fully* normal behavior (background updates, no prompts, no
+sideload warnings), the only real route is publishing to Google Play's
+internal-testing track — a one-time $25 developer account, app stays private
+to your testers, and Play handles updates natively. Everything else on
+Android is a variation of the three paths above.
+
 ## If installs fail silently (OnePlus / OPPO / realme)
 
 OxygenOS and ColorOS drop sideloads and in-app updates **with no error

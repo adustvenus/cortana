@@ -2,9 +2,12 @@ package com.cortana.mobile
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.PendingIntent
 import android.app.ProgressDialog
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import org.json.JSONObject
@@ -57,6 +60,25 @@ object UpdateManager {
             } ?: state?.optJSONObject("apk")
             activity.runOnUiThread {
                 maybeOffer(activity, JSONObject().put("apk", apk ?: JSONObject()), manual = true)
+            }
+        }
+    }
+
+    /** Fallback for skins that block the installer UI: have the workstation
+     *  push the APK to this phone over wireless adb (privileged install). */
+    fun adbInstall(activity: Activity, port: Int) {
+        toast(activity, "Asking the workstation to install…")
+        thread {
+            val r = try {
+                LinkClient.apkAdbInstall(activity, port)
+            } catch (e: Exception) {
+                JSONObject().put("ok", false).put("error", e.message ?: "link error")
+            }
+            activity.runOnUiThread {
+                if (r.optBoolean("ok"))
+                    toast(activity, "Installed v${r.optString("version")} - reopen Cortana")
+                else
+                    toast(activity, "Install failed: ${r.optString("error", r.optString("output"))}")
             }
         }
     }
@@ -140,13 +162,54 @@ object UpdateManager {
         }
     }
 
+    /**
+     * Install via the PackageInstaller session API rather than an ACTION_VIEW
+     * intent. Two reasons this is the right path:
+     *  - On Android 12+, an app updating ITSELF while being its own
+     *    installer-of-record may commit with USER_ACTION_NOT_REQUIRED: a real
+     *    silent self-update, like a normal store-managed app.
+     *  - The ACTION_VIEW hand-off goes through the system installer UI, which
+     *    OxygenOS/ColorOS drop silently. This path avoids that UI entirely.
+     * If the platform still wants confirmation it replies PENDING_USER_ACTION
+     * and InstallReceiver surfaces the prompt, so we degrade gracefully.
+     */
     private fun install(activity: Activity, apk: File) {
-        val uri = FileProvider.getUriForFile(
-            activity, "com.cortana.mobile.fileprovider", apk)
-        activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
+        try {
+            val installer = activity.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Self-update, so ask for the no-prompt path. The platform
+                // silently ignores this when it isn't permitted.
+                params.setRequireUserAction(
+                    PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            }
+            val sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                session.openWrite("cortana", 0, apk.length()).use { out ->
+                    apk.inputStream().use { it.copyTo(out) }
+                    session.fsync(out)
+                }
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                val pi = PendingIntent.getBroadcast(
+                    activity, sessionId,
+                    Intent(activity, InstallReceiver::class.java), flags)
+                session.commit(pi.intentSender)
+            }
+            toast(activity, "Installing update…")
+        } catch (e: Exception) {
+            // Last resort: the classic intent hand-off.
+            try {
+                val uri = FileProvider.getUriForFile(
+                    activity, "com.cortana.mobile.fileprovider", apk)
+                activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (e2: Exception) {
+                toast(activity, "Install failed: ${e.message}")
+            }
+        }
     }
 
     private fun toast(activity: Activity, msg: String) =

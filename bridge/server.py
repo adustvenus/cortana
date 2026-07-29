@@ -481,6 +481,57 @@ async def h_apk_refresh(request):
     return web.json_response(await asyncio.to_thread(_refresh_dist))
 
 
+def _adb_install(addr):
+    """Install the current APK to a phone over wireless adb. This is the
+    privileged install path - it bypasses the system installer UI that
+    OxygenOS/ColorOS drop silently - triggered from the phone itself so the
+    user never touches a terminal. Requires Wireless debugging on and a prior
+    one-time `adb pair` (see mobile/push-update.sh)."""
+    info = _apk_info()
+    if not info.get("available"):
+        return {"ok": False, "error": "no APK on the workstation yet"}
+    apk = str(DIST / info["apk"])
+    try:
+        _run(["adb", "connect", addr], timeout=20)
+    except FileNotFoundError:
+        return {"ok": False, "error": "adb not installed on the workstation "
+                                      "(sudo apt install -y android-tools-adb)"}
+    except Exception as e:
+        return {"ok": False, "error": f"adb connect failed: {e}"[:200]}
+    try:
+        out = subprocess.run(["adb", "-s", addr, "install", "-r", apk],
+                             capture_output=True, text=True, timeout=300)
+    except Exception as e:
+        return {"ok": False, "error": f"adb install failed: {e}"[:200]}
+    blob = (out.stdout + out.stderr).strip()
+    ok = "Success" in blob
+    if not ok and "unauthorized" in blob.lower():
+        return {"ok": False, "error": "phone not paired for adb - run once on the "
+                                      "workstation: bash mobile/push-update.sh pair <IP:PORT> <CODE>"}
+    return {"ok": ok, "version": info.get("version", ""), "output": blob[:300]}
+
+
+async def h_apk_adb(request):
+    dev = _device(request)
+    if not dev:
+        return _deny()
+    try:
+        j = await request.json()
+    except Exception:
+        j = {}
+    port = int(j.get("port") or 5555)
+    # Trust the socket's peer address, not a client-supplied host: a paired
+    # phone can only ever point this at itself.
+    ip = (request.remote or "").strip()
+    if not ip or ":" in ip and not ip.startswith("::ffff:"):
+        return web.json_response({"ok": False, "error": "need an IPv4 phone address"},
+                                 status=400)
+    ip = ip.replace("::ffff:", "")
+    if not (0 < port < 65536):
+        return web.json_response({"ok": False, "error": "bad port"}, status=400)
+    return web.json_response(await asyncio.to_thread(_adb_install, f"{ip}:{port}"))
+
+
 async def h_apk_download(request):
     if not _device(request):
         return _deny()
@@ -670,6 +721,7 @@ def make_app():
         web.post("/api/spotify", h_spotify),
         web.get("/api/apk", h_apk),
         web.post("/api/apk/refresh", h_apk_refresh),
+        web.post("/api/apk/adb", h_apk_adb),
         web.get("/api/apk/download", h_apk_download),
         web.get("/get", h_get_page),
         web.get("/get/apk", h_get_apk),

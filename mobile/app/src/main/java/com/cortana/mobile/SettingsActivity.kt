@@ -5,12 +5,19 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 
 class SettingsActivity : Activity() {
+
+    private var adbPortField: EditText? = null
+
+    private fun toast(msg: String) =
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,6 +83,30 @@ class SettingsActivity : Activity() {
         col.addView(Ui.pillButton(this, "CHECK FOR UPDATE", Ui.LAVENDER) {
             // Pulls CI's latest build onto the workstation first, then offers it.
             UpdateManager.checkNow(this, LinkClient.lastState)
+        })
+        col.addView(Ui.gap(this, 10))
+        col.addView(Ui.pillButton(this, "INSTALL VIA WORKSTATION (ADB)", Ui.DIM) {
+            AlertDialog.Builder(this)
+                .setTitle("Install over wireless adb")
+                .setMessage("For phones whose installer blocks updates silently " +
+                    "(OnePlus/OPPO). Needs: Developer options → Wireless debugging ON, " +
+                    "same Wi-Fi as the workstation, and a one-time adb pair. " +
+                    "Enter the PORT shown on the Wireless debugging screen.")
+                .setView(EditText(this).also { portField ->
+                    portField.hint = "port, e.g. 37219"
+                    portField.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                    portField.setTextColor(Ui.TEXT)
+                    portField.setHintTextColor(Ui.DIM)
+                    adbPortField = portField
+                })
+                .setPositiveButton("Install") { _, _ ->
+                    val port = adbPortField?.text?.toString()?.trim()?.toIntOrNull()
+                    if (port == null) {
+                        toast("Enter the port from the Wireless debugging screen")
+                    } else UpdateManager.adbInstall(this, port)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         })
         col.addView(Ui.gap(this, 24))
 
