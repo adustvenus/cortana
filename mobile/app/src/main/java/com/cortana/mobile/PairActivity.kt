@@ -5,7 +5,10 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
+import android.view.Gravity
+import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -13,9 +16,10 @@ import android.widget.Toast
 import kotlin.concurrent.thread
 
 /**
- * First-run pairing. The user types the workstation's Tailscale name/IP and
- * the 6-digit code shown on the dashboard's MOBILE LINK module. A successful
- * exchange stores the device token; everything after that is automatic.
+ * First-run pairing. Primary path is scanning the QR on the dashboard's
+ * MOBILE LINK module - that opens the bridge's /get page, which deep-links
+ * back here (cortana://pair) with host + code baked in, and we pair with no
+ * typing. Manual entry is a fallback tucked behind a toggle.
  */
 class PairActivity : Activity() {
 
@@ -24,31 +28,58 @@ class PairActivity : Activity() {
     private lateinit var codeIn: EditText
     private lateinit var nameIn: EditText
     private lateinit var status: TextView
+    private lateinit var manualBox: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pad = Ui.dp(this, 22)
+        val pad = Ui.dp(this, 24)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
             setBackgroundColor(Ui.BG)
-            setPadding(pad, pad, pad, pad)
+            setPadding(pad, Ui.dp(context, 40), pad, pad)
         }
 
+        // ── primary: scan the QR ──
+        col.addView(ImageView(this).apply {
+            setImageResource(R.drawable.sphere)
+            layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 96), Ui.dp(context, 96))
+        })
+        col.addView(Ui.gap(this, 20))
         col.addView(TextView(this).apply {
             text = "LINK THIS PHONE"
             typeface = Typeface.MONOSPACE
-            textSize = 17f
+            textSize = 18f
             letterSpacing = 0.2f
             setTextColor(Ui.TEXT)
+            gravity = Gravity.CENTER
         })
-        col.addView(Ui.gap(this, 6))
-        col.addView(Ui.value(this,
-            "1. Install Tailscale on the workstation and this phone (same tailnet).\n" +
-            "2. On the Dusk dashboard, add the MOBILE LINK module and tap PAIR A PHONE.\n" +
-            "3. Enter the workstation's Tailscale name/IP and the code shown.",
-            13f, Ui.DIM))
-        col.addView(Ui.gap(this, 18))
+        col.addView(Ui.gap(this, 14))
+        col.addView(TextView(this).apply {
+            text = "On the Dusk dashboard, open the MOBILE LINK module and tap " +
+                "PAIR A PHONE. Then just point this phone's camera at the QR code " +
+                "that appears — it downloads nothing else and links you automatically."
+            textSize = 14f
+            setTextColor(Ui.DIM)
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.35f)
+        })
+        col.addView(Ui.gap(this, 26))
+        col.addView(Ui.value(this, "Make sure Tailscale is connected on this phone first.",
+            12f, Ui.LAVENDER).apply { gravity = Gravity.CENTER })
+        col.addView(Ui.gap(this, 30))
 
+        // ── fallback: manual entry, hidden until asked for ──
+        val toggle = Ui.value(this, "Can't scan? Enter details manually ▾", 13f, Ui.ACCENT).apply {
+            gravity = Gravity.CENTER
+        }
+        col.addView(toggle)
+
+        manualBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, Ui.dp(context, 18), 0, 0)
+        }
         hostIn = field("Workstation host (Tailscale name or IP)", Prefs.host(this))
         portIn = field("Port", Prefs.port(this).toString()).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -59,30 +90,38 @@ class PairActivity : Activity() {
         nameIn = field("This phone's name (shown on the dashboard)",
             Prefs.deviceName(this).ifEmpty { Prefs.defaultDeviceName() })
         for (f in listOf(hostIn, portIn, codeIn, nameIn)) {
-            col.addView(f); col.addView(Ui.gap(this, 12))
+            manualBox.addView(f); manualBox.addView(Ui.gap(this, 12))
+        }
+        manualBox.addView(Ui.pillButton(this, "PAIR", Ui.ACCENT) { pair() })
+        col.addView(manualBox)
+
+        toggle.setOnClickListener {
+            val show = manualBox.visibility != View.VISIBLE
+            manualBox.visibility = if (show) View.VISIBLE else View.GONE
+            toggle.text = if (show) "Hide manual entry ▴" else "Can't scan? Enter details manually ▾"
         }
 
-        status = Ui.value(this, "", 13f, Ui.ROSE)
+        col.addView(Ui.gap(this, 16))
+        status = Ui.value(this, "", 13f, Ui.ROSE).apply { gravity = Gravity.CENTER }
         col.addView(status)
-        col.addView(Ui.gap(this, 12))
-        col.addView(Ui.pillButton(this, "PAIR", Ui.ACCENT) { pair() })
 
         setContentView(ScrollView(this).apply { addView(col); setBackgroundColor(Ui.BG) })
 
-        // QR onboarding: the bridge's /get page deep-links cortana://pair with
-        // the host + code baked in - fill the form and pair without typing.
-        intent?.data?.let { uri ->
-            if (uri.scheme == "cortana" && uri.host == "pair") {
-                uri.getQueryParameter("host")?.let { if (it.isNotEmpty()) hostIn.setText(it) }
-                uri.getQueryParameter("port")?.let { if (it.isNotEmpty()) portIn.setText(it) }
-                uri.getQueryParameter("code")?.let { if (it.isNotEmpty()) codeIn.setText(it) }
-                if (!uri.getQueryParameter("host").isNullOrEmpty()
-                    && uri.getQueryParameter("code")?.length == 6) {
-                    status.setTextColor(Ui.DIM)
-                    status.text = "Pairing from QR link…"
-                    pair()
-                }
-            }
+        handleDeepLink()
+    }
+
+    /** cortana://pair?host=&port=&code= from the scanned /get page → auto-pair. */
+    private fun handleDeepLink() {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "cortana" || uri.host != "pair") return
+        uri.getQueryParameter("host")?.let { if (it.isNotEmpty()) hostIn.setText(it) }
+        uri.getQueryParameter("port")?.let { if (it.isNotEmpty()) portIn.setText(it) }
+        uri.getQueryParameter("code")?.let { if (it.isNotEmpty()) codeIn.setText(it) }
+        if (!uri.getQueryParameter("host").isNullOrEmpty()
+            && uri.getQueryParameter("code")?.length == 6) {
+            status.setTextColor(Ui.DIM)
+            status.text = "Pairing from QR…"
+            pair()
         }
     }
 
@@ -100,6 +139,8 @@ class PairActivity : Activity() {
         val code = codeIn.text.toString().trim()
         val name = nameIn.text.toString().trim().ifEmpty { Prefs.defaultDeviceName() }
         if (host.isEmpty() || code.length != 6) {
+            manualBox.visibility = View.VISIBLE
+            status.setTextColor(Ui.ROSE)
             status.text = "Enter the host and the 6-digit code."
             return
         }
