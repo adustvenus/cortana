@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld('duskBridge', {
   },
   /** Screen off / machine on. Wakes on a keyboard press only. */
   sleepScreen() { return ipcRenderer.invoke('screen:sleep'); },
+  /** FILES module: read-only home-folder tree + open-in-file-manager. */
+  files: {
+    tree(depth) { return ipcRenderer.invoke('files:tree', Number(depth) || 2); },
+    open(p) { return ipcRenderer.invoke('files:open', String(p || '')); }
+  },
   open() { ipcRenderer.send('ui:open'); },
   toBubble() { ipcRenderer.send('ui:bubble'); },
   ctxMenu() { ipcRenderer.send('ui:ctx'); }

@@ -19,6 +19,29 @@ class SettingsActivity : Activity() {
     private fun toast(msg: String) =
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
+    // Swipe left = back to the dashboard (mirrors the swipe-right that opens
+    // this screen from there).
+    private val swipeDetector by lazy {
+        android.view.GestureDetector(this,
+            object : android.view.GestureDetector.SimpleOnGestureListener() {
+                override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent,
+                                     vx: Float, vy: Float): Boolean {
+                    e1 ?: return false
+                    val dx = e2.x - e1.x; val dy = e2.y - e1.y
+                    if (dx < -220 && Math.abs(dx) > 2 * Math.abs(dy) && vx < -900) {
+                        finish()
+                        return true
+                    }
+                    return false
+                }
+            })
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        swipeDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val pad = Ui.dp(this, 22)
@@ -28,13 +51,21 @@ class SettingsActivity : Activity() {
             setPadding(pad, pad, pad, pad)
         }
 
-        col.addView(TextView(this).apply {
+        val back = TextView(this).apply {
+            text = "←"
+            textSize = 24f
+            setTextColor(Ui.DIM)
+            setPadding(0, 0, Ui.dp(this@SettingsActivity, 16), Ui.dp(this@SettingsActivity, 2))
+            contentDescription = "Back to the dashboard"
+            setOnClickListener { finish() }
+        }
+        col.addView(Ui.row(this, back, TextView(this).apply {
             text = "SETTINGS"
             typeface = Typeface.MONOSPACE
             textSize = 16f
             letterSpacing = 0.2f
             setTextColor(Ui.TEXT)
-        })
+        }))
         col.addView(Ui.gap(this, 16))
 
         col.addView(Ui.row(this, Ui.label(this, "LINK"), Ui.helpIcon(this, "security")))

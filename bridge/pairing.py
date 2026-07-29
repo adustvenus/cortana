@@ -119,15 +119,36 @@ def auth(token):
     return None
 
 
-def devices():
+def set_app_version(token_hash, version):
+    """Record the app version a phone reported (its WS hello frame), so the
+    dashboard can show per-device 'up to date' / 'update available'."""
+    version = str(version or "")[:24]
+    if not token_hash or not version:
+        return
+    d = _load()
+    changed = False
+    for dev in d["devices"]:
+        if dev.get("hash") == token_hash and dev.get("appVersion") != version:
+            dev["appVersion"] = version
+            changed = True
+    if changed:
+        _save(d)
+
+
+def devices(online_hashes=None):
     """Public device list for both the dashboard module and the phone.
     `id` is what revoke() expects; it falls back to the name for entries
-    written before ids existed, so old stores stay revocable."""
+    written before ids existed, so old stores stay revocable.
+    `online_hashes`: token hashes with a live WebSocket - authoritative for
+    the online flag (last_seen alone flaps while a phone sits idle)."""
     now = time.time()
+    online_hashes = online_hashes or set()
     return [{"id": dev.get("id") or dev.get("name", "?"),
              "name": dev.get("name", "?"),
              "last_seen": dev.get("last_seen", 0),
-             "online": now - dev.get("last_seen", 0) < ONLINE_WINDOW}
+             "appVersion": dev.get("appVersion", ""),
+             "online": dev.get("hash") in online_hashes
+                       or now - dev.get("last_seen", 0) < ONLINE_WINDOW}
             for dev in _load()["devices"]]
 
 

@@ -243,12 +243,12 @@ function createTray() {
   try {
     const img = nativeImage.createFromPath(ICON).resize({ width: 22, height: 22 });
     tray = new Tray(img);
-    tray.setToolTip('Dusk Dashboard');
+    tray.setToolTip('Cortana Dash');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Open dashboard', click: () => showMain() },
       { label: 'Minimize to bubble', click: () => toBubble(true) },
       { type: 'separator' },
-      { label: 'Quit Dusk Dashboard', click: () => { quitting = true; app.quit(); } }
+      { label: 'Quit Cortana Dash', click: () => { quitting = true; app.quit(); } }
     ]));
     tray.on('click', () => showMain());
   } catch (e) { console.error('[dusk] tray unavailable:', e.message); }
@@ -308,7 +308,7 @@ if (!app.requestSingleInstanceLock()) {
           if (++done === 3) resolve(out);
         });
       };
-      run('log',    ['log', '--oneline', '-5'],
+      run('log',    ['log', '--oneline', '-15'],
           (e, s) => s ? s.split('\n').map(l => ({ hash: l.slice(0,7), msg: l.slice(8) })) : []);
       run('status', ['status', '--short'],
           (e, s) => ({ clean: !s, files: s ? s.split('\n').length : 0 }));
@@ -353,6 +353,45 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) { return { ok: false, error: String(e.message) }; }
   });
 
+  // FILES module: read-only listing of the home folder, and click-to-open in
+  // the native file manager. Paths are jailed to $HOME - anything outside
+  // resolves back to home - and listing skips hidden entries + heavy noise.
+  const FILES_SKIP = new Set(['node_modules', '__pycache__', 'venv', '.venv', 'snap']);
+  const jailToHome = (p) => {
+    const home = os.homedir();
+    const abs = path.resolve(home, String(p || ''));
+    return abs.startsWith(home) ? abs : home;
+  };
+  ipcMain.handle('files:tree', (_e, depth) => {
+    const maxDepth = Math.min(4, Math.max(1, Number(depth) || 2));
+    const build = (dir, d) => {
+      const node = { name: path.basename(dir) || dir, path: dir, dir: true, kids: [] };
+      if (d >= maxDepth) return node;
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true })
+          .filter(x => !x.name.startsWith('.') && !FILES_SKIP.has(x.name))
+          .sort((a, b) => (b.isDirectory() - a.isDirectory()) || a.name.localeCompare(b.name))
+          .slice(0, 14);
+      } catch (e) { return node; }
+      for (const x of entries) {
+        const p = path.join(dir, x.name);
+        node.kids.push(x.isDirectory() ? build(p, d + 1)
+                                       : { name: x.name, path: p, dir: false, kids: [] });
+      }
+      return node;
+    };
+    try {
+      const root = jailToHome('');
+      return { ok: true, root, tree: build(root, 0) };
+    } catch (e) { return { ok: false, error: String(e.message) }; }
+  });
+  ipcMain.handle('files:open', (_e, p) => {
+    // xdg-open on a directory (or file) opens the system file manager there.
+    execFile('xdg-open', [jailToHome(p)], { timeout: 10000 }, () => {});
+    return { ok: true };
+  });
+
   // Screen off, machine on (burn-in guard): runs sleep-screen.sh detached.
   // The script disables pointer devices, forces DPMS off, and re-enables the
   // pointers when a keyboard press relights the panel.
@@ -374,7 +413,7 @@ if (!app.requestSingleInstanceLock()) {
     Menu.buildFromTemplate([
       { label: 'Open dashboard', click: showMain },
       { type: 'separator' },
-      { label: 'Quit Dusk Dashboard', click: () => { quitting = true; app.quit(); } }
+      { label: 'Quit Cortana Dash', click: () => { quitting = true; app.quit(); } }
     ]).popup({ window: bubbleWin });
   });
 }

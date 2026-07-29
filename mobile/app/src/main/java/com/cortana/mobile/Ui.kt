@@ -133,6 +133,38 @@ object Ui {
         return row
     }
 
+    /** Two rounded pause bars drawn in-theme (the ⏸ glyph renders as an
+     *  orange emoji on many phones, which broke the app's look). */
+    fun pauseBars(ctx: Context, color: Int = ACCENT): View = object : View(ctx) {
+        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            .apply { this.color = color }
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            val w = width.toFloat(); val h = height.toFloat()
+            val bar = w * 0.26f; val gap = w * 0.16f; val r = bar / 2.5f
+            val left = (w - 2 * bar - gap) / 2f
+            canvas.drawRoundRect(left, 0f, left + bar, h, r, r, paint)
+            canvas.drawRoundRect(left + bar + gap, 0f, left + 2 * bar + gap, h, r, r, paint)
+        }
+    }.apply {
+        layoutParams = LinearLayout.LayoutParams(dp(ctx, 13), dp(ctx, 15))
+    }
+
+    /** A pill-styled button whose content is an arbitrary view (for icons that
+     *  can't be text glyphs). Mirrors pillButton's look exactly. */
+    fun iconPill(ctx: Context, content: View, color: Int = ACCENT,
+                 onClick: () -> Unit): LinearLayout = LinearLayout(ctx).apply {
+        gravity = Gravity.CENTER
+        val ph = dp(ctx, 14); val pv = dp(ctx, 8)
+        setPadding(ph, pv, ph, pv)
+        background = GradientDrawable().apply {
+            cornerRadius = dp(ctx, 10).toFloat()
+            setStroke(dp(ctx, 1), (color and 0x00FFFFFF) or 0x80000000.toInt())
+            setColor(Color.TRANSPARENT)
+        }
+        addView(content)
+        setOnClickListener { onClick() }
+    }
+
     fun stateColor(state: String): Int = when (state) {
         "listening" -> GREEN
         "thinking", "working" -> LAVENDER

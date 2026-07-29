@@ -40,20 +40,50 @@ async def snapshot(request):
 
 async def websocket(request):
     """Live state feed. The first frame is a full snapshot so a reconnecting
-    phone paints immediately rather than waiting for the next push."""
-    if not auth.device(request):
+    phone paints immediately rather than waiting for the next push. The socket
+    itself is the device's presence signal (see hub.online_idents), and the
+    phone's hello frame carries its installed app version for the dashboard."""
+    device = auth.device(request)
+    if not device:
         return auth.deny()
     ws = web.WebSocketResponse(heartbeat=WS_HEARTBEAT)
     await ws.prepare(request)
-    hub.add(ws)
+    hub.add(ws, device.get("hash", ""))
     try:
         await hub.send(ws, json.dumps(await asyncio.to_thread(state.build)))
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
                 auth.device(request)      # inbound traffic refreshes last_seen
+                try:
+                    frame = json.loads(msg.data)
+                    if frame.get("type") == "hello":
+                        pairing.set_app_version(device.get("hash", ""),
+                                                frame.get("version"))
+                except Exception:
+                    pass
     finally:
         hub.discard(ws)
     return ws
+
+
+async def task_op(request):
+    """Task edits from the phone: queued here, drained and applied by the
+    dashboard (its page owns the task list), which then pushes the board back
+    so the phone converges. add: {op:'add', t:text}; toggle: {op:'toggle', id}."""
+    if not auth.device(request):
+        return auth.deny()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+    op = str(body.get("op", ""))
+    if op == "add" and str(body.get("t", "")).strip():
+        state.queue_task_op({"op": "add", "t": str(body["t"]).strip()[:120]})
+    elif op == "toggle" and str(body.get("id", "")):
+        state.queue_task_op({"op": "toggle", "id": str(body["id"])[:32]})
+    else:
+        return web.json_response({"error": "bad op"}, status=400)
+    return web.json_response({"ok": True, "note": "applies when the dashboard is open"})
 
 
 async def converse(request):
@@ -199,6 +229,7 @@ routes = [
     web.post("/api/converse", converse),
     web.post("/api/tts", tts),
     web.post("/api/spotify", spotify),
+    web.post("/api/tasks", task_op),
     web.get("/api/apk", apk),
     web.post("/api/apk/refresh", apk_refresh),
     web.post("/api/apk/adb", apk_adb),

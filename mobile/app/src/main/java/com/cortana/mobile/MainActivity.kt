@@ -104,7 +104,7 @@ class MainActivity : Activity(), LinkClient.Listener {
         }
         linkDot = TextView(this).apply { text = "●"; textSize = 14f; setTextColor(Ui.DIM) }
         val title = TextView(this).apply {
-            text = "DUSK"
+            text = "CORTANA"
             typeface = Typeface.MONOSPACE
             textSize = 15f
             letterSpacing = 0.24f
@@ -168,6 +168,30 @@ class MainActivity : Activity(), LinkClient.Listener {
                 }
             }
         }
+    }
+
+    // Swipe right anywhere on the main screen opens Settings (swipe left
+    // there comes back). Vertical scrolling wins whenever the motion is more
+    // vertical than horizontal, so the list is unaffected.
+    private val swipeDetector by lazy {
+        android.view.GestureDetector(this,
+            object : android.view.GestureDetector.SimpleOnGestureListener() {
+                override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent,
+                                     vx: Float, vy: Float): Boolean {
+                    e1 ?: return false
+                    val dx = e2.x - e1.x; val dy = e2.y - e1.y
+                    if (dx > 220 && Math.abs(dx) > 2 * Math.abs(dy) && vx > 900) {
+                        startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+                        return true
+                    }
+                    return false
+                }
+            })
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        swipeDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onStart() {
@@ -491,13 +515,15 @@ class MainActivity : Activity(), LinkClient.Listener {
         }
         addView(Ui.gap(context, 10))
         val playing = sp.optBoolean("playing", false)
+        val toggle = if (playing)
+            Ui.iconPill(context, Ui.pauseBars(context)) { spotify("pause") }
+        else
+            Ui.pillButton(context, "▶") { spotify("play") }
         addView(Ui.row(context,
             Ui.spacer(context),
             Ui.pillButton(context, "⏮") { spotify("previous") },
             transportGap(),
-            Ui.pillButton(context, if (playing) "⏸" else "▶") {
-                spotify(if (playing) "pause" else "play")
-            },
+            toggle,
             transportGap(),
             Ui.pillButton(context, "⏭") { spotify("next") },
             Ui.spacer(context)))
@@ -560,6 +586,10 @@ class MainActivity : Activity(), LinkClient.Listener {
         }
     }
 
+    /** Two-way tasks: rows are checkboxes (toggle syncs to the dashboard via
+     *  the bridge's op queue) and new tasks are added from the input at the
+     *  bottom. The dashboard page stays the single source of truth - ops apply
+     *  there, and the board pushes back so both screens converge. */
     private fun tasksCard(state: JSONObject): LinearLayout? {
         val tasks = state.optJSONObject("board")?.optJSONArray("tasks") ?: return null
         return Ui.card(this).apply {
@@ -570,15 +600,70 @@ class MainActivity : Activity(), LinkClient.Listener {
                 trailing = Ui.value(context, "$open OPEN", 11f, Ui.DIM, mono = true)))
             addView(Ui.gap(context, 8))
             if (tasks.length() == 0)
-                addView(Ui.value(context, "no tasks on the board", 13f, Ui.DIM))
+                addView(Ui.value(context, "no tasks yet - add one below", 13f, Ui.DIM))
             for (i in 0 until tasks.length()) {
                 val t = tasks.optJSONObject(i) ?: continue
                 val done = t.optBoolean("done")
-                // The dashboard stores task text under "t" (see _addTask in the
-                // dc.html); the old "text"/"title" guesses rendered bare bullets.
-                addView(Ui.value(context,
-                    (if (done) "✓ " else "○ ") + t.optString("t", t.optString("text")),
-                    14f, if (done) Ui.DIM else Ui.TEXT))
+                val id = t.optString("id")
+                // Dashboard stores task text under "t" (see _addTask in dc.html).
+                val text = t.optString("t", t.optString("text"))
+                val box = Ui.value(context, if (done) "☑" else "☐", 17f,
+                    if (done) Ui.GREEN else Ui.DIM).apply {
+                    setPadding(0, 0, Ui.dp(context, 10), 0)
+                }
+                val row = Ui.row(context, box,
+                    Ui.value(context, text, 14f, if (done) Ui.DIM else Ui.TEXT))
+                row.setPadding(0, Ui.dp(context, 5), 0, Ui.dp(context, 5))
+                if (id.isNotEmpty()) row.setOnClickListener { taskToggle(id) }
+                addView(row)
+            }
+            addView(Ui.gap(context, 8))
+            val input = android.widget.EditText(context).apply {
+                hint = "add a task…"
+                setTextColor(Ui.TEXT)
+                setHintTextColor(Ui.DIM)
+                textSize = 14f
+                maxLines = 1
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            }
+            val send = {
+                val txt = input.text.toString().trim()
+                if (txt.isNotEmpty()) {
+                    input.setText("")
+                    taskAdd(txt)
+                }
+            }
+            input.setOnEditorActionListener { _, _, _ -> send(); true }
+            addView(Ui.row(context,
+                input.also {
+                    it.layoutParams = LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                },
+                Ui.pillButton(context, "+ ADD") { send() }))
+        }
+    }
+
+    private fun taskToggle(id: String) {
+        taskOp(org.json.JSONObject().put("op", "toggle").put("id", id))
+    }
+
+    private fun taskAdd(text: String) {
+        taskOp(org.json.JSONObject().put("op", "add").put("t", text))
+    }
+
+    private fun taskOp(op: org.json.JSONObject) {
+        thread {
+            try {
+                LinkClient.taskOp(this, op)
+                // The dashboard applies the op and pushes the board back;
+                // nothing to do here - the next state push redraws the card.
+            } catch (e: LinkClient.AuthException) {
+                runOnUiThread { onAuthRejected() }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Task sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

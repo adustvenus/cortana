@@ -29,4 +29,11 @@
             <stroke android:width="1.5dp" android:color="#5a7fd4ff" />
         </shape>
     </item>
+    <!-- Dusk accent ring: ties the widget + launcher icon to the dashboard's
+         coral/lavender palette instead of reading as a stock blue orb. -->
+    <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="1dp">
+        <shape android:shape="oval">
+            <stroke android:width="1dp" android:color="#66ffab8f" />
+        </shape>
+    </item>
 </layer-list>

@@ -126,12 +126,12 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         <sc-if value="{{ m.t_datetime }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleCenter }}">
             <div style="display:flex;align-items:baseline;gap:.2rem">
-              <span style="font-family:'JetBrains Mono',monospace;font-size:1.7rem;font-weight:500;color:rgb(var(--text-rgb))">{{ clockHM }}</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:.85rem;color:rgb(var(--accent-rgb))">:{{ clockS }}</span>
+              <span style="{{ m.dtTimeStyle }}">{{ clockHM }}</span>
+              <span style="{{ m.dtSecStyle }}">:{{ clockS }}</span>
             </div>
             <sc-if value="{{ m.dtDateOn }}" hint-placeholder-val="{{ false }}">
-              <span style="font-size:.95rem;font-weight:600;color:rgb(var(--text-rgb));margin-top:.3rem">{{ dateLine }}</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.55);margin-top:.15rem">{{ dateSub }}</span>
+              <span style="{{ m.dtDateStyle }}">{{ dateLine }}</span>
+              <span style="{{ m.dtSubStyle }}">{{ dateSub }}</span>
             </sc-if>
           </div>
         </sc-if>
@@ -199,9 +199,12 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                 </div>
               </div>
               <div style="display:flex;gap:1.2rem;align-items:center;justify-content:center;margin-top:.5rem;flex-shrink:0">
-                <span onClick="{{ spPrev }}" title="Previous" style="{{ m.spBtnSide }}">⏮</span>
-                <span onClick="{{ spToggle }}" title="Play / pause" style="{{ m.spBtnMain }}">{{ spPlayIcon }}</span>
-                <span onClick="{{ spNext }}" title="Next" style="{{ m.spBtnSide }}">⏭</span>
+                <span onClick="{{ spPrev }}" title="Previous" style="{{ m.spBtnSide }}"><svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor"><rect x="2" y="2.5" width="2.4" height="11" rx="1"></rect><path d="M14 3.4a1 1 0 0 0-1.53-.85L5.6 7.15a1 1 0 0 0 0 1.7l6.87 4.6A1 1 0 0 0 14 12.6V3.4z"></path></svg></span>
+                <span onClick="{{ spToggle }}" title="Play / pause" style="{{ m.spBtnMain }}">
+                  <sc-if value="{{ spPlaying }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><rect x="3.2" y="2" width="3.2" height="12" rx="1.1"></rect><rect x="9.6" y="2" width="3.2" height="12" rx="1.1"></rect></svg></sc-if>
+                  <sc-if value="{{ spNotPlaying }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" style="margin-left:2px"><path d="M4.6 2.6a1 1 0 0 1 1.5-.87l8.2 5.4a1 1 0 0 1 0 1.74l-8.2 5.4a1 1 0 0 1-1.5-.87V2.6z"></path></svg></sc-if>
+                </span>
+                <span onClick="{{ spNext }}" title="Next" style="{{ m.spBtnSide }}"><svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor"><path d="M2 3.4a1 1 0 0 1 1.53-.85l6.87 4.6a1 1 0 0 1 0 1.7l-6.87 4.6A1 1 0 0 1 2 12.6V3.4z"></path><rect x="11.6" y="2.5" width="2.4" height="11" rx="1"></rect></svg></span>
               </div>
               <div style="margin-top:.7rem;height:4px;border-radius:2px;background:rgba(255,255,255,.14);flex-shrink:0"><div style="{{ spBar }}"></div></div>
               <div style="margin-top:.4rem;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.5);display:flex;justify-content:space-between;flex-shrink:0"><span>{{ spElapsed }}</span><span>{{ spTotal }}</span></div>
@@ -262,7 +265,14 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         <!-- ═══ IMAGE ═══ -->
         <sc-if value="{{ m.t_image }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleImage }}">
-            <sc-if value="{{ m.hasImg }}" hint-placeholder-val="{{ false }}">
+            <sc-if value="{{ m.imgClickOn }}" hint-placeholder-val="{{ false }}">
+              <!-- outside edit mode the image itself is the picker: click to swap -->
+              <label title="Click to change the image" style="position:absolute;inset:0;cursor:pointer;display:block">
+                <div style="{{ m.imgStyle }}"></div>
+                <input type="file" accept="image/*" onChange="{{ m.onImg }}" style="display:none">
+              </label>
+            </sc-if>
+            <sc-if value="{{ m.imgPlainOn }}" hint-placeholder-val="{{ false }}">
               <div style="{{ m.imgStyle }}"></div>
             </sc-if>
             <sc-if value="{{ m.noImg }}" hint-placeholder-val="{{ false }}">
@@ -313,7 +323,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               <span style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.55)">{{ gitBranch }}</span>
             </div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:{{ gitStatusColor }};margin-top:.25rem;flex-shrink:0">{{ gitStatusTxt }}</div>
-            <div style="flex:1;display:flex;flex-direction:column;gap:.22rem;margin-top:.45rem;min-height:0;overflow:hidden">
+            <div style="flex:1;display:flex;flex-direction:column;gap:.22rem;margin-top:.45rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 88%,transparent)">
               <sc-for list="{{ gitCommits }}" as="gc" hint-placeholder-count="5">
                 <div style="display:flex;gap:.5rem;align-items:baseline;min-width:0;overflow:hidden">
                   <span style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgb(var(--accent-rgb));flex-shrink:0">{{ gc.hash }}</span>
@@ -407,6 +417,44 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                 </sc-for>
                 <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.45);text-align:center">{{ aiMenuNote }}</div>
                 <span onPointerDown="{{ m.aiMenuClose }}" style="position:absolute;top:.4rem;right:.5rem;width:1.7rem;height:1.7rem;display:flex;align-items:center;justify-content:center;border-radius:50%;color:rgba(var(--text-rgb),.6);cursor:pointer;font-size:.8rem">✕</span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ═══ FILES (workstation file explorer; dashboard-only, like YT/image) ═══ -->
+        <sc-if value="{{ m.t_files }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">FILES</span>
+              <span onPointerDown="{{ filesHelp }}" title="What is this?" style="{{ m.helpDotStyle }}">?</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:rgba(var(--text-rgb),.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ filesRootTxt }}</span>
+              <span onClick="{{ filesModeToggle }}" title="Tree / net view" style="{{ filesPillStyle }}">{{ filesModeTxt }}</span>
+              <span onClick="{{ filesOpenRoot }}" title="Open in the file manager" style="{{ filesPillStyle }}">⤢</span>
+            </div>
+            <sc-if value="{{ filesTreeOn }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:1;overflow-y:auto;margin-top:.5rem;min-height:0;mask-image:linear-gradient(180deg,#000 90%,transparent)">
+                <sc-for list="{{ m.filesRows }}" as="fr" hint-placeholder-count="6">
+                  <div onClick="{{ fr.open }}" title="Open in the file manager" style="{{ fr.style }}">{{ fr.label }}</div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ filesNetOn }}" hint-placeholder-val="{{ false }}">
+              <canvas ref="{{ m.filesNetRef }}" onClick="{{ m.filesNetClick }}" style="flex:1;width:100%;min-height:0;margin-top:.5rem;cursor:pointer"></canvas>
+            </sc-if>
+            <sc-if value="{{ filesEmptyOn }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.4)">{{ filesEmptyTxt }}</div>
+            </sc-if>
+            <sc-if value="{{ filesHelpOn }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ helpPanelStyle }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.2em;color:rgb(var(--accent3-rgb));flex-shrink:0">FILES</div>
+                <div style="{{ helpBodyStyle }}">
+                  <sc-for list="{{ filesHelpLines }}" as="hl" hint-placeholder-count="3">
+                    <div style="margin-bottom:.45rem">{{ hl.t }}</div>
+                  </sc-for>
+                </div>
+                <span onPointerDown="{{ helpClose }}" style="{{ helpCloseStyle }}">✕</span>
               </div>
             </sc-if>
           </div>
@@ -628,7 +676,8 @@ const DEFS = {
   // the top/bottom bands, so findFreeSlot rightly reported no room.
   git:     { w: 7,  h: 5, label: 'GIT STATUS' },
   youtube: { w: 8,  h: 5, label: 'YOUTUBE' },
-  mobile:  { w: 6,  h: 4, label: 'MOBILE LINK' }
+  mobile:  { w: 6,  h: 4, label: 'MOBILE LINK' },
+  files:   { w: 8,  h: 6, label: 'FILES' }
 };
 
 // Clean home board: just the AI status module, centered. Everything else is
@@ -943,6 +992,91 @@ class Component extends DCLogic {
     pollWeather();
     this._weatherPoll = setInterval(pollWeather, 900000);   // 15 min
 
+    // ── FILES module: fetch the tree via the Dusk app; draw the net view.
+    // The tree is always fetched a few levels deep; the module's WIDTH decides
+    // how many levels actually render (see filesRows / _drawFilesNet).
+    try {
+      const fp = JSON.parse(localStorage.getItem('dusk.files.v1') || '{}');
+      if (fp.mode === 'net') this.state.filesMode = 'net';
+    } catch (e) {}
+    const pollFiles = async () => {
+      if (!this.state.modules.some(m => m.type === 'files')) return;
+      if (!window.duskBridge || !window.duskBridge.files) return;
+      try {
+        const r = await window.duskBridge.files.tree(4);
+        if (r && r.ok) this.setState({ filesTree: r.tree, filesRoot: r.root },
+                                     () => this._drawFilesNet());
+      } catch (e) { /* keep last good tree */ }
+    };
+    pollFiles();
+    this._filesPoll = setInterval(pollFiles, 30000);
+
+    // Net view: root at the center, children on a ring, grandchildren on an
+    // outer ring around their parent (obsidian-style). Node positions are
+    // remembered per canvas for click-to-open hit testing.
+    this._filesNetNodes = {};
+    this._drawFilesNet = () => {
+      const els = this._filesNetEls || {};
+      const tree = this.state.filesTree;
+      for (const [id, rec] of Object.entries(els)) {
+        const cv = rec.el;
+        if (!cv || !cv.clientWidth) continue;
+        const W = cv.width = cv.clientWidth, H = cv.height = cv.clientHeight;
+        const ctx = cv.getContext('2d');
+        ctx.clearRect(0, 0, W, H);
+        const nodes = [];
+        if (tree && this.state.filesMode === 'net') {
+          const maxDepth = Math.max(1, Math.floor((rec.w || 8) / 4));
+          const cx = W / 2, cy = H / 2;
+          const R1 = Math.min(W, H) * 0.30, R2 = Math.min(W, H) * 0.47;
+          const style = getComputedStyle(document.documentElement);
+          const acc = style.getPropertyValue('--accent-rgb').trim() || '255,171,143';
+          const lav = style.getPropertyValue('--accent3-rgb').trim() || '201,184,232';
+          const txt = style.getPropertyValue('--text-rgb').trim() || '253,243,236';
+          const kids = (tree.kids || []).slice(0, 14);
+          nodes.push({ x: cx, y: cy, r: 15, path: tree.path, name: tree.name });
+          kids.forEach((k, ki) => {
+            const a = (ki / kids.length) * Math.PI * 2 - Math.PI / 2;
+            const x = cx + Math.cos(a) * R1, y = cy + Math.sin(a) * R1;
+            ctx.strokeStyle = `rgba(${lav},.35)`;
+            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke();
+            nodes.push({ x, y, r: 10, path: k.path, name: k.name, dir: k.dir });
+            if (maxDepth >= 3) {
+              const gks = (k.kids || []).slice(0, 6);
+              gks.forEach((g, gi) => {
+                const ga = a + ((gi - (gks.length - 1) / 2) * 0.28);
+                const gx = cx + Math.cos(ga) * R2, gy = cy + Math.sin(ga) * R2;
+                ctx.strokeStyle = `rgba(${lav},.2)`;
+                ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(gx, gy); ctx.stroke();
+                nodes.push({ x: gx, y: gy, r: 6, path: g.path, name: g.name, dir: g.dir });
+              });
+            }
+          });
+          ctx.textAlign = 'center';
+          for (const n of nodes) {
+            ctx.beginPath();
+            ctx.fillStyle = n.r >= 15 ? `rgb(${acc})` : (n.dir ? `rgba(${acc},.75)` : `rgba(${txt},.4)`);
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = `rgba(${txt},.75)`;
+            ctx.font = (n.r >= 10 ? 11 : 9) + "px 'JetBrains Mono',monospace";
+            ctx.fillText(n.name.slice(0, 14), n.x, n.y + n.r + 11);
+          }
+        }
+        this._filesNetNodes[id] = nodes;
+      }
+    };
+    this._filesNetHit = (id, e) => {
+      const rec = (this._filesNetEls || {})[id];
+      const nodes = this._filesNetNodes[id] || [];
+      if (!rec || !rec.el) return null;
+      const r = rec.el.getBoundingClientRect();
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      for (const n of nodes) {
+        if ((px - n.x) ** 2 + (py - n.y) ** 2 <= (n.r + 8) ** 2) return n.path;
+      }
+      return null;
+    };
+
     // ── Mic inventory (AI module dropdown): Cortana publishes mic_state.json;
     // selecting writes mic_select.json, which she re-reads on the next capture
     // - no restart needed. Blank dropdown = no devices (or Cortana down).
@@ -999,6 +1133,15 @@ class Component extends DCLogic {
             if (rq.ok) qr = await rq.json();
           } catch (e) {}
         }
+        // Drain task edits made on the phone and apply them to this board.
+        try {
+          const ro = await fetch(MB + '/local/tasks/ops', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          if (ro.ok) {
+            const ops = await ro.json();
+            if (ops && Array.isArray(ops.ops) && ops.ops.length) this._applyTaskOps(ops.ops);
+          }
+        } catch (e) {}
         this.setState({ mobileData: d, mlQr: qr }, () => this._drawMlQr());
       } catch (e) { this.setState({ mobileData: null, mlQr: null }, () => this._drawMlQr()); }
     };
@@ -1037,6 +1180,7 @@ class Component extends DCLogic {
       } catch (e) { /* bridge down - next interval retries */ }
     };
     pushBoard();
+    this._pushBoard = pushBoard;          // task changes push immediately
     this._mobileBoardPush = setInterval(pushBoard, 20000);
 
     this._syncYoutube();   // mount any youtube iframe present at first paint
@@ -1108,7 +1252,7 @@ class Component extends DCLogic {
   componentWillUnmount() {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
     clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearInterval(this._spotifyPoll);
-    clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll);
+    clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
@@ -1131,7 +1275,27 @@ class Component extends DCLogic {
     if (!txt) return;
     const id = 'u' + this.state.nextId;
     const tasks = [...this.state.tasks, { id, t: txt.slice(0, 120), done: false, doneAt: 0 }];
-    this.setState({ tasks, taskInput: '', nextId: this.state.nextId + 1 }, () => this.persistTasks());
+    this.setState({ tasks, taskInput: '', nextId: this.state.nextId + 1 },
+      () => { this.persistTasks(); this._pushBoard && this._pushBoard(); });
+  }
+
+  // Task edits made on the PHONE arrive as ops queued at the bridge; the
+  // MOBILE LINK poll drains and applies them here (this page's localStorage is
+  // the single source of truth for tasks), then pushes the board straight
+  // back so the phone converges within a poll cycle.
+  _applyTaskOps(ops) {
+    let tasks = [...this.state.tasks];
+    let nextId = this.state.nextId;
+    for (const op of ops) {
+      if (op && op.op === 'add' && op.t) {
+        tasks.push({ id: 'u' + nextId++, t: String(op.t).slice(0, 120), done: false, doneAt: 0 });
+      } else if (op && op.op === 'toggle' && op.id) {
+        tasks = tasks.map(x => x.id === op.id
+          ? { ...x, done: !x.done, doneAt: !x.done ? Date.now() : 0 } : x);
+      }
+    }
+    this.setState({ tasks, nextId },
+      () => { this.persistTasks(); this._pushBoard && this._pushBoard(); });
   }
 
   // ── YOUTUBE: accept a full URL (watch?v=, youtu.be/, /embed/, /shorts/) or a
@@ -1466,14 +1630,19 @@ class Component extends DCLogic {
         zIndex: dragging ? 20 : 1,
         cursor: s.edit ? 'grab' : 'default',
         touchAction: s.edit ? 'none' : 'auto',
-        animation: `popIn .5s ${SPRING} both`,
-        // Intro delay is assigned ONCE per module id. It used to be (i * 55),
-        // so removing a module shifted every survivor's delay, which restarted
-        // their pop-in animation - the "everything wiggles on delete" bug.
-        animationDelay: (() => {
-          const intro = this._intro || (this._intro = {});
-          if (!(m.id in intro)) intro[m.id] = m.fresh ? 0 : i * 55;
-          return intro[m.id] + 'ms';
+        // The intro pop is strictly one-shot per module id: once its time
+        // window has passed, the animation property becomes 'none', so NO
+        // later re-render (deletes, clock ticks, list reindexing) can replay
+        // it. A stable delay alone wasn't enough - the template engine keys
+        // list items by index, so removals shift content across DOM nodes and
+        // any live animation property replays on the node that changed.
+        ...(() => {
+          const at = this._introAt || (this._introAt = {});
+          if (!(m.id in at)) at[m.id] = { t: Date.now(), d: m.fresh ? 0 : i * 55 };
+          const a = at[m.id];
+          return Date.now() < a.t + a.d + 900
+            ? { animation: `popIn .5s ${SPRING} both`, animationDelay: a.d + 'ms' }
+            : { animation: 'none' };
         })()
       };
 
@@ -1482,6 +1651,23 @@ class Component extends DCLogic {
         t_clock: m.type === 'clock', t_date: m.type === 'date', t_ticker: m.type === 'ticker',
         t_datetime: m.type === 'datetime',
         dtDateOn: m.w * m.h >= 8,     // 3x3=9 or 4x2=8 show the date; 3x2=6 is time-only
+        // Type scales with the module: 1.0 at the default 4x2 footprint,
+        // growing/shrinking with the square root of the area so a 4x-bigger
+        // module reads ~2x larger, capped so it never gets absurd.
+        ...(() => {
+          const k = Math.min(2.6, Math.max(0.8, Math.sqrt((m.w * m.h) / 8)));
+          return {
+            dtTimeStyle: { fontFamily: "'JetBrains Mono',monospace", fontWeight: 500,
+                           fontSize: (1.7 * k).toFixed(2) + 'rem', color: 'rgb(var(--text-rgb))' },
+            dtSecStyle:  { fontFamily: "'JetBrains Mono',monospace",
+                           fontSize: (0.85 * k).toFixed(2) + 'rem', color: 'rgb(var(--accent-rgb))' },
+            dtDateStyle: { fontSize: (0.95 * Math.min(k, 1.8)).toFixed(2) + 'rem', fontWeight: 600,
+                           color: 'rgb(var(--text-rgb))', marginTop: '.3rem' },
+            dtSubStyle:  { fontFamily: "'JetBrains Mono',monospace",
+                           fontSize: (0.68 * Math.min(k, 1.6)).toFixed(2) + 'rem',
+                           color: 'rgba(var(--text-rgb),.55)', marginTop: '.15rem' }
+          };
+        })(),
         t_weather: m.type === 'weather', t_cpu: m.type === 'cpu', t_ram: m.type === 'ram',
         t_music: m.type === 'music', t_tasks: m.type === 'tasks',
         t_agenda: m.type === 'agenda', t_image: m.type === 'image', t_chart: m.type === 'chart',
@@ -1512,6 +1698,44 @@ class Component extends DCLogic {
         },
         t_git: m.type === 'git',
         t_mobile: m.type === 'mobile',
+        t_files: m.type === 'files',
+        // Tree rows flattened from the cached tree, indented per level. The
+        // visible DEPTH follows the module's width: ~4 columns per level, so
+        // a narrow module shows 2 levels and widening it reveals more.
+        filesRows: (() => {
+          if (m.type !== 'files' || !s.filesTree) return [];
+          const maxDepth = Math.max(1, Math.floor(m.w / 4));
+          const rows = [];
+          const walk = (node, depth) => {
+            if (!node || depth > maxDepth) return;
+            rows.push({
+              label: (depth > 1 ? '  '.repeat(depth - 1) + '└ ' : '') +
+                     node.name + (node.dir ? '/' : ''),
+              open: (e) => {
+                e.stopPropagation();
+                if (window.duskBridge && window.duskBridge.files)
+                  window.duskBridge.files.open(node.path);
+              },
+              style: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.72rem',
+                       padding: '.12rem .2rem', borderRadius: 6, cursor: 'pointer',
+                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                       color: node.dir ? 'rgb(var(--text-rgb))' : 'rgba(var(--text-rgb),.6)' }
+            });
+            (node.kids || []).forEach(k => walk(k, depth + 1));
+          };
+          walk(s.filesTree, 1);
+          return rows.slice(0, 400);
+        })(),
+        filesNetRef: (el) => {
+          const els = this._filesNetEls || (this._filesNetEls = {});
+          if (el) { els[m.id] = { el, w: m.w }; this._drawFilesNet && this._drawFilesNet(); }
+          else delete els[m.id];
+        },
+        filesNetClick: (e) => {
+          const hit = this._filesNetHit && this._filesNetHit(m.id, e);
+          if (hit && window.duskBridge && window.duskBridge.files)
+            window.duskBridge.files.open(hit);
+        },
         // Shared "?" affordance: quiet ring, same size as other tap targets.
         helpDotStyle: {
           width: '1.15rem', height: '1.15rem', flexShrink: 0, marginLeft: '.4rem',
@@ -1551,6 +1775,8 @@ class Component extends DCLogic {
           : { width: '100%', height: '2.1rem', marginTop: '.45rem', flexShrink: 0, display: 'block' },
         aiExtrasStyle: (m.h < 4 || m.w < 5) ? { display: 'none' } : {},
         hasImg: !!m.img, noImg: !m.img,
+        imgClickOn: !!m.img && !s.edit,   // click-to-swap outside edit mode
+        imgPlainOn: !!m.img && s.edit,    // plain in edit mode so drag still works
         wrapStyle,
         cardStyle: { ...base, ...editOutline, ...pad },
         cardStyleCol: { ...base, ...editOutline, ...pad, display: 'flex', flexDirection: 'column' },
@@ -1744,7 +1970,8 @@ class Component extends DCLogic {
             : 'nothing playing — play a track in the Spotify app on this account',
           spTrack: (sp && sp.track) || '—',
           spArtist: (sp && sp.artist) || '',
-          spPlayIcon: (sp && sp.playing) ? '❚❚' : '▶',
+          spPlaying: !!(sp && sp.playing),
+          spNotPlaying: !(sp && sp.playing),
           spBar: { width: (sp && sp.duration ? Math.min(100, sp.progress / sp.duration * 100) : 0) + '%',
                    height: '100%', borderRadius: 2, background: 'rgb(var(--accent-rgb))', transition: 'width .4s linear' },
           spElapsed: ms(sp && sp.progress),
@@ -1833,6 +2060,39 @@ class Component extends DCLogic {
         { t: 'Blank (—) means no input devices were found, or Cortana is not running. With no mic she stays up: F9 says so out loud, and F10 refuses to leave push-to-talk.' }
       ],
 
+      // ── FILES module (workstation explorer; data via _pollFiles) ──
+      filesTreeOn: s.filesMode !== 'net' && !!s.filesTree,
+      filesNetOn: s.filesMode === 'net' && !!s.filesTree,
+      filesEmptyOn: !s.filesTree,
+      filesEmptyTxt: window.duskBridge && window.duskBridge.files
+        ? 'reading the file tree…' : 'open in the Dusk app for the file explorer',
+      filesRootTxt: (s.filesRoot || '~').replace(/^\/home\/[^/]+/, '~'),
+      filesModeTxt: s.filesMode === 'net' ? 'NET' : 'TREE',
+      filesModeToggle: () => {
+        const mode = this.state.filesMode === 'net' ? 'tree' : 'net';
+        this.setState({ filesMode: mode }, () => this._drawFilesNet());
+        try { localStorage.setItem('dusk.files.v1', JSON.stringify({ mode })); } catch (e) {}
+      },
+      filesOpenRoot: () => {
+        if (window.duskBridge && window.duskBridge.files)
+          window.duskBridge.files.open(this.state.filesRoot || '');
+      },
+      filesPillStyle: {
+        height: '1.7rem', display: 'flex', alignItems: 'center', padding: '0 .55rem',
+        borderRadius: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0,
+        fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem', letterSpacing: '.12em',
+        color: 'rgb(var(--accent3-rgb))', border: '1px solid rgba(var(--accent3-rgb),.5)'
+      },
+      filesHelp: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ help: 'files' }); },
+      filesHelpOn: s.help === 'files',
+      filesHelpLines: [
+        { t: 'A live view of this machine\'s home folder. TREE is a classic indented listing; NET lays the same folders out as a graph - root at the center, folders on the rings.' },
+        { t: 'Click any file or folder (row or node) to open it in the system file manager, starting right there. The ⤢ button opens the root.' },
+        { t: 'Depth follows the module\'s WIDTH: about one level per 4 columns. Widen the module to reveal deeper levels.' },
+        { t: 'Hidden folders and heavy noise (node_modules, caches, venvs) are skipped, and listing is read-only - nothing here can modify files.' },
+        { t: 'Dashboard-only by design, like YouTube and IMAGE: the phone mirror never shows this module.' }
+      ],
+
       // ── AI module MIC picker (devices published by Cortana to disk).
       // Click-to-cycle instead of a <select>: see the template comment. ──
       micPickTxt: (() => {
@@ -1871,13 +2131,22 @@ class Component extends DCLogic {
         return {
           mlDotColor: !up ? 'rgba(var(--text-rgb),.3)' : anyOnline ? '#9be8b8' : 'rgb(var(--accent-rgb))',
           mlStatusColor: !up ? 'rgba(var(--text-rgb),.5)' : anyOnline ? '#9be8b8' : 'rgb(var(--accent-rgb))',
+          // One concept, one word: devices below are LINKED; the dot beside
+          // each shows live connectivity. (LINKED vs ONLINE as separate states
+          // read as two different things and caused confusion.)
           mlStatusTxt: !up ? 'BRIDGE OFFLINE · systemctl --user start cortana-bridge'
             : devs.length === 0 ? 'NO PHONE PAIRED · GENERATE A CODE BELOW'
-            : anyOnline ? 'LINKED' : 'PAIRED · PHONE NOT CONNECTED',
+            : devs.length + ' LINKED DEVICE' + (devs.length > 1 ? 'S' : ''),
           mlHostTxt: up ? (String(md.host || '') + ':' + md.port).toUpperCase() : '—',
-          mlDevices: devs.map(d => ({
+          mlDevices: devs.map(d => {
+            const latest = (md.apk && md.apk.version) || '';
+            const mine = String(d.appVersion || '');
+            const verTxt = !mine ? '' : (!latest || mine === latest)
+              ? ' · v' + mine + ' UP TO DATE'
+              : ' · v' + mine + ' → v' + latest + ' AVAILABLE';
+            return {
             name: String(d.name || '?').toUpperCase(),
-            stateTxt: d.online ? 'ONLINE' : 'SEEN ' + ago(d.last_seen),
+            stateTxt: (d.online ? 'CONNECTED' : 'SEEN ' + ago(d.last_seen)) + verTxt,
             dotStyle: { width: '.5rem', height: '.5rem', borderRadius: '50%', flexShrink: 0,
                         background: d.online ? '#9be8b8' : 'rgba(var(--text-rgb),.25)' },
             // Arm/confirm keyed by the device ID, not the name: re-pairs used
@@ -1896,7 +2165,7 @@ class Component extends DCLogic {
               this.setState({ mlArm: d.id });
               this._mlArmT = setTimeout(() => this.setState({ mlArm: null }), 3000);
             }
-          })),
+          };}),
           mlCodeOn: !!pairing,
           mlCodeTxt: pairing ? String(pairing.code).replace(/^(\d{3})(\d{3})$/, '$1 $2') : '',
           mlCodeSub: pairing ? 'SCAN WITH THE PHONE CAMERA, OR TYPE THE CODE · '
@@ -1980,7 +2249,7 @@ class Component extends DCLogic {
       gitAge: s.gitAge || '—',
       // clock + date stay renderable for saved layouts, but the tray offers
       // the combined DATE-TIME module in their place.
-      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile'].map(t => ({
+      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),

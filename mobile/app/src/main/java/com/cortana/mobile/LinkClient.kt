@@ -116,6 +116,13 @@ object LinkClient {
                     Prefs.setHost(ctx, tryHost)
                     hostIdx = 0
                 }
+                // Tell the workstation which app version this phone runs, so
+                // the dashboard can show per-device "up to date" / "update
+                // available" next to the linked device.
+                try {
+                    webSocket.send(JSONObject().put("type", "hello")
+                        .put("version", BuildConfig.VERSION_NAME).toString())
+                } catch (e: Exception) { /* presence still works without it */ }
                 setLink(true)
             }
 
@@ -206,6 +213,17 @@ object LinkClient {
             if (r.code == 401) throw AuthException()
             if (r.code != 200) return null
             return r.body?.bytes()
+        }
+    }
+
+    /** Task edit relayed to the dashboard (which owns the task list):
+     *  add {op:'add', t:text} or toggle {op:'toggle', id}. Blocking. */
+    fun taskOp(ctx: Context, op: JSONObject): JSONObject {
+        val body = op.toString().toRequestBody(JSON)
+        http.newCall(authed(ctx, Request.Builder()
+            .url("${base(ctx)}/api/tasks").post(body)).build()).execute().use { r ->
+            if (r.code == 401) throw AuthException()
+            return JSONObject(r.body?.string() ?: "{}")
         }
     }
 

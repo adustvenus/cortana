@@ -37,9 +37,10 @@ async def status(request):
         return denied
     return web.json_response({
         "bridge": "up", "version": BRIDGE_VERSION, "host": HOST_NAME,
-        "port": PORT, "devices": pairing.devices(),
+        "port": PORT, "devices": pairing.devices(hub.online_idents()),
         "pairing": pairing.pair_info(), "lockedFor": int(pairing.locked_for()),
         "phonesConnected": hub.count(),
+        "apk": updates.apk_info(),      # per-device up-to-date/available labels
     }, headers=auth.CORS)
 
 
@@ -101,6 +102,15 @@ async def board(request):
     return web.json_response({"ok": True}, headers=auth.CORS)
 
 
+async def tasks_ops(request):
+    """Drain the queue of task edits made on phones; the dashboard applies
+    them to its own list and pushes the board back."""
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    return web.json_response({"ops": state.drain_task_ops()}, headers=auth.CORS)
+
+
 async def preflight(request):
     return web.Response(status=204, headers=auth.CORS)
 
@@ -113,5 +123,6 @@ routes = [
     web.post("/local/pair/new", pair_new),
     web.post("/local/revoke", revoke),
     web.post("/local/board", board),
+    web.post("/local/tasks/ops", tasks_ops),
     web.options("/local/{tail:.*}", preflight),
 ]

@@ -8,7 +8,7 @@ brain.py can announce without creating an import cycle back through state.
 import asyncio
 import json
 
-_sockets = set()
+_sockets = {}          # ws -> device ident (token hash), for live presence
 _loop = None
 
 
@@ -18,16 +18,23 @@ def bind_loop(loop):
     _loop = loop
 
 
-def add(ws):
-    _sockets.add(ws)
+def add(ws, ident=""):
+    _sockets[ws] = ident
 
 
 def discard(ws):
-    _sockets.discard(ws)
+    _sockets.pop(ws, None)
 
 
 def count():
     return len(_sockets)
+
+
+def online_idents():
+    """Idents of devices with a live socket RIGHT NOW - the authoritative
+    'online' signal. last_seen timestamps only move on REST calls, so an idle
+    phone used to flap to OFFLINE while its socket was happily connected."""
+    return {i for i in _sockets.values() if i}
 
 
 def sockets():

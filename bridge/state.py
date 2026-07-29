@@ -7,22 +7,41 @@ source is TTL-cached and failure-tolerant: one broken reader degrades its own
 section, never the whole feed.
 """
 import socket
+import threading
 import time
 
 import calendar_state
 import hud_state
-from bridge import brain, pairing, spotify_link, updates, util
-from bridge.settings import BRIDGE_VERSION, HOST_NAME, PORT, ROOT
+from bridge import brain, hub, pairing, spotify_link, updates, util
+from bridge.settings import BRIDGE_VERSION, HOST_NAME, PORT, ROOT, log
 
 # Latest board snapshot from the dashboard module: module order, tasks, and the
 # weather ZIP - data that lives only in the dashboard page's localStorage and
 # would otherwise be invisible to the phone.
 _board = {"data": None, "ts": 0.0}
 
+# Task edits from the phone, waiting for the dashboard to drain and apply
+# (the dashboard page owns the task list). Bounded so an absent dashboard
+# can't grow this without limit.
+_task_ops = []
+_task_lock = threading.Lock()
+
 
 def set_board(snapshot):
     _board["data"] = snapshot
     _board["ts"] = time.time()
+
+
+def queue_task_op(op):
+    with _task_lock:
+        _task_ops.append(op)
+        del _task_ops[:-200]
+
+
+def drain_task_ops():
+    with _task_lock:
+        ops, _task_ops[:] = list(_task_ops), []
+        return ops
 
 
 def cortana_state():
@@ -107,11 +126,41 @@ def build():
         "brainReady": brain.ready(),
         "brainError": brain.error(),
         "cortana": cortana_state(),
-        "calendar": util.cached("cal", 15, calendar_state.read),
+        "calendar": util.cached("cal", 15, calendar),
         "git": git_state(),
         "spotify": util.cached("spotify", 8, spotify_link.state),
         "board": _board["data"],
         "boardTs": _board["ts"],
-        "devices": pairing.devices(),
+        "devices": pairing.devices(hub.online_idents()),
         "ts": time.time(),
     }
+
+
+# Cortana refreshes the calendar every 10 minutes - long enough that a
+# just-added or just-deleted event looks like a sync bug. When the file is
+# older than this, kick a background refresh here too (same Google token,
+# same writer), so anyone looking at the agenda sees at most ~2min of lag.
+_CAL_MAX_AGE = 120
+_cal_refresh = {"busy": False}
+
+
+def calendar():
+    data = calendar_state.read()
+    ts = float(data.get("ts") or 0)
+    if time.time() - ts > _CAL_MAX_AGE and not _cal_refresh["busy"]:
+        _cal_refresh["busy"] = True
+
+        def go():
+            try:
+                import config as cortana_config
+                if cortana_config.GMAIL_TOKEN.exists():
+                    from tools import calendar_tool
+                    calendar_state.write(calendar_tool.today_events())
+                    util.invalidate("cal")
+            except Exception as e:
+                log("calendar refresh failed", e)
+            finally:
+                _cal_refresh["busy"] = False
+
+        threading.Thread(target=go, daemon=True, name="cal-refresh").start()
+    return data
