@@ -41,10 +41,17 @@ state line, live "thinking" feed, and a hud.py-style waveform strip.
 Liveness comes from `systemctl --user is-active`, not the state file's
 timestamp (Cortana intentionally stops rewriting the file while idle).
 
-The module also has a **MIC** dropdown (visible at larger module sizes):
-Cortana publishes her available input devices to `mic_state.json`; picking one
-writes `mic_select.json`, which she re-reads on the next capture — no restart.
-Blank dropdown = no input devices found (or Cortana isn't publishing yet).
+The module also has a **MIC** picker (visible at larger module sizes): click
+the device name to cycle through every input device the machine currently has.
+Cortana publishes them to `mic_state.json`; your pick is written to
+`mic_select.json` and re-read on her next capture — no restart. The choice is
+stored by *name*, so it survives replugging and overrides `MIC_NAME` /
+`MIC_DEVICE` in `.env`. Showing `—` means no input devices were found (or
+Cortana isn't running). The **?** beside it explains all of this in place.
+
+With no microphone at all she stays up rather than crashing: F9 answers "I have
+no input device", F10 refuses to leave push-to-talk, and plugging one in needs
+no restart.
 
 ## Multiple agents
 
@@ -70,12 +77,22 @@ are status-only. State files use the `hud_state.json` shape:
 ## MOBILE LINK module (phone pairing)
 
 Add it from the edit tray. It talks (loopback-only) to the mobile bridge
-service (`cortana-bridge`, see `../mobile/README.md`) and is the dashboard end
-of the phone link: shows bridge status, each paired phone's name +
-ONLINE/OFFLINE, generates pairing codes (**PAIR A PHONE**), revokes a phone
-(✕ → CONFIRM), and pushes a board snapshot (module order, tasks, weather ZIP)
-so the phone mirrors this exact board. If it shows BRIDGE OFFLINE:
-`systemctl --user start cortana-bridge`.
+service (`cortana-bridge`, see `../bridge/README.md` and `../mobile/README.md`)
+and is the dashboard end of the phone link:
+
+- **Status** — bridge up/down, this machine's name and port, how many phones
+  are live.
+- **Devices** — each paired phone by name with ONLINE / SEEN *time*. Tap ✕
+  twice to revoke one instantly.
+- **PAIR A PHONE** — issues a 6-digit code (single use, 10-minute life, 5 wrong
+  tries locks pairing for 5 minutes) **and a QR code**. Scanning the QR with a
+  phone camera downloads the app from this machine and pairs it in one step —
+  nothing to type.
+- **Board snapshot** — pushes module order, tasks and the weather ZIP to the
+  bridge every 20s so the phone mirrors this exact board.
+- **?** — explains all of the above in place.
+
+If it shows BRIDGE OFFLINE: `systemctl --user start cortana-bridge`.
 
 ## Adding modules
 

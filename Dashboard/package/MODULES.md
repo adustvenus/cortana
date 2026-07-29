@@ -306,3 +306,11 @@ card), plus a fade-out mask at the bottom:
 | chart | 6×3 | div bar chart, theme-var gradients |
 | timer | 6×3 | mono counter |
 | console | 24×3 | log feed, blinking caret, dark surface default |
+| git | 7×5 | bridge-backed polling (`duskBridge.gitStatus`), list + status dot |
+| youtube | 8×5 | imperatively-mounted iframe (§6), editable URL input |
+| mobile | 6×4 | loopback `fetch` to a local service, canvas QR, "?" help overlay |
+
+**Note on `<select>`:** the template is parsed through `innerHTML`, and HTML
+parsers strip `sc-for` out of a `<select>`, which corrupts the whole render.
+Use a click-to-cycle control instead (see the MIC picker in the `cortana`
+module) — never a native dropdown.

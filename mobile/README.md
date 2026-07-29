@@ -2,9 +2,10 @@
 
 Android app (Kotlin, `mobile/`) that pairs your phone to the workstation
 running Cortana. It is a **view-only mirror** of the Dusk dashboard in one
-scrolling column, plus two deliberate exceptions: **talking to Cortana** and
-**Spotify transport control**. No layout editing, no service power buttons,
-no task editing from the phone — those stay on the dashboard.
+scrolling column, plus three deliberate exceptions: **talking to Cortana**,
+**Spotify transport control**, and **reordering the cards** (phone-local).
+No adding or removing modules, no service power buttons, no task editing from
+the phone — those stay on the dashboard.
 
 ```
 phone (Cortana Mobile)  ──Tailscale (WireGuard)──▶  workstation
@@ -101,12 +102,17 @@ release (or `mobile/dist/cortana-mobile.apk` after a workstation
 `git pull`) and sideload — Android asks once to allow installs from your
 browser/file manager.
 
-**Updates are automatic after that:** the bridge's state feed carries the
-version in `mobile/dist/version.json`; when it is newer than the installed
-app, the phone shows an **"Update available"** pop-up, downloads the APK over
-the link, and hands it to the Android installer (the restart-to-update step).
-Ship an update = bump `versionCode` + `versionName` in
-`mobile/app/build.gradle`, push to main, `git pull` on the workstation.
+**Updates are automatic after that.** The bridge's state feed carries the
+version in `mobile/dist/version.json`; when it is newer than the installed app
+the phone shows an **"Update available"** pop-up and installs it over the link.
+
+**Settings → CHECK FOR UPDATE** asks the workstation to `git pull --ff-only`
+first, so CI's latest build lands without anyone touching the workstation. The
+pull is refused (and reported) if that checkout has local changes, so it can
+never conflict or discard work.
+
+Ship an update = bump `versionCode` **and** `versionName` in
+`mobile/app/build.gradle` and push to main. CI does the rest.
 
 Signing uses the committed keystore `mobile/keystore/cortana-release.p12` so
 every build carries the same signature (Android refuses mismatched updates).
@@ -125,10 +131,12 @@ set `CORTANA_KEYSTORE_PASS`.
   the phone holds no Spotify credentials) with play/pause/next/previous.
   Playing Spotify **on the phone itself** works fine — the bridge reports the
   active device's name, so the dash and phone stay in sync either way.
-- **AGENDA / TASKS / GIT / WEATHER** — mirrored read-only. Module order
-  follows the real board via the MOBILE LINK module's snapshot; tasks and the
-  weather ZIP come from that same snapshot (they live in the dashboard page's
+- **AGENDA / TASKS / GIT / WEATHER** — mirrored read-only. Tasks and the
+  weather ZIP come from the board snapshot (they live in the dashboard page's
   localStorage, which nothing else can read).
+- **Reordering** — press and hold any card and drag. The order is saved on the
+  phone and from then on overrides the board's layout order; MOBILE LINK stays
+  pinned at the top. Modules still can't be added or removed here.
 - **Talk screen** (sphere on the top bar, or the **2x2 home-screen widget**):
   tap to record, tap to send. Cortana's real ElevenLabs voice streams back;
   if the voice chain is down you still get the reply as text + phone TTS.
@@ -159,9 +167,13 @@ paraphrasing them.
 
 | Situation | Behavior |
 |---|---|
-| Workstation asleep / bridge down | Phone shows LINK DOWN, reconnects with backoff (1s→30s) for as long as the app is open |
+| Workstation asleep / bridge down | Card reads **MOBILE LINK · DISCONNECTED** with what to check; reconnects with backoff (1s→30s) while the app is open |
 | `cortana.service` stopped | Dashboard mirror shows OFFLINE — but talking still works: the bridge runs its own orchestrator turns |
+| Phone leaves the house (LAN → cellular) | The bridge advertises every address it answers on (Tailscale first, then LAN); the app rotates through them on failure and promotes whichever works. No re-pairing |
 | Wi-Fi ↔ LTE switch | Tailscale re-routes; the WS drops and auto-reconnects |
+| Voice turn attempted with no route | The reply area answers in Cortana's voice ("I can't reach the workstation… check Tailscale") with the raw error appended for debugging |
+| State pushes arriving during a drag | Deferred until the finger lifts, then applied — a drag is never yanked out from under you |
+| Calendar showing a slot that isn't in Google | Working-location, focus-time, birthday and declined entries are filtered out; stale state (Cortana down) is cleared and labelled rather than shown as today's |
 | Token revoked on the dash | Phone gets a 401 → "Link revoked" prompt → re-pair (no retry hammering) |
 | Update while app open | Version arrives in the next state push → pop-up; "Skip this version" is honored until the next release |
 | APK missing on workstation | Update check says so; nothing breaks (user hasn't pulled yet, or CI hasn't run) |
