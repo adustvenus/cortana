@@ -164,6 +164,14 @@ def voice_loop():
         if key == keyboard.Key.f9:
             state["ptt"] = False
         if key == keyboard.Key.f10:
+            # No mic -> wake/open would just error-spin. Refuse the swap, stay
+            # in PTT, and say why instead of silently doing nothing.
+            if not mic.available():
+                state["mode"] = "ptt"
+                hud_state.set_mode("ptt")
+                speech.say("I can't swap modes right now - I have no input "
+                           "device. Check the microphone.")
+                return
             order = ["ptt", "wake", "open"]
             state["mode"] = order[(order.index(state["mode"]) + 1) % 3]
             print("MODE:", state["mode"])
@@ -204,6 +212,14 @@ def voice_loop():
     hud_state.set_state("idle")
     hud_state.set_mode(state["mode"])   # publish initial talking mode to the dashboard
     _startup_announce()
+    if not mic.available():
+        # Booting without a mic is fine now (it used to crash on import) -
+        # announce it once and stay up; F9 presses repeat the warning.
+        state["mode"] = "ptt"
+        hud_state.set_mode("ptt")
+        print("[main] no input device - staying up in PTT, waiting for a mic")
+        speech.say("Heads up - I have no input device. Plug in or pick a "
+                   "microphone on the dashboard.")
     print(f"Cortana up. Mode: {state['mode']}. F9 hold = talk. F10 = cycle mode. Ctrl+C = quit.")
     # Abort a capture the instant Cortana starts speaking (half-duplex: she must
     # not record her own TTS - which can begin mid-capture now that processing is
@@ -217,15 +233,34 @@ def voice_loop():
         try:
             if state["mode"] == "ptt":
                 if state["ptt"]:
-                    p = mic.record_while(lambda: state["ptt"], should_abort=abort)
+                    try:
+                        p = mic.record_while(lambda: state["ptt"], should_abort=abort)
+                    except mic.MicUnavailable:
+                        speech.say("I have no input device at this time - "
+                                   "please check the microphone.")
+                        # Wait out the rest of this F9 hold so the warning
+                        # speaks once per press, not once per loop tick.
+                        while state["ptt"] and state["exit"] is None:
+                            time.sleep(0.1)
+                        continue
                     if p:
                         _enqueue(p)
                 else:
                     time.sleep(0.05)
             else:
-                p = mic.listen_segment(
-                    on_speech_start=lambda: state.__setitem__("capturing", True),
-                    should_abort=abort)
+                try:
+                    p = mic.listen_segment(
+                        on_speech_start=lambda: state.__setitem__("capturing", True),
+                        should_abort=abort)
+                except mic.MicUnavailable:
+                    # Mic vanished while in wake/open: drop to PTT (the only
+                    # mode that doesn't need a always-on mic) and say so once.
+                    state["capturing"] = False
+                    state["mode"] = "ptt"
+                    hud_state.set_mode("ptt")
+                    speech.say("I lost the input device - dropping to push to "
+                               "talk. Check the microphone.")
+                    continue
                 state["capturing"] = False
                 if p:
                     _enqueue(p)
@@ -265,6 +300,17 @@ def text_loop():
     if state["exit"] is not None:
         speech.flush(timeout=15)
         sys.exit(state["exit"])
+
+
+def _mic_state_loop():
+    """Publish the input-device inventory (mic_state.json) every 10s so the
+    dashboard's AI-module MIC dropdown stays current across plug/unplug."""
+    while state["exit"] is None:
+        mic.publish_state()
+        for _ in range(10):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
 
 
 def _calendar_loop():
@@ -334,6 +380,7 @@ if __name__ == "__main__":
                 quiet_gate=lambda: not state["busy"] and not state["capturing"]
                                    and not state["ptt"])
     threading.Thread(target=_calendar_loop, daemon=True, name="calendar").start()
+    threading.Thread(target=_mic_state_loop, daemon=True, name="mic-state").start()
     if args.text:
         text_loop()
     else:

@@ -7,6 +7,8 @@ token.json
 state.db
 hud_state.json
 calendar_state.json
+mic_state.json
+mic_select.json
 *.tmp
 .last_good
 pending_edit.json

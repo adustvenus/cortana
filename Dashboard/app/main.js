@@ -326,6 +326,33 @@ if (!app.requestSingleInstanceLock()) {
       return { events: [], error: 'no calendar data yet' };
     }
   });
+  // Mic device inventory (written by Cortana's voice/mic.py) + selection
+  // (read back by it). File handshake, same decoupling as hud/calendar state.
+  const MIC_STATE = path.join(APP_DIR, '..', '..', 'mic_state.json');
+  const MIC_SELECT = path.join(APP_DIR, '..', '..', 'mic_select.json');
+  ipcMain.handle('mic:list', () => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(MIC_STATE, 'utf8'));
+      return {
+        devices: Array.isArray(raw.devices)
+          ? raw.devices.map(d => ({ index: Number(d.index), name: String(d.name || '') })) : [],
+        current: typeof raw.current === 'string' ? raw.current : '',
+        available: !!raw.available,
+        ts: Number(raw.ts) || 0
+      };
+    } catch (e) { return { devices: [], current: '', available: false, ts: 0 }; }
+  });
+  ipcMain.handle('mic:set', (_e, name) => {
+    if (typeof name !== 'string' || !name || name.length > 160)
+      return { ok: false, error: 'bad device name' };
+    try {
+      const tmp = MIC_SELECT + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({ name }));
+      fs.renameSync(tmp, MIC_SELECT);   // atomic: Cortana never reads a half file
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e.message) }; }
+  });
+
   require('./spotify').register(ipcMain);
 
   ipcMain.on('ui:open', showMain);

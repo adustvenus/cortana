@@ -41,6 +41,11 @@ state line, live "thinking" feed, and a hud.py-style waveform strip.
 Liveness comes from `systemctl --user is-active`, not the state file's
 timestamp (Cortana intentionally stops rewriting the file while idle).
 
+The module also has a **MIC** dropdown (visible at larger module sizes):
+Cortana publishes her available input devices to `mic_state.json`; picking one
+writes `mic_select.json`, which she re-reads on the next capture — no restart.
+Blank dropdown = no input devices found (or Cortana isn't publishing yet).
+
 ## Multiple agents
 
 `app/agents.json` is the registry. Add an entry (id, name, stateFile,

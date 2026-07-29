@@ -255,7 +255,8 @@ answers in Cortana's voice.
 |---|---|---|
 | F9/F10 do nothing | Wayland session | Xorg at login (step 1.6). Plan B: run `main.py --text` in a terminal — full brain, keyboard input |
 | Screenshot tool errors | Wayland, or running over SSH | Same Xorg fix; must run on the desktop itself |
-| `PortAudioError` / no mic | ALSA device confusion | `python -c "import sounddevice as sd; print(sd.query_devices())"` → set `MIC_DEVICE=` index in `.env` |
+| No mic / mic unplugged | nothing to capture with | She stays up now (this used to crash the process): F9 answers "no input device", F10 refuses to leave PTT, and plugging a mic in needs no restart. Pick the device from the AI module's **MIC** dropdown on the dashboard, or set `MIC_NAME=`/`MIC_DEVICE=` in `.env` |
+| Wrong mic picked (e.g. HDMI) | ALSA default device confusion | AI module **MIC** dropdown, or `python -c "import sounddevice as sd; print(sd.query_devices())"` → set `MIC_DEVICE=` index in `.env` |
 | Listens to room noise / never triggers (wake/open) | VAD threshold | `VAD_THRESHOLD` in `.env`: raise (500-800) if too sensitive, lower (150-250) if deaf |
 | She hears herself, loops | speakers + open mode | headphones, or stay in PTT |
 | No spoken reply, console shows "TTS fallback" | ElevenLabs key/credit/rate limit | auto-falls to OpenAI voice, then espeak. Nothing to do unless you want Rachel back — check ElevenLabs account |

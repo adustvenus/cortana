@@ -346,6 +346,16 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                 </sc-for>
               </div>
             </div>
+            <div style="{{ m.aiExtrasStyle }}">
+              <div style="display:flex;align-items:center;gap:.55rem;margin-top:.4rem">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb));flex-shrink:0">MIC</span>
+                <select value="{{ micSel }}" onChange="{{ micOnChange }}" style="{{ m.micSelStyle }}">
+                  <sc-for list="{{ micOpts }}" as="mo" hint-placeholder-count="1">
+                    <option value="{{ mo.v }}">{{ mo.label }}</option>
+                  </sc-for>
+                </select>
+              </div>
+            </div>
             <sc-if value="{{ aiExtraOn }}" hint-placeholder-val="{{ false }}">
               <div style="{{ m.aiExtrasStyle }}">
               <div style="display:flex;flex-direction:column;gap:.3rem;margin-top:.45rem;padding-top:.4rem;border-top:1px solid rgba(var(--text-rgb),.12)">
@@ -846,6 +856,20 @@ class Component extends DCLogic {
     pollWeather();
     this._weatherPoll = setInterval(pollWeather, 900000);   // 15 min
 
+    // ── Mic inventory (AI module dropdown): Cortana publishes mic_state.json;
+    // selecting writes mic_select.json, which she re-reads on the next capture
+    // - no restart needed. Blank dropdown = no devices (or Cortana down).
+    const pollMic = async () => {
+      if (!this.state.modules.some(m => m.type === 'cortana')) return;
+      if (!window.duskBridge || !window.duskBridge.mic) return;
+      try {
+        const d = await window.duskBridge.mic.list();
+        if (d && typeof d === 'object') this.setState({ micData: d });
+      } catch (e) {}
+    };
+    pollMic();
+    this._micPoll = setInterval(pollMic, 5000);
+
     // ── MOBILE LINK: bridge status poll + board snapshot push. The bridge is
     // a separate local service (cortana-bridge); everything here is loopback
     // only - the phone itself never talks to this page. The snapshot is what
@@ -969,7 +993,7 @@ class Component extends DCLogic {
   componentWillUnmount() {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
     clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearInterval(this._spotifyPoll);
-    clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush);
+    clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
@@ -1338,6 +1362,13 @@ class Component extends DCLogic {
         },
         t_git: m.type === 'git',
         t_mobile: m.type === 'mobile',
+        micSelStyle: {
+          flex: 1, minWidth: 0, height: '1.7rem', cursor: 'pointer',
+          background: 'transparent', border: 'none', outline: 'none',
+          borderBottom: '1px solid rgba(var(--text-rgb),.2)',
+          fontFamily: "'JetBrains Mono',monospace", fontSize: '.62rem',
+          color: 'rgba(var(--text-rgb),.7)'
+        },
         aiMenuOn: s.aiMenu === m.id,
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
         aiMenuClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ aiMenu: null, aiSent: '' }); },
@@ -1596,6 +1627,22 @@ class Component extends DCLogic {
       taskOnInput: (e) => this.setState({ taskInput: e.target.value }),
       taskOnKey: (e) => { if (e.key === 'Enter') this._addTask(); },
       addTask: () => this._addTask(),
+
+      // ── AI module MIC dropdown (devices published by Cortana to disk) ──
+      micOpts: ((s.micData && s.micData.devices) || []).map(d => ({
+        v: d.name, label: String(d.name || '').toUpperCase().slice(0, 40)
+      })),
+      micSel: (s.micData && s.micData.current) || '',
+      micOnChange: (e) => {
+        const v = e.target.value;
+        if (!v || !window.duskBridge || !window.duskBridge.mic) return;
+        const md = this.state.micData;
+        this.setState({ micData: { ...(md || {}), current: v } });   // optimistic
+        window.duskBridge.mic.set(v)
+          .then(r => this.showToast(r && r.ok
+            ? 'MIC → ' + v.toUpperCase().slice(0, 24) : 'MIC SET FAILED'))
+          .catch(() => this.showToast('MIC SET FAILED'));
+      },
 
       // ── MOBILE LINK (phone bridge status + pairing; data via _pollMobile) ──
       ...(() => {

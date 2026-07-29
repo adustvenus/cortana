@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('duskBridge', {
   gitStatus() { return ipcRenderer.invoke('git:status'); },
   /** Today's calendar events (read-only): {events:[{time,title,allDay,past}], error}. */
   calendar() { return ipcRenderer.invoke('calendar:today'); },
+  /** Mic devices for the AI module's dropdown: list() -> {devices:[{index,name}],
+   *  current, available}; set(name) picks the capture device Cortana uses. */
+  mic: {
+    list() { return ipcRenderer.invoke('mic:list'); },
+    set(name) { return ipcRenderer.invoke('mic:set', String(name)); }
+  },
   /** Spotify: OAuth login, current playback state, and transport control. */
   spotify: {
     login() { return ipcRenderer.invoke('spotify:login'); },
