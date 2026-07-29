@@ -21,6 +21,9 @@ cortana/
 ├── agents.py           subagents + tool definitions
 ├── memory.py           sqlite + CORTANA.md persistent context
 ├── cortana.service     systemd unit (always-on)
+├── cortana-bridge.service  systemd unit (phone link, STEP 11)
+├── bridge/             mobile bridge server (phone pairing, state, voice)
+├── mobile/             Android app source + CI-built APK (mobile/dist)
 ├── tools/
 │   ├── files.py        shell + file ops (workspace-scoped)
 │   ├── vision.py       screenshots
@@ -209,6 +212,32 @@ Auto-login (so mic/hotkeys exist at boot): Settings → Users → cortana → Au
 
 ---
 
+## STEP 11 — Phone link (Cortana Mobile, Android) `[MANUAL]`
+
+The phone mirrors the Dusk dashboard (view-only, scrolling) and talks to
+Cortana with her real voice. Full guide: `mobile/README.md`. Short version:
+
+1. Bridge on this machine:
+   ```
+   cd ~/cortana && git pull && bash bridge/install-bridge.sh
+   ```
+2. Tailscale on both devices (tailscale.com, free) — same tailnet. Note the
+   workstation's Tailscale name (`tailscale status`).
+3. Dusk dashboard → edit mode (Ctrl-E) → add the **MOBILE LINK** module →
+   **PAIR A PHONE** → a 6-digit code appears.
+4. Phone: install the APK from the latest `mobile-v*` GitHub release (or
+   `~/cortana/mobile/dist/cortana-mobile.apk`), open it, enter the Tailscale
+   name + code. Add the 2x2 **Cortana sphere widget** to the home screen for
+   one-tap talking.
+5. App updates are automatic: bump the version in `mobile/app/build.gradle`,
+   push to main, `git pull` here — every paired phone gets the update pop-up.
+
+**GATE:** MOBILE LINK module shows the phone's name ONLINE; the phone shows
+"Linked to <this machine>"; tapping the sphere and asking "what time is it"
+answers in Cortana's voice.
+
+---
+
 ## SELF-CHECK — "if the prior step was done right, does the next work?"
 
 | Step | Assumes | If assumption breaks |
@@ -240,6 +269,10 @@ Auto-login (so mic/hotkeys exist at boot): Settings → Users → cortana → Au
 | `ES=F` returns nothing | yahoo hiccup / bad symbol | retry; symbols: ES=F NQ=F CL=F GC=F; stocks plain (AAPL) |
 | Daemon runs but deaf/blind | no DISPLAY/audio in service | auto-login ON + linger; Plan B: skip systemd, add `main.py` as a Startup Application (GUI: "Startup Applications" app) |
 | Whole machine feels at risk | injection paranoia (healthy) | she already: separate user, drafts-only email, zero trade execution. Keep it that way |
+| Phone can't pair | bridge down / wrong host / stale code | `systemctl --user status cortana-bridge`; use the Tailscale name, not LAN IP; codes die in 10 min — tap PAIR A PHONE again |
+| Phone shows LINK DOWN | workstation asleep or tailnet off | wake the machine, check `tailscale status` on both ends; the app reconnects on its own |
+| Phone never offers an update | workstation hasn't pulled CI's dist commit | `cd ~/cortana && git pull` (or ask Cortana to) |
+| "App not installed" on update | APK signed with a different key | keep `mobile/keystore/` as-is; if the keystore ever changed, uninstall then reinstall once |
 
 ## FUTURE HOOKS (built-in, dormant)
 
