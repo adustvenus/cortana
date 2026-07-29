@@ -22,7 +22,15 @@ cortana/
 ├── memory.py           sqlite + CORTANA.md persistent context
 ├── cortana.service     systemd unit (always-on)
 ├── cortana-bridge.service  systemd unit (phone link, STEP 11)
-├── bridge/             mobile bridge server (phone pairing, state, voice)
+├── bridge/             mobile bridge service — see bridge/README.md
+│   ├── server.py       wiring + push loop + entrypoint
+│   ├── api_phone.py    /api/*  (device token required)
+│   ├── api_local.py    /local/* (loopback) + /get (QR install page)
+│   ├── state.py        the snapshot phones render
+│   ├── brain.py        Cortana's real pipeline for phone turns
+│   ├── voice.py        her voice, streamed to the phone
+│   ├── updates.py      APK publishing / git refresh / adb push
+│   └── pairing.py      codes + device tokens (hashed at rest)
 ├── mobile/             Android app source + CI-built APK (mobile/dist)
 ├── tools/
 │   ├── files.py        shell + file ops (workspace-scoped)
