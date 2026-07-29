@@ -538,13 +538,15 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
 
         <!-- ═══ EDIT CONTROLS ═══ -->
         <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
-          <!-- Edit-mode click shield: covers the module's CONTENT (z-index 20)
-               while the edit controls sit above it (z-index 30). In edit mode
+          <!-- Edit-mode click shield: covers the module's CONTENT while the
+               edit controls stay above it (they are z-index 30). In edit mode
                the whole card is a drag handle, so every in-module target -
                image picker, Spotify transport, files rows/canvas, task boxes,
                inputs, the YouTube iframe, "?" dots, the AI orb - is inert.
-               pointerdown still bubbles to the wrapper, so dragging works. -->
-          <div style="position:absolute;inset:0;z-index:20;cursor:grab"></div>
+               pointerdown still bubbles to the wrapper, so dragging works.
+               z-index 28: must beat the AI power menu (25) and the help
+               overlays (26), which would otherwise stay clickable. -->
+          <div style="position:absolute;inset:0;z-index:28;cursor:grab"></div>
           <div style="position:absolute;top:2px;right:2px;display:flex;gap:6px;z-index:30">
             <span onPointerDown="{{ m.linkBtn }}" title="Link / unlink module" style="{{ m.linkBtnStyle }}">∞</span>
             <span onPointerDown="{{ m.surfaceBtn }}" title="Surface: light → dark → clear" style="{{ m.surfaceBtnStyle }}">◐</span>
@@ -960,7 +962,10 @@ class Component extends DCLogic {
     this._key = (e) => {
       if ((e.key === 'e' || e.key === 'E') && !e.repeat && (e.metaKey || e.ctrlKey || e.target === document.body)) {
         e.preventDefault();
-        this.setState(s => ({ edit: !s.edit, linking: null, armRemove: null }));
+        // Same reset as the DONE EDITING pill: leave no overlay floating above
+        // a card that is about to become a drag handle.
+        this.setState(s => ({ edit: !s.edit, linking: null, armRemove: null,
+                              trayMin: false, aiMenu: null, help: null }));
       }
     };
 
@@ -2401,7 +2406,11 @@ class Component extends DCLogic {
         const modules = DEFAULT_MODULES.map(m => ({ ...m, fresh: true }));
         this.setState({ modules, linking: null, armRemove: null }); this.persist(modules);
       },
-      toggleEdit: () => this.setState(x => ({ edit: !x.edit, linking: null, armRemove: null, trayMin: false })),
+      // Entering edit mode also dismisses any open overlay (power menu, help),
+      // so nothing is left floating above a card that is now a drag handle.
+      toggleEdit: () => this.setState(x => ({ edit: !x.edit, linking: null,
+                                              armRemove: null, trayMin: false,
+                                              aiMenu: null, help: null })),
       editPillTxt: s.edit ? '✓ DONE EDITING' : '⌘E — EDIT LAYOUT',
       // Tray collapse: stay in edit mode (handles/outlines remain) but hide
       // the pill stack so the whole board is visible while arranging.
