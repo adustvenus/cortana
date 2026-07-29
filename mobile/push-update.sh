@@ -32,8 +32,19 @@ command -v adb >/dev/null 2>&1 || {
 if [ "$1" = "pair" ]; then
   [ -n "$2" ] && [ -n "$3" ] || { echo "usage: $0 pair <IP:PORT> <CODE>" >&2; exit 1; }
   adb pair "$2" "$3"
-  echo "Paired. Now run: bash mobile/push-update.sh"
+  echo "Paired. Now run:  bash mobile/push-update.sh connect <IP:PORT>"
+  echo "(use the IP:PORT on the MAIN Wireless debugging screen - it differs"
+  echo " from the pairing dialog's port)"
   exit 0
+fi
+
+# Explicit address beats discovery. mDNS auto-discovery is flaky in general and
+# Tailscale's DNS can swallow it outright, so this is the reliable path: use the
+# IP:PORT shown on the phone's main Wireless debugging screen.
+if [ "$1" = "connect" ]; then
+  [ -n "$2" ] || { echo "usage: $0 connect <IP:PORT>" >&2; exit 1; }
+  adb disconnect >/dev/null 2>&1 || true
+  adb connect "$2"
 fi
 
 [ -f "$APK" ] || { echo "No APK at $APK - run git pull first." >&2; exit 1; }
@@ -45,12 +56,18 @@ if ! adb devices | grep -q "device$"; then
   target="$(adb mdns services 2>/dev/null | awk '/_adb-tls-connect/ {print $3; exit}')"
   if [ -z "$target" ]; then
     cat >&2 <<'EOF'
-No phone found. On the phone check:
-  Developer options -> Wireless debugging is ON
-  Phone is on the SAME Wi-Fi as this machine
-If you have never paired this phone, do the one-time pair first:
-  Wireless debugging -> "Pair device with pairing code"
-  bash mobile/push-update.sh pair <IP:PORT> <CODE>
+Couldn't auto-discover the phone (mDNS is flaky, and Tailscale's DNS can
+swallow it - this is normal, just connect explicitly instead):
+
+  On the phone: Developer options -> Wireless debugging
+  Read the "IP address & Port" on THAT screen, then run:
+
+     bash mobile/push-update.sh connect 192.168.x.x:PORT
+
+If you have never paired this phone, pair once first (different port, from
+the "Pair device with pairing code" dialog):
+
+     bash mobile/push-update.sh pair 192.168.x.x:PAIRPORT 123456
 EOF
     exit 1
   fi
