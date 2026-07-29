@@ -57,7 +57,30 @@ object LinkClient {
     var linkUp = false
         private set
 
-    private fun base(ctx: Context) = "http://${Prefs.host(ctx)}:${Prefs.port(ctx)}"
+    // Address fail-over: the stored host first, then every address the bridge
+    // advertised (Tailscale + LAN). A phone paired at home therefore keeps
+    // working on cellular - it just rotates to the tailnet address - and the
+    // winner is promoted to primary so later calls go straight there.
+    private var hostIdx = 0
+
+    private fun candidates(ctx: Context): List<String> {
+        val primary = Prefs.host(ctx)
+        val alts = Prefs.altHosts(ctx)
+        return (listOf(primary) + alts).filter { it.isNotEmpty() }.distinct()
+    }
+
+    private fun activeHost(ctx: Context): String {
+        val c = candidates(ctx)
+        if (c.isEmpty()) return Prefs.host(ctx)
+        return c[hostIdx % c.size]
+    }
+
+    private fun rotateHost(ctx: Context) {
+        val c = candidates(ctx)
+        if (c.size > 1) hostIdx = (hostIdx + 1) % c.size
+    }
+
+    private fun base(ctx: Context) = "http://${activeHost(ctx)}:${Prefs.port(ctx)}"
 
     private fun authed(ctx: Context, b: Request.Builder) =
         b.header("Authorization", "Bearer ${Prefs.token(ctx)}")
@@ -81,11 +104,18 @@ object LinkClient {
 
     private fun connect(ctx: Context) {
         if (!wantRun || !Prefs.paired(ctx)) return
+        val tryHost = activeHost(ctx)
         val req = authed(ctx, Request.Builder().url(
-            "ws://${Prefs.host(ctx)}:${Prefs.port(ctx)}/api/ws")).build()
+            "ws://$tryHost:${Prefs.port(ctx)}/api/ws")).build()
         ws = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 backoffSec = 1
+                // This address works - make it the primary so REST calls and
+                // the next launch skip the dead one entirely.
+                if (tryHost.isNotEmpty() && tryHost != Prefs.host(ctx)) {
+                    Prefs.setHost(ctx, tryHost)
+                    hostIdx = 0
+                }
                 setLink(true)
             }
 
@@ -97,6 +127,14 @@ object LinkClient {
                         val dash = j.optString("host")
                         if (dash.isNotEmpty() && dash != Prefs.dashName(ctx))
                             Prefs.setDashName(ctx, dash)
+                        // Remember every address the bridge can be reached on,
+                        // so leaving/joining the LAN never strands the phone.
+                        j.optJSONArray("addresses")?.let { arr ->
+                            val list = (0 until arr.length()).map { arr.optString(it) }
+                                .filter { it.isNotEmpty() }
+                            if (list.isNotEmpty() && list != Prefs.altHosts(ctx))
+                                Prefs.setAltHosts(ctx, list)
+                        }
                         main.post { listener?.onState(j) }
                     }
                     "announce" -> main.post { listener?.onAnnounce(j.optString("text")) }
@@ -111,6 +149,9 @@ object LinkClient {
                     return
                 }
                 if (!wantRun) return
+                // Unreachable on this address (wrong network, workstation moved):
+                // try the next known one before backing off further.
+                rotateHost(ctx)
                 val delay = backoffSec
                 backoffSec = min(backoffSec * 2, 30)
                 main.postDelayed({ if (wantRun) connect(ctx) }, delay * 1000)

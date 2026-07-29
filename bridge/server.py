@@ -130,10 +130,38 @@ def _apk_info():
 _board = {"data": None, "ts": 0.0}
 
 
+def _all_addresses():
+    """Every address a phone might reach us on, Tailscale first. The app stores
+    these and fails over between them, so a phone paired on the LAN keeps
+    working when it leaves the house (and vice versa)."""
+    def go():
+        out = []
+        try:
+            for line in _run(["tailscale", "ip", "-4"], timeout=8).splitlines():
+                ip = line.strip()
+                if ip:
+                    out.append(ip)
+        except Exception:
+            pass
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            lan = s.getsockname()[0]
+            s.close()
+            if lan not in out:
+                out.append(lan)
+        except Exception:
+            pass
+        return out
+    return _cached("addresses", 120, go)
+
+
 def build_state():
     return {
         "type": "state",
         "host": HOST_NAME,
+        "addresses": _all_addresses(),
+        "port": PORT,
         "bridgeVersion": BRIDGE_VERSION,
         "apk": _apk_info(),
         "brainReady": _load_brain()["ready"],

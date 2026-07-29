@@ -79,6 +79,22 @@ object Prefs {
         open(ctx).edit().putString("skipVer", v).apply()
     }
 
+    /** Every address the workstation advertised (Tailscale + LAN). The client
+     *  fails over between these, so a phone paired at home still reaches the
+     *  bridge from cellular without re-pairing. */
+    fun altHosts(ctx: Context): List<String> =
+        (open(ctx).getString("altHosts", "") ?: "")
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun setAltHosts(ctx: Context, hosts: List<String>) {
+        open(ctx).edit().putString("altHosts", hosts.joinToString(",")).apply()
+    }
+
+    /** Promote the address that actually worked to the primary host. */
+    fun setHost(ctx: Context, host: String) {
+        open(ctx).edit().putString("host", host).apply()
+    }
+
     /** Phone-local module order from drag-and-drop; empty = follow the board. */
     fun moduleOrder(ctx: Context): List<String> =
         (open(ctx).getString("moduleOrder", "") ?: "")
