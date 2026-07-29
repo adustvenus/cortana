@@ -76,17 +76,29 @@ message** — you tap Install and nothing happens. It is not the APK, the
 permission grant, or the bridge; those skins block the installer UI itself.
 adb installs take the privileged path instead, so they always work.
 
-Wireless adb gives you that path with no cable:
+Wireless adb gives you that path with no cable — **and with Tailscale left
+on**. The script tries the phone's *tailnet* address first, because connecting
+to its LAN address while the VPN is up tends to hang: the phone answers through
+the tunnel and the reply never returns the way it went out.
 
 ```bash
 # Phone, one time: Settings -> About device -> tap Build number 7x
 #   -> Developer options -> Wireless debugging ON
-#   -> "Pair device with pairing code"  (note the IP:PORT and 6-digit code)
+#   -> "Pair device with pairing code"  (that dialog's IP:PORT and 6-digit code)
 bash mobile/push-update.sh pair 192.168.1.50:41234 123456
 
-# Every update after that (phone on the same Wi-Fi, wireless debugging on):
+# Every update after that. The PORT is on the MAIN Wireless debugging screen
+# (it differs from the pairing dialog's, and changes when the toggle is flipped):
+bash mobile/push-update.sh 37219
+
+# No argument reuses the last address that worked:
 bash mobile/push-update.sh
 ```
+
+Once the phone is on v1.5 or later this is a fallback rather than the routine:
+Settings → **INSTALL VIA WORKSTATION (ADB)** does the same thing from the
+phone, and it already targets the tailnet address automatically (the bridge
+uses the address the request arrived on), so Tailscale can stay on there too.
 
 Worth trying once on OxygenOS 15, which may restore normal installs:
 Settings → Security & privacy → More security & privacy → **Install unknown
@@ -158,8 +170,10 @@ paraphrasing them.
 - Phone credential: 256-bit random bearer token, stored in
   EncryptedSharedPreferences; server stores the hash only. Every `/api/*`
   call requires it.
-- Revoke anytime: MOBILE LINK module → ✕ next to the phone (two-tap confirm),
-  or delete `mobile_link.json` on the workstation to revoke everything.
+- Revoke anytime: MOBILE LINK module → ✕ next to the phone (two-tap confirm).
+  Each row has its own id, so revoking removes exactly that entry; re-pairing a
+  phone replaces its row rather than adding a duplicate. To revoke everything,
+  delete `mobile_link.json` on the workstation.
 - Transport: Tailscale/WireGuard end-to-end; the bridge binds 0.0.0.0 by
   default so LAN also works, but treat the tailnet as the supported path.
 

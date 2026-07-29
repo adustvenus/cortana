@@ -952,12 +952,12 @@ class Component extends DCLogic {
         pollMobile();
       } catch (e) { this.showToast('BRIDGE UNREACHABLE'); }
     };
-    this._mobileRevoke = async (name) => {
+    this._mobileRevoke = async (id, name) => {
       try {
         const r = await fetch(MB + '/local/revoke', { method: 'POST',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
         if (!r.ok) throw new Error(r.status);
-        this.showToast('REVOKED ' + String(name).toUpperCase());
+        this.showToast('REVOKED ' + String(name || id).toUpperCase());
         this.setState({ mlArm: null });
         pollMobile();
       } catch (e) { this.showToast('BRIDGE UNREACHABLE'); }
@@ -1783,17 +1783,20 @@ class Component extends DCLogic {
             stateTxt: d.online ? 'ONLINE' : 'SEEN ' + ago(d.last_seen),
             dotStyle: { width: '.5rem', height: '.5rem', borderRadius: '50%', flexShrink: 0,
                         background: d.online ? '#9be8b8' : 'rgba(var(--text-rgb),.25)' },
-            revokeTxt: s.mlArm === d.name ? 'CONFIRM' : '✕',
+            // Arm/confirm keyed by the device ID, not the name: re-pairs used
+            // to produce several rows sharing a name, and revoking by name
+            // removed every one of them.
+            revokeTxt: s.mlArm === d.id ? 'CONFIRM' : '✕',
             revokeStyle: { minWidth: '1.7rem', height: '1.7rem', display: 'flex', alignItems: 'center',
                            justifyContent: 'center', borderRadius: 8, cursor: 'pointer', userSelect: 'none',
                            padding: '0 .4rem', fontSize: '.66rem', letterSpacing: '.08em', flexShrink: 0,
-                           color: s.mlArm === d.name ? '#fff' : 'rgba(var(--text-rgb),.55)',
-                           background: s.mlArm === d.name ? 'rgba(240,80,90,.85)' : 'rgba(255,255,255,.06)' },
+                           color: s.mlArm === d.id ? '#fff' : 'rgba(var(--text-rgb),.55)',
+                           background: s.mlArm === d.id ? 'rgba(240,80,90,.85)' : 'rgba(255,255,255,.06)' },
             revoke: (e) => {
               e.stopPropagation(); e.preventDefault();
-              if (s.mlArm === d.name) { this._mobileRevoke && this._mobileRevoke(d.name); return; }
+              if (s.mlArm === d.id) { this._mobileRevoke && this._mobileRevoke(d.id, d.name); return; }
               clearTimeout(this._mlArmT);
-              this.setState({ mlArm: d.name });
+              this.setState({ mlArm: d.id });
               this._mlArmT = setTimeout(() => this.setState({ mlArm: null }), 3000);
             }
           })),

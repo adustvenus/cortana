@@ -46,3 +46,6 @@ mobile/.gradle/
 mobile/build/
 mobile/app/build/
 mobile/local.properties
+
+# Last working wireless-adb address (per-machine)
+.adb_target

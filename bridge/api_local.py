@@ -58,7 +58,10 @@ async def revoke(request):
         body = await request.json()
     except Exception:
         return web.json_response({"error": "bad json"}, status=400, headers=auth.CORS)
-    return web.json_response({"revoked": pairing.revoke(str(body.get("name", "")))},
+    # Prefer the per-entry id; `name` is accepted for older dashboards, where
+    # it means "the first entry with this name", not "all of them".
+    ident = body.get("id") or body.get("name", "")
+    return web.json_response({"revoked": pairing.revoke(str(ident))},
                              headers=auth.CORS)
 
 

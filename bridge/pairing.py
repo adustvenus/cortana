@@ -92,8 +92,13 @@ def try_pair(code, device_name):
     token = secrets.token_urlsafe(32)
     name = str(device_name or "Android phone").strip()[:48] or "Android phone"
     d = _load()
-    d["devices"].append({"hash": _hash(token), "name": name,
-                         "created": time.time(), "last_seen": time.time()})
+    # Re-pairing a phone REPLACES its entry instead of stacking another row.
+    # Without this, every re-pair (host change, troubleshooting, revoked token)
+    # left a duplicate behind, and the list filled with identical names.
+    d["devices"] = [x for x in d["devices"] if x.get("name") != name]
+    d["devices"].append({"id": secrets.token_hex(8), "hash": _hash(token),
+                         "name": name, "created": time.time(),
+                         "last_seen": time.time()})
     _save(d)
     return token, None
 
@@ -115,18 +120,40 @@ def auth(token):
 
 
 def devices():
-    """Public device list for both the dashboard module and the phone."""
+    """Public device list for both the dashboard module and the phone.
+    `id` is what revoke() expects; it falls back to the name for entries
+    written before ids existed, so old stores stay revocable."""
     now = time.time()
-    return [{"name": dev.get("name", "?"),
+    return [{"id": dev.get("id") or dev.get("name", "?"),
+             "name": dev.get("name", "?"),
              "last_seen": dev.get("last_seen", 0),
              "online": now - dev.get("last_seen", 0) < ONLINE_WINDOW}
             for dev in _load()["devices"]]
 
 
-def revoke(name):
-    """Revoke every token for a device name. Returns how many were removed."""
+def revoke(ident):
+    """Revoke ONE device, by its id. Returns how many entries were removed.
+
+    Revoking used to match on name, which deleted every device sharing it -
+    and since a re-pair appended rather than replaced, duplicates were normal.
+    Ids are per-entry, so this now removes exactly the row the user tapped.
+    Entries written before ids existed are still revocable by name.
+    """
+    ident = str(ident or "")
+    if not ident:
+        return 0
     d = _load()
     before = len(d["devices"])
-    d["devices"] = [x for x in d["devices"] if x.get("name") != name]
+    kept = []
+    removed = 0
+    for dev in d["devices"]:
+        dev_id = dev.get("id")
+        # Match this row only: by id when it has one, else by name (legacy).
+        hit = (dev_id == ident) if dev_id else (dev.get("name") == ident)
+        if hit and removed == 0:
+            removed += 1
+            continue
+        kept.append(dev)
+    d["devices"] = kept
     _save(d)
     return before - len(d["devices"])
