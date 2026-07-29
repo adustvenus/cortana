@@ -347,13 +347,12 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               </div>
             </div>
             <div style="{{ m.aiExtrasStyle }}">
-              <div style="display:flex;align-items:center;gap:.55rem;margin-top:.4rem">
+              <!-- No native <select> here: the template passes through innerHTML,
+                   and the HTML parser strips sc-for out of a select. Click cycles
+                   through the available input devices instead. -->
+              <div style="display:flex;align-items:center;gap:.55rem;margin-top:.4rem;min-width:0">
                 <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb));flex-shrink:0">MIC</span>
-                <select value="{{ micSel }}" onChange="{{ micOnChange }}" style="{{ m.micSelStyle }}">
-                  <sc-for list="{{ micOpts }}" as="mo" hint-placeholder-count="1">
-                    <option value="{{ mo.v }}">{{ mo.label }}</option>
-                  </sc-for>
-                </select>
+                <span onPointerDown="{{ micCycle }}" title="Click to switch input device" style="{{ m.micPickStyle }}">{{ micPickTxt }}</span>
               </div>
             </div>
             <sc-if value="{{ aiExtraOn }}" hint-placeholder-val="{{ false }}">
@@ -1362,12 +1361,13 @@ class Component extends DCLogic {
         },
         t_git: m.type === 'git',
         t_mobile: m.type === 'mobile',
-        micSelStyle: {
+        micPickStyle: {
           flex: 1, minWidth: 0, height: '1.7rem', cursor: 'pointer',
-          background: 'transparent', border: 'none', outline: 'none',
+          display: 'flex', alignItems: 'center', userSelect: 'none',
           borderBottom: '1px solid rgba(var(--text-rgb),.2)',
           fontFamily: "'JetBrains Mono',monospace", fontSize: '.62rem',
-          color: 'rgba(var(--text-rgb),.7)'
+          color: 'rgba(var(--text-rgb),.7)', whiteSpace: 'nowrap',
+          overflow: 'hidden', textOverflow: 'ellipsis'
         },
         aiMenuOn: s.aiMenu === m.id,
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
@@ -1628,19 +1628,26 @@ class Component extends DCLogic {
       taskOnKey: (e) => { if (e.key === 'Enter') this._addTask(); },
       addTask: () => this._addTask(),
 
-      // ── AI module MIC dropdown (devices published by Cortana to disk) ──
-      micOpts: ((s.micData && s.micData.devices) || []).map(d => ({
-        v: d.name, label: String(d.name || '').toUpperCase().slice(0, 40)
-      })),
-      micSel: (s.micData && s.micData.current) || '',
-      micOnChange: (e) => {
-        const v = e.target.value;
-        if (!v || !window.duskBridge || !window.duskBridge.mic) return;
+      // ── AI module MIC picker (devices published by Cortana to disk).
+      // Click-to-cycle instead of a <select>: see the template comment. ──
+      micPickTxt: (() => {
+        const devs = (s.micData && s.micData.devices) || [];
+        if (!devs.length) return '—';
+        const cur = String((s.micData && s.micData.current) || devs[0].name);
+        return cur.toUpperCase().slice(0, 34) + (devs.length > 1 ? '  ▸' : '');
+      })(),
+      micCycle: (e) => {
+        e.stopPropagation(); e.preventDefault();
         const md = this.state.micData;
-        this.setState({ micData: { ...(md || {}), current: v } });   // optimistic
-        window.duskBridge.mic.set(v)
+        const devs = (md && md.devices) || [];
+        if (!devs.length || !window.duskBridge || !window.duskBridge.mic) return;
+        const cur = String((md && md.current) || '');
+        const i = devs.findIndex(d => d.name === cur);
+        const next = devs[(i + 1) % devs.length];
+        this.setState({ micData: { ...md, current: next.name } });   // optimistic
+        window.duskBridge.mic.set(next.name)
           .then(r => this.showToast(r && r.ok
-            ? 'MIC → ' + v.toUpperCase().slice(0, 24) : 'MIC SET FAILED'))
+            ? 'MIC → ' + next.name.toUpperCase().slice(0, 24) : 'MIC SET FAILED'))
           .catch(() => this.showToast('MIC SET FAILED'));
       },
 
