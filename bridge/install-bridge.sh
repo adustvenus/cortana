@@ -3,10 +3,26 @@
 set -e
 cd "$(dirname "$0")/.."
 
-./venv/bin/pip install -r requirements.txt   # picks up aiohttp
+# Find the Python env Cortana actually uses - installs have used different
+# folder names over time (venv, cortana_venv, .venv). Create ./venv if none.
+PY=""
+for d in venv cortana_venv .venv; do
+  if [ -x "$d/bin/python" ]; then PY="$PWD/$d/bin/python"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "No virtualenv found - creating ./venv"
+  python3 -m venv venv
+  PY="$PWD/venv/bin/python"
+fi
+echo "Using $PY"
+"$PY" -m pip install -r requirements.txt   # picks up aiohttp
 
 mkdir -p ~/.config/systemd/user
-cp cortana-bridge.service ~/.config/systemd/user/
+# Point the unit at the resolved interpreter + this checkout (the committed
+# unit assumes ~/cortana/venv, which isn't true on every machine).
+sed -e "s|^ExecStart=.*|ExecStart=$PY -m bridge.server|" \
+    -e "s|^WorkingDirectory=.*|WorkingDirectory=$PWD|" \
+    cortana-bridge.service > ~/.config/systemd/user/cortana-bridge.service
 systemctl --user daemon-reload
 systemctl --user enable --now cortana-bridge
 
