@@ -3,12 +3,12 @@ package com.cortana.mobile
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.PendingIntent
-import android.app.ProgressDialog
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.ProgressBar
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
@@ -134,20 +134,26 @@ object UpdateManager {
 
     private fun download(activity: Activity) {
         if (!ensureInstallPermission(activity)) return
-        @Suppress("DEPRECATION")
-        val dlg = ProgressDialog(activity).apply {
-            setTitle("Downloading update")
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+        // ProgressDialog is deprecated; a plain dialog with a determinate bar
+        // gives the same feedback without the deprecated widget.
+        val bar = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
-            setCancelable(false)
-            show()
+            isIndeterminate = false
+            val p = (16 * activity.resources.displayMetrics.density).toInt()
+            setPadding(p, p, p, p)
         }
+        val dlg = AlertDialog.Builder(activity)
+            .setTitle("Downloading update")
+            .setView(bar)
+            .setCancelable(false)
+            .create()
+        dlg.show()
         thread {
             try {
                 val dir = File(activity.cacheDir, "apk").apply { mkdirs() }
                 val dest = File(dir, "cortana-mobile-update.apk")
                 LinkClient.downloadApk(activity, dest) { pct ->
-                    activity.runOnUiThread { dlg.progress = pct }
+                    activity.runOnUiThread { bar.progress = pct }
                 }
                 activity.runOnUiThread {
                     dlg.dismiss()
@@ -201,7 +207,7 @@ object UpdateManager {
             // Last resort: the classic intent hand-off.
             try {
                 val uri = FileProvider.getUriForFile(
-                    activity, "com.cortana.mobile.fileprovider", apk)
+                    activity, "${activity.packageName}.fileprovider", apk)
                 activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/vnd.android.package-archive")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

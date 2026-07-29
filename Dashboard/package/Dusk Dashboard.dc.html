@@ -352,6 +352,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                    through the available input devices instead. -->
               <div style="display:flex;align-items:center;gap:.55rem;margin-top:.4rem;min-width:0">
                 <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb));flex-shrink:0">MIC</span>
+                <span onPointerDown="{{ micHelp }}" title="What is this?" style="{{ m.helpDotStyle }}">?</span>
                 <span onPointerDown="{{ micCycle }}" title="Click to switch input device" style="{{ m.micPickStyle }}">{{ micPickTxt }}</span>
               </div>
             </div>
@@ -372,6 +373,17 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               </div>
             </sc-if>
             <canvas ref="{{ m.aiWaveRef }}" style="{{ m.aiWaveStyle }}"></canvas>
+            <sc-if value="{{ micHelpOn }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ helpPanelStyle }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.2em;color:rgb(var(--accent3-rgb));flex-shrink:0">MICROPHONE</div>
+                <div style="{{ helpBodyStyle }}">
+                  <sc-for list="{{ micHelpLines }}" as="hl" hint-placeholder-count="3">
+                    <div style="margin-bottom:.45rem">{{ hl.t }}</div>
+                  </sc-for>
+                </div>
+                <span onPointerDown="{{ helpClose }}" style="{{ helpCloseStyle }}">✕</span>
+              </div>
+            </sc-if>
             <sc-if value="{{ m.aiMenuOn }}" hint-placeholder-val="{{ false }}">
               <div style="position:absolute;inset:10% 14%;z-index:25;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.55rem;background:rgba(20,16,32,.93);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.5);border-radius:14px;padding:.9rem">
                 <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.22em;color:rgb(var(--accent3-rgb))">{{ aiMenuTitle }}</div>
@@ -391,6 +403,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <div style="display:flex;align-items:center;gap:.55rem;flex-shrink:0">
               <span style="width:.55rem;height:.55rem;border-radius:50%;background:{{ mlDotColor }};flex-shrink:0"></span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">MOBILE LINK</span>
+              <span onPointerDown="{{ mlHelp }}" title="What is this?" style="{{ m.helpDotStyle }}">?</span>
               <span style="flex:1"></span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:.62rem;color:rgba(var(--text-rgb),.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ mlHostTxt }}</span>
             </div>
@@ -422,6 +435,17 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               <span style="flex:1"></span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.35)">{{ mlConnTxt }}</span>
             </div>
+            <sc-if value="{{ mlHelpOn }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ helpPanelStyle }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.2em;color:rgb(var(--accent3-rgb));flex-shrink:0">MOBILE LINK</div>
+                <div style="{{ helpBodyStyle }}">
+                  <sc-for list="{{ mlHelpLines }}" as="hl" hint-placeholder-count="3">
+                    <div style="margin-bottom:.45rem">{{ hl.t }}</div>
+                  </sc-for>
+                </div>
+                <span onPointerDown="{{ helpClose }}" style="{{ helpCloseStyle }}">✕</span>
+              </div>
+            </sc-if>
           </div>
         </sc-if>
 
@@ -1392,6 +1416,15 @@ class Component extends DCLogic {
         },
         t_git: m.type === 'git',
         t_mobile: m.type === 'mobile',
+        // Shared "?" affordance: quiet ring, same size as other tap targets.
+        helpDotStyle: {
+          width: '1.15rem', height: '1.15rem', flexShrink: 0, marginLeft: '.4rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: '50%', cursor: 'pointer', userSelect: 'none',
+          fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+          color: 'rgba(var(--text-rgb),.5)',
+          border: '1px solid rgba(var(--text-rgb),.25)'
+        },
         mlQrRef: (el) => {
           this._mlQrEl = el;
           if (el && this._drawMlQr) this._drawMlQr();
@@ -1662,6 +1695,46 @@ class Component extends DCLogic {
       taskOnInput: (e) => this.setState({ taskInput: e.target.value }),
       taskOnKey: (e) => { if (e.key === 'Enter') this._addTask(); },
       addTask: () => this._addTask(),
+
+      // ── Help panels ("?" affordances). Explain each surface where the user
+      // meets it: what it is, where the data comes from, what to do when it
+      // looks wrong. Shown as an in-module overlay, same pattern as the AI
+      // power menu, so nothing new is introduced to the layout engine. ──
+      helpPanelStyle: {
+        position: 'absolute', inset: '6% 8%', zIndex: 26, display: 'flex',
+        flexDirection: 'column', gap: '.5rem', padding: '.9rem 1rem',
+        background: 'rgba(20,16,32,.96)', backdropFilter: 'blur(14px)',
+        border: '1px solid rgba(var(--accent3-rgb),.45)', borderRadius: 14
+      },
+      helpBodyStyle: {
+        flex: 1, minHeight: 0, overflowY: 'auto', fontSize: '.78rem',
+        lineHeight: 1.55, color: 'rgba(var(--text-rgb),.8)',
+        maskImage: 'linear-gradient(180deg,#000 88%,transparent)'
+      },
+      helpCloseStyle: {
+        position: 'absolute', top: '.35rem', right: '.5rem', width: '1.7rem',
+        height: '1.7rem', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', borderRadius: '50%', cursor: 'pointer',
+        color: 'rgba(var(--text-rgb),.6)', fontSize: '.8rem', userSelect: 'none'
+      },
+      helpClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ help: null }); },
+      mlHelp: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ help: 'mobile' }); },
+      micHelp: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ help: 'mic' }); },
+      mlHelpOn: s.help === 'mobile',
+      micHelpOn: s.help === 'mic',
+      mlHelpLines: [
+        { t: 'Links your phone to this workstation. The bridge service (cortana-bridge, port 8765) serves the phone a read-only mirror of this board and runs voice turns for it.' },
+        { t: 'PAIR A PHONE issues a 6-digit code plus a QR. Scanning the QR on the phone downloads the app and pairs it in one step — nothing to type. Codes are single-use and expire in 10 minutes.' },
+        { t: 'Each paired phone appears with ONLINE / SEEN <time>. Tap ✕ twice to revoke it instantly; the phone must then pair again.' },
+        { t: 'Reachable over your tailnet (anywhere) or your LAN (at home). The bridge is never exposed to the internet. Tokens are stored here as hashes only.' },
+        { t: 'BRIDGE OFFLINE means the service is not running: systemctl --user start cortana-bridge' }
+      ],
+      micHelpLines: [
+        { t: 'The capture device Cortana listens on. Click the name to cycle through every input device this machine currently has.' },
+        { t: 'Cortana publishes the device list to mic_state.json; your choice is written to mic_select.json and picked up on her next capture — no restart needed.' },
+        { t: 'Your choice is stored by NAME, so it survives USB replugging and reboots, and it overrides MIC_NAME / MIC_DEVICE in .env.' },
+        { t: 'Blank (—) means no input devices were found, or Cortana is not running. With no mic she stays up: F9 says so out loud, and F10 refuses to leave push-to-talk.' }
+      ],
 
       // ── AI module MIC picker (devices published by Cortana to disk).
       // Click-to-cycle instead of a <select>: see the template comment. ──

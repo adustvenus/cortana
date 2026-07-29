@@ -98,6 +98,41 @@ object Ui {
         setOnClickListener { onClick() }
     }
 
+    /** The "?" affordance: tap for the Help entry explaining this surface.
+     *  Deliberately low-contrast - present when wanted, quiet when not. */
+    fun helpIcon(ctx: Context, topic: String): TextView = TextView(ctx).apply {
+        text = "?"
+        typeface = Typeface.MONOSPACE
+        textSize = 12f
+        setTextColor(DIM)
+        gravity = Gravity.CENTER
+        val s = dp(ctx, 22)
+        layoutParams = LinearLayout.LayoutParams(s, s).apply { leftMargin = dp(ctx, 6) }
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setStroke(dp(ctx, 1), DIM and 0x60FFFFFF.toInt())
+        }
+        contentDescription = "Help"
+        setOnClickListener { Help.show(ctx, topic) }
+    }
+
+    /** Standard card header: label on the left, "?" and optional right-hand
+     *  status on the right. Keeps every module visually identical. */
+    fun cardHeader(ctx: Context, label: String, topic: String,
+                   labelColor: Int = LAVENDER, leading: View? = null,
+                   trailing: View? = null): LinearLayout {
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        leading?.let { row.addView(it) }
+        row.addView(label(ctx, label, labelColor))
+        row.addView(helpIcon(ctx, topic))
+        row.addView(spacer(ctx))
+        trailing?.let { row.addView(it) }
+        return row
+    }
+
     fun stateColor(state: String): Int = when (state) {
         "listening" -> GREEN
         "thinking", "working" -> LAVENDER

@@ -76,7 +76,7 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener {
             letterSpacing = 0.2f
             setTextColor(Ui.LAVENDER)
         }
-        col.addView(Ui.row(this, back, header, Ui.spacer(this)).apply {
+        col.addView(Ui.row(this, back, header, Ui.helpIcon(this, "talk"), Ui.spacer(this)).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         })

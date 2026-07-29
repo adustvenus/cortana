@@ -37,7 +37,7 @@ class SettingsActivity : Activity() {
         })
         col.addView(Ui.gap(this, 16))
 
-        col.addView(Ui.label(this, "LINK"))
+        col.addView(Ui.row(this, Ui.label(this, "LINK"), Ui.helpIcon(this, "security")))
         col.addView(Ui.gap(this, 6))
         col.addView(Ui.value(this,
             "Workstation: ${Prefs.dashName(this).ifEmpty { "—" }}\n" +
@@ -64,7 +64,7 @@ class SettingsActivity : Activity() {
         })
         col.addView(Ui.gap(this, 24))
 
-        col.addView(Ui.label(this, "VOICE"))
+        col.addView(Ui.row(this, Ui.label(this, "VOICE"), Ui.helpIcon(this, "voice")))
         col.addView(Ui.gap(this, 6))
         val ttsSwitch = Switch(this).apply {
             text = "Use phone TTS instead of Cortana's voice (saves data)"
@@ -76,7 +76,7 @@ class SettingsActivity : Activity() {
         col.addView(ttsSwitch)
         col.addView(Ui.gap(this, 24))
 
-        col.addView(Ui.label(this, "UPDATES"))
+        col.addView(Ui.row(this, Ui.label(this, "UPDATES"), Ui.helpIcon(this, "update")))
         col.addView(Ui.gap(this, 6))
         col.addView(Ui.value(this, "Installed: v${BuildConfig.VERSION_NAME}", 14f, Ui.DIM))
         col.addView(Ui.gap(this, 10))

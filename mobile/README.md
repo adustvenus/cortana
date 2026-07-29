@@ -134,6 +134,15 @@ set `CORTANA_KEYSTORE_PASS`.
   if the voice chain is down you still get the reply as text + phone TTS.
   Typing works too. Tap mid-playback to stop her.
 
+## Finding your way around
+
+Every non-obvious surface carries a **?** — on each card header in the app, on
+the Settings sections, on the talk screen, and on the dashboard's MOBILE LINK
+module and MIC picker. Tapping it explains what the thing is, where its data
+comes from, and what to do when it looks wrong. The copy assumes a technical
+reader: it names the actual files, services and commands involved rather than
+paraphrasing them.
+
 ## Security model
 
 - Pairing code: shown only on the dashboard (bridge `/local/*` endpoints

@@ -40,13 +40,18 @@ import hud_state
 import calendar_state
 from bridge import pairing, spotify_link
 
-BRIDGE_VERSION = "1.1.0"
+BRIDGE_VERSION = "1.2.0"
 PORT = int(os.getenv("BRIDGE_PORT", "8765"))
 BIND = os.getenv("BRIDGE_BIND", "0.0.0.0")
 HOST_NAME = os.getenv("BRIDGE_NAME", "") or socket.gethostname()
 ROOT = config.ROOT
 DIST = ROOT / "mobile" / "dist"
 TTS_CAP = 1500                     # same cap as voice/tts.py speak()
+
+
+def _log(msg, err=None):
+    """One log shape for the whole service so journalctl stays greppable."""
+    print(f"[bridge] {msg}" + (f": {err}" if err is not None else ""), flush=True)
 
 # Cortana brain, loaded lazily so the bridge still serves state/pairing when
 # an API key is missing or a dependency is broken - talking just errors.
@@ -329,7 +334,7 @@ def _tts_stream_blocking(text, put):
         put(None)
         return
     except Exception as e:
-        print("[bridge] tts stream failed, falling back:", e)
+        _log("TTS stream failed, falling back", e)
     try:
         r = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVEN_VOICE_ID}",
@@ -341,7 +346,7 @@ def _tts_stream_blocking(text, put):
         put(None)
         return
     except Exception as e:
-        print("[bridge] tts eleven fallback failed:", e)
+        _log("TTS ElevenLabs fallback failed", e)
     try:
         from openai import OpenAI
         r = OpenAI(api_key=config.OPENAI_API_KEY).audio.speech.create(
@@ -349,7 +354,7 @@ def _tts_stream_blocking(text, put):
         put(r.content)
         put(None)
     except Exception as e:
-        print("[bridge] tts openai fallback failed:", e)
+        _log("TTS OpenAI fallback failed", e)
         put(False)
 
 
@@ -551,10 +556,12 @@ async def h_apk_adb(request):
     # Trust the socket's peer address, not a client-supplied host: a paired
     # phone can only ever point this at itself.
     ip = (request.remote or "").strip()
-    if not ip or ":" in ip and not ip.startswith("::ffff:"):
+    is_v4_mapped = ip.startswith("::ffff:")
+    if not ip or (":" in ip and not is_v4_mapped):
         return web.json_response({"ok": False, "error": "need an IPv4 phone address"},
                                  status=400)
-    ip = ip.replace("::ffff:", "")
+    if is_v4_mapped:
+        ip = ip[len("::ffff:"):]
     if not (0 < port < 65536):
         return web.json_response({"ok": False, "error": "bad port"}, status=400)
     return web.json_response(await asyncio.to_thread(_adb_install, f"{ip}:{port}"))
@@ -775,5 +782,5 @@ def make_app():
 
 
 if __name__ == "__main__":
-    print(f"[bridge] v{BRIDGE_VERSION} on {BIND}:{PORT} host={HOST_NAME}")
+    _log(f"v{BRIDGE_VERSION} listening on {BIND}:{PORT} as '{HOST_NAME}'")
     web.run_app(make_app(), host=BIND, port=PORT, print=None)
