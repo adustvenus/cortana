@@ -23,7 +23,7 @@ the others.
 | Unit | What it is | Docs |
 |---|---|---|
 | `cortana` | The assistant: mic → Whisper → agent loop → voice. Edits its own source under git with a rollback failsafe. | [SETUP.md](SETUP.md) |
-| `cortana-dash` | Always-on status board. Modular, themeable, fully offline at runtime. | [Dashboard/README.md](Dashboard/README.md) |
+| `cortana-dash` | Always-on status board: modules for Cortana's state, music, agenda, tasks, git, weather, a file explorer (tree + graph), and the phone link. Owns power policy - keeps the machine awake, sleeps only the screen. | [Dashboard/README.md](Dashboard/README.md) |
 | `cortana-bridge` | Serves the phone: state feed, voice turns, Spotify, updates. | [bridge/README.md](bridge/README.md) |
 | — | The Android client (view-only mirror + talk + widget). | [mobile/README.md](mobile/README.md) |
 
@@ -77,6 +77,22 @@ journalctl --user -u cortana -f          # or -u cortana-bridge
 Budget is capped in two places: `BUDGET_MONTHLY_USD` in `.env` (she declines
 past it) and your Anthropic console limit. Check spend with
 `sqlite3 state.db "SELECT ROUND(SUM(cost),2) FROM usage;"` or just ask her.
+
+## Known operational gotchas
+
+Three things that have bitten before and are worth knowing up front:
+
+- **Google tokens die every 7 days** unless the OAuth consent screen is
+  *published* (projects in "Testing" get their refresh tokens expired by
+  Google). Symptom: the agenda freezes - shows deleted events, misses new ones.
+  Diagnose with `python main.py --calendar-debug`.
+- **Spotify rate-limits (429)** if polled too hard; the dashboard and the bridge
+  share a cool-off file and back off together. `RATE LIMITED · Ns` on the Music
+  module is self-healing, not a fault.
+- **Some Android skins (OnePlus/OPPO) silently refuse APK installs.** The app
+  self-updates via `PackageInstaller`; when a skin blocks that, use
+  `bash mobile/push-update.sh` (wireless adb, no cable) or the in-app
+  *Install via workstation (adb)* button.
 
 ## Design rules
 

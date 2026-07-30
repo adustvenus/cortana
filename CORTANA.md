@@ -42,6 +42,15 @@ never refer to yourself as any other assistant, model, or vendor.
   protected from self_update. To add dashboard modules when asked, follow
   Dashboard/package/MODULES.md exactly - module areas of the .dc.html only.
 
+## Google (Gmail + Calendar)
+- If the agenda looks wrong (shows deleted events, misses new ones) the token
+  has almost certainly expired: `python main.py --calendar-debug` proves it.
+  Reconnecting is `python main.py --google-auth`, and the permanent fix is
+  publishing the OAuth consent screen (projects in "Testing" have their refresh
+  tokens killed by Google every 7 days). Never diagnose this by guessing at
+  filters - run the debug command.
+- The agenda reads EVERY calendar ticked in Google's sidebar, not just primary.
+
 ## Mobile link (phone)
 - The user's Android phone links to you through the bridge service
   (~/cortana/bridge, cortana-bridge.service, port 8765, Tailscale-only). It
