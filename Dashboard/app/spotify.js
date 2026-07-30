@@ -17,6 +17,7 @@ const path = require('path');
 const { BrowserWindow } = require('electron');
 
 const CONFIG_FILE = path.join(__dirname, 'spotify.json');
+const BACKOFF_FILE = path.join(__dirname, 'spotify_backoff.json');
 const TOKEN_FILE = path.join(__dirname, 'spotify_token.json');
 const REDIRECT_PORT = 8888;
 const REDIRECT_URI = `http://127.0.0.1:${REDIRECT_PORT}/callback`;
@@ -33,6 +34,41 @@ function b64url(buf) { return buf.toString('base64').replace(/\+/g, '-').replace
 
 let pkceVerifier = null;
 let authServer = null;
+
+// ── rate limiting ──────────────────────────────────────────────────────────
+// This process and the Python bridge both poll Spotify for the same account.
+// Neither knew about the other and each state() could cost TWO requests, which
+// added up to ~55/min and earned a 429 QUOTA_EXCEEDED. The backoff file is
+// SHARED with bridge/spotify_link.py, so a 429 seen by either side silences
+// both for exactly as long as Spotify's Retry-After asks.
+const IDLE_RECHECK_MS = 60000;   // trust "nothing playing" this long
+let lastGood = null;             // last real reading, served while cooling off
+let idleUntil = 0;               // skip the cross-device fallback until then
+
+function backoffRemaining() {
+  try {
+    const until = Number(JSON.parse(fs.readFileSync(BACKOFF_FILE, 'utf8')).until) || 0;
+    return Math.max(0, until - Date.now() / 1000);
+  } catch (e) { return 0; }
+}
+function setBackoff(seconds, reason) {
+  try {
+    const tmp = BACKOFF_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({
+      until: Date.now() / 1000 + Math.max(1, seconds), reason, at: Date.now() / 1000 }));
+    fs.renameSync(tmp, BACKOFF_FILE);
+  } catch (e) {}
+}
+/** Honour Retry-After; default to 30s when absent. Returns the wait. */
+function note429(r) {
+  const wait = Number(r.headers && r.headers.get && r.headers.get('Retry-After')) || 30;
+  setBackoff(wait, '429 from Spotify');
+  return wait;
+}
+function cooling(wait) {
+  return { ...(lastGood || { configured: true, connected: true }),
+           rateLimited: true, retryIn: Math.round(wait) };
+}
 
 async function exchangeCode(code) {
   const body = new URLSearchParams({
@@ -148,26 +184,60 @@ async function errBody(r) {
 
 async function state() {
   if (!configured()) return { configured: false, connected: false };
+
+  const cool = backoffRemaining();
+  if (cool > 0) return cooling(cool);
+
   const t = loadToken();
   const at = await accessToken();
-  if (!at) return { configured: true, connected: false };
+  if (!at) {
+    const c2 = backoffRemaining();
+    if (c2 > 0) return cooling(c2);
+    return { configured: true, connected: false };
+  }
   const H = { Authorization: 'Bearer ' + at };
   const grantedScope = (t && t.scope) || '';
   try {
     // /me/player is authoritative but returns 204 when no device is "active"
     // in the API's view - which happens even while playing on some devices.
-    // Fall back to /me/player/currently-playing, which reports across devices.
+    // The cross-device fallback below doubles our request count, so it is only
+    // asked periodically (see idleUntil).
     let r = await fetch('https://api.spotify.com/v1/me/player', { headers: H });
-    if (r.ok && r.status !== 204) return parsePlayback(await r.json());
-    if (r.status !== 204 && !r.ok)
-      return { configured: true, connected: true, error: r.status, errorMsg: await errBody(r), grantedScope };
+    if (r.status === 429) return cooling(note429(r));
+    if (r.ok && r.status !== 204) {
+      idleUntil = 0;
+      lastGood = parsePlayback(await r.json());
+      return lastGood;
+    }
+    if (r.status !== 204 && !r.ok) {
+      lastGood = { configured: true, connected: true, error: r.status,
+                   errorMsg: await errBody(r), grantedScope };
+      return lastGood;
+    }
+    if (Date.now() < idleUntil) {
+      return { configured: true, connected: true, active: false, playing: false, grantedScope };
+    }
     const r2 = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: H });
-    if (r2.status === 204) return { configured: true, connected: true, active: false, playing: false, grantedScope };
-    if (!r2.ok)
-      return { configured: true, connected: true, error: r2.status, errorMsg: await errBody(r2), grantedScope };
+    if (r2.status === 429) return cooling(note429(r2));
+    if (r2.status === 204) {
+      idleUntil = Date.now() + IDLE_RECHECK_MS;
+      lastGood = { configured: true, connected: true, active: false, playing: false, grantedScope };
+      return lastGood;
+    }
+    if (!r2.ok) {
+      lastGood = { configured: true, connected: true, error: r2.status,
+                   errorMsg: await errBody(r2), grantedScope };
+      return lastGood;
+    }
     const j2 = await r2.json();
-    if (!j2 || !j2.item) return { configured: true, connected: true, active: false, playing: false, grantedScope };
-    return parsePlayback(j2);
+    if (!j2 || !j2.item) {
+      idleUntil = Date.now() + IDLE_RECHECK_MS;
+      lastGood = { configured: true, connected: true, active: false, playing: false, grantedScope };
+      return lastGood;
+    }
+    idleUntil = 0;
+    lastGood = parsePlayback(j2);
+    return lastGood;
   } catch (e) { return { configured: true, connected: true, error: String(e.message), grantedScope }; }
 }
 
@@ -181,8 +251,13 @@ async function control(action) {
   try {
     const r = await fetch('https://api.spotify.com/v1' + m[1],
                           { method: m[0], headers: { Authorization: 'Bearer ' + at } });
+    if (r.status === 429) {
+      const wait = note429(r);
+      return { ok: false, error: 'Spotify rate limit - retry in ' + Math.round(wait) + 's' };
+    }
     // 404 = no active device; surface a friendly hint for the UI
     if (r.status === 404) return { ok: false, error: 'no active Spotify device - start playback once on any device' };
+    idleUntil = 0;      // a transport action changes state
     return { ok: r.ok || r.status === 204, status: r.status };
   } catch (e) { return { ok: false, error: String(e.message) }; }
 }

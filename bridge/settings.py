@@ -10,7 +10,7 @@ import socket
 import config as cortana_config          # loads .env; source of ROOT and API keys
                                          # (bridge/__init__.py put it on the path)
 
-BRIDGE_VERSION = "1.3.0"
+BRIDGE_VERSION = "1.4.0"
 
 PORT = int(os.getenv("BRIDGE_PORT", "8765"))
 BIND = os.getenv("BRIDGE_BIND", "0.0.0.0")

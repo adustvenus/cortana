@@ -94,3 +94,11 @@ both work; exposure beyond that is not part of the security model.
   self-heals.
 - **Trust the socket, not the payload.** The adb-install target comes from the
   request's peer address, so a paired phone can only ever aim it at itself.
+- **One quota, two processes.** This bridge and the dashboard's Electron shell
+  poll Spotify for the SAME account. They share a cool-off file
+  (`Dashboard/app/spotify_backoff.json`): a 429 seen by either silences both
+  for exactly the `Retry-After` Spotify asks for, and each side serves its last
+  good reading meanwhile instead of blanking the UI. Poll intervals are
+  adaptive (fast while playing, slow when idle) and the cross-device
+  `currently-playing` fallback is remembered rather than re-asked every poll.
+  Combined steady-state cost is a few requests a minute, not ~55.

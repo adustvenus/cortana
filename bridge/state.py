@@ -135,7 +135,7 @@ def build():
         "cortana": cortana_state(),
         "calendar": util.cached("cal", 15, calendar),
         "git": git_state(),
-        "spotify": util.cached("spotify", 8, spotify_link.state),
+        "spotify": util.cached("spotify", 20, spotify_link.state),   # 20s: two pollers share one Spotify quota
         "board": _board["data"],
         "boardTs": _board["ts"],
         "devices": pairing.devices(hub.online_idents()),

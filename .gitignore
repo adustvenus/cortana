@@ -49,3 +49,6 @@ mobile/local.properties
 
 # Last working wireless-adb address (per-machine)
 .adb_target
+
+# Shared Spotify rate-limit cool-off (per-machine runtime state)
+Dashboard/app/spotify_backoff.json

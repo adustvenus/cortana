@@ -1020,8 +1020,25 @@ class Component extends DCLogic {
       } catch (e) {}
     };
     pollSpotify();
-    this._spotifyPoll = setInterval(pollSpotify, 3000);
     this._pollSpotify = pollSpotify;
+    // Adaptive interval - a flat 3s poll was half of what earned a 429
+    // QUOTA_EXCEEDED (this page and the bridge both hit the same account).
+    // Fast enough to feel live while playing, near-silent when nothing is.
+    const spotifyDelay = () => {
+      const sp = this.state.spotify;
+      if (sp && sp.rateLimited) return Math.max(10000, (sp.retryIn || 30) * 1000);
+      if (sp && sp.playing) return 10000;      // progress bar still moves
+      if (sp && sp.connected) return 30000;    // idle/paused: rarely changes
+      return 60000;                            // not connected: barely ask
+    };
+    const scheduleSpotify = () => {
+      clearTimeout(this._spotifyPoll);
+      this._spotifyPoll = setTimeout(async () => {
+        await pollSpotify();
+        scheduleSpotify();
+      }, spotifyDelay());
+    };
+    scheduleSpotify();
 
     // ── Auto-remove completed tasks 1h after they were checked off ──
     this._taskReap = setInterval(() => {
@@ -1440,7 +1457,7 @@ class Component extends DCLogic {
 
   componentWillUnmount() {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
-    clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearInterval(this._spotifyPoll);
+    clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearTimeout(this._spotifyPoll);
     clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
     cancelAnimationFrame(this._aiRaf);
@@ -2203,11 +2220,15 @@ class Component extends DCLogic {
           // Offer Connect when not logged in, or on an auth error reconnecting
           // could clear (401 expired / 403 scope). A 403 is often the app's
           // Development-Mode allowlist instead - the prompt text says so.
-          spShowConnect: bridged && configured && (!connected || (sp && (sp.error === 401 || sp.error === 403))),
-          spBadge: !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE'
+          spShowConnect: bridged && configured && !(sp && sp.rateLimited)
+            && (!connected || (sp && (sp.error === 401 || sp.error === 403))),
+          spBadge: (sp && sp.rateLimited) ? ('RATE LIMITED · ' + (sp.retryIn || 30) + 'S')
+            : !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE'
             : (sp && sp.error) ? ('ERR ' + sp.error) : active ? 'SPOTIFY' : 'IDLE',
           spDotColor: (bridged && connected && !(sp && sp.error)) ? '#1db954' : 'rgba(var(--text-rgb),.4)',
           spPromptTxt: !bridged ? 'open in the Dusk app for Spotify'
+            : (sp && sp.rateLimited) ? ('Spotify is rate-limiting us (429). Backing off '
+                + (sp.retryIn || 30) + 's, then resuming automatically - nothing to fix.')
             : !configured ? 'add your Client ID in Dashboard/app/spotify.json, then restart'
             : !connected ? 'connect your Spotify account'
             : (sp && sp.error === 401) ? 'Spotify session expired — click Connect Spotify again'

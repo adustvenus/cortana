@@ -94,6 +94,14 @@ and is the dashboard end of the phone link:
 
 If it shows BRIDGE OFFLINE: `systemctl --user start cortana-bridge`.
 
+## Spotify rate limiting
+
+Spotify limits requests per rolling 30s window, and TWO processes poll the same
+account (this app and the bridge). If you see `RATE LIMITED · Ns` on the Music
+module, nothing is broken: both sides share a cool-off file, honour Spotify's
+`Retry-After`, keep showing the last known track, and resume on their own.
+Polling is adaptive - ~10s while playing, ~30s idle, ~60s when disconnected.
+
 ## Editing the board
 
 Ctrl-E toggles edit mode. Each module gets: drag to move, **◢** (bottom-right)
