@@ -113,6 +113,41 @@ The engine refuses to commit a layout where modules overlap (toast: BLOCKED),
 and a saved layout that somehow contains overlaps self-heals on load —
 overlappers are relocated to free space rather than left stacked.
 
+## YOUTUBE module — why it needs a Referer
+
+The shell loads the board with `loadFile()`, so the page origin is `file://`
+and the browser sends **no Referer at all**. YouTube's embedded player builds
+its configuration from that header, and without it refuses to start:
+
+| symptom | meaning |
+|---|---|
+| `Video player configuration error (153)` | no Referer reached YouTube |
+| `error 152` | a Referer arrived but was rejected (e.g. one claiming to be `youtube.com` itself) |
+| `log_event ... 403` | an `Origin` header was added to the player's own XHRs |
+| `Refused to display ... X-Frame-Options: sameorigin` | not a framing problem — the stored id was malformed and resolved to a `youtube.com/watch` page |
+
+`youtubeReferer()` in `app/main.js` supplies `Referer: http://localhost/` and is
+deliberately narrow. It matches only `youtube.com` / `youtube-nocookie.com`, and
+only `resourceType === 'subFrame'` — the iframe document. Three rules, each
+learned the hard way:
+
+- **Never send `Origin`.** A document navigation does not send one; inventing it
+  fails CORS on the player's API calls (that is the `log_event` 403).
+- **Never match `googlevideo.com`.** The video stream comes from there; rewriting
+  its headers breaks playback itself.
+- **Never use `youtube.com` as the Referer value.** Self-referential, and rejected.
+
+The embed endpoint sets **no** `X-Frame-Options`, so framing from `file://` was
+always allowed. If you see that error, suspect the stored video id, not the origin.
+
+Ids are validated with `YT_ID` on read as well as write, so a bad value in
+`dusk.youtube.v1` falls back to the empty placeholder instead of producing a
+broken frame. The iframe is mounted imperatively by `_syncYoutube`; its mount
+div must stay **empty in the template**, or React reconciles the subtree and
+strips the iframe on every render.
+
+Debugging any of this: **F12 / Ctrl+Shift+I** opens DevTools.
+
 ## Sleep mode (burn-in guard)
 
 Click the AI orb → **SLEEP SCREEN**: the display turns off while the machine
