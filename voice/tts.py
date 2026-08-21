@@ -7,6 +7,7 @@ import tempfile
 import requests
 
 from config import ELEVENLABS_API_KEY, ELEVEN_VOICE_ID, OPENAI_API_KEY
+from voice.speakable import speakable
 
 
 def _play(path):
@@ -51,7 +52,9 @@ def _openai(text):
 
 
 def speak(text):
-    text = (text or "").strip()[:1500]
+    # Normalise BEFORE the cap and before any backend sees it, so ElevenLabs,
+    # OpenAI and the espeak fallback all read the same corrected text.
+    text = speakable(text).strip()[:1500]
     if not text:
         return
     try:
