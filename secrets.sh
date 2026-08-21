@@ -25,6 +25,10 @@ CONF="${XDG_CONFIG_HOME:-$HOME/.config}/cortana/secrets-repo"
 
 die() { echo "error: $*" >&2; exit 1; }
 
+RCPT_TMP=""
+cleanup() { [ -n "$RCPT_TMP" ] && rm -f "$RCPT_TMP"; return 0; }
+trap cleanup EXIT
+
 need_age() {
   command -v age >/dev/null || die "age is not installed.
   Debian/Ubuntu : sudo apt install age
@@ -86,7 +90,10 @@ cmd_push() {
   need_age
   sync_repo
   # Strip CR defensively for repos created before .gitattributes was pinned.
-  local rcpt="$CACHE/.recipients.lf"
+  # Kept outside $CACHE so a failure part-way through cannot leave it
+  # behind to be picked up by the next "git add -A".
+  local rcpt
+  rcpt="$(mktemp)"; RCPT_TMP="$rcpt"
   tr -d '\015' < "$CACHE/recipients.txt" > "$rcpt" 2>/dev/null || true
   [ -s "$rcpt" ] || die "recipients.txt is missing or empty in the secrets repo.
   Run './secrets.sh add-machine' on each box that must decrypt, then push again."
@@ -95,14 +102,13 @@ cmd_push() {
     if [ ! -s "$ROOT/$f" ]; then echo "skip   $f (not present here)"; continue; fi
     # Sealing an unfilled template is silent and only shows up later as a box
     # that will not start, so refuse it here where the cause is obvious.
-    if grep -q "PASTE_" "$ROOT/$f"; then
+    if grep -v '^[[:space:]]*#' "$ROOT/$f" | grep -q "PASTE_"; then
       die "$f still has PASTE_ placeholders. Fill in the real values first."
     fi
     age -R "$rcpt" -o "$CACHE/$f.age" "$ROOT/$f"
     echo "sealed $f -> $f.age"
     n=$((n + 1))
   done
-  rm -f "$rcpt"
   [ "$n" -gt 0 ] || die "nothing to push - none of ${FILES[*]} exist here."
   git -C "$CACHE" add -A
   if git -C "$CACHE" diff --cached --quiet; then echo "already up to date"; return; fi
