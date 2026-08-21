@@ -13,6 +13,7 @@ it reads .last_good and resets before cortana can speak.
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -220,16 +221,64 @@ def _write_diff_file(files):
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def _run(*args, timeout=120):
+    """(ok, combined output). Never raises - callers here are best-effort."""
+    try:
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True,
+                           text=True, timeout=timeout)
+        return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
+    except Exception as e:
+        return False, str(e)
+
+
+def _do_push(force):
+    cmd = ["push"]
+    if force:
+        cmd.append("--force-with-lease")
+    return _run(*cmd, "origin", "HEAD")
+
+
 def _push_backup(force=False):
-    """Best-effort offsite backup. Never blocks or raises.
+    """Best-effort offsite backup. Never blocks the caller and never raises.
+
+    Runs on a worker thread: a voice turn must not wait on the network.
+
+    A plain push loses to anything that reached the branch first, and CI
+    publishes the mobile APK straight to main, so losing the race is routine
+    rather than exceptional. This used to be fire-and-forget with both streams
+    sent to DEVNULL, which meant a rejected push vanished without a trace: the
+    commit stayed local, the next self-edit stacked on top of it, and the
+    divergence grew with nothing backed up anywhere. So: rebase onto the remote
+    and retry once, and say so in the log if it still fails.
 
     force=True uses --force-with-lease so a revert (which rewinds HEAD) can still
     update the mirror without a non-fast-forward rejection, while refusing to
-    clobber commits it hasn't seen.
+    clobber commits it hasn't seen. A revert deliberately rewinds, so that path
+    is never rebased - a rejected lease means someone else pushed, which is a
+    real conflict to report rather than paper over.
     """
-    cmd = ["git", "push"]
-    if force:
-        cmd.append("--force-with-lease")
-    cmd += ["origin", "HEAD"]
-    subprocess.Popen(cmd, cwd=ROOT,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def worker():
+        ok, out = _do_push(force)
+        if ok:
+            return
+        rejected = any(w in out.lower() for w in
+                       ("non-fast-forward", "fetch first", "rejected", "behind"))
+        if rejected and not force:
+            ok_b, branch = _run("rev-parse", "--abbrev-ref", "HEAD")
+            branch = branch.strip() if ok_b else "main"
+            ok_r, out_r = _run("pull", "--rebase", "origin", branch)
+            if not ok_r:
+                # Leave the checkout exactly as it was; a half-finished rebase
+                # would be far worse than an un-pushed commit.
+                _run("rebase", "--abort")
+                print("[selfedit] push rejected and rebase failed - commit is "
+                      "LOCAL ONLY:", out_r.strip()[:200], flush=True)
+                return
+            ok, out = _do_push(force)
+        if ok:
+            print("[selfedit] pushed after rebasing onto origin", flush=True)
+        else:
+            print("[selfedit] push FAILED - commit is LOCAL ONLY:",
+                  out.strip()[:200], flush=True)
+
+    threading.Thread(target=worker, daemon=True).start()
