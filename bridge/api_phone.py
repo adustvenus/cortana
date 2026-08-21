@@ -10,7 +10,7 @@ from aiohttp import web
 
 from bridge import (auth, brain, hub, pairing, spotify_link, state, updates,
                     util, voice)
-from bridge.settings import BRIDGE_VERSION, HOST_NAME, WS_HEARTBEAT
+from bridge.settings import BRIDGE_VERSION, HOST_NAME, WS_HEARTBEAT, log
 
 
 async def pair(request):
@@ -98,6 +98,13 @@ async def task_op(request):
                               "dashboardOpen": state.board_is_fresh()})
 
 
+def _unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def _rescue_reply(fut):
     """Deliver a reply whose phone disconnected mid-turn, instead of dropping it."""
     try:
@@ -105,6 +112,7 @@ def _rescue_reply(fut):
     except Exception:
         return
     reply = str(result.get("reply", "")).strip()
+    log(f"phone left mid-turn; rescuing reply ({len(reply)} chars)")
     if reply:
         hub.announce(reply)
 
@@ -142,17 +150,18 @@ async def converse(request):
     # reply is announced instead - which the hello replay then delivers when the
     # app comes back.
     turn = asyncio.ensure_future(asyncio.to_thread(brain.run_turn, wav_path, text))
+    # The wav has to outlive the REQUEST, not just the await. On a disconnect
+    # the shielded turn keeps running and has usually not reached STT yet, so
+    # deleting the file in a finally: pulled it out from under the turn - it
+    # then failed on a missing file and there was no reply left to rescue.
+    # Clean up when the TURN ends.
+    if wav_path:
+        turn.add_done_callback(lambda _f, p=wav_path: _unlink(p))
     try:
         result = await asyncio.shield(turn)
     except asyncio.CancelledError:
         turn.add_done_callback(_rescue_reply)
         raise
-    finally:
-        if wav_path:
-            try:
-                os.unlink(wav_path)
-            except OSError:
-                pass
     return web.json_response(result, status=200 if "error" not in result else 503)
 
 

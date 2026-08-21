@@ -11,6 +11,8 @@ import itertools
 import json
 import time
 
+from bridge.settings import log
+
 _sockets = {}          # ws -> device ident (token hash), for live presence
 _loop = None
 
@@ -95,6 +97,8 @@ def announce(text, **_kwargs):
     item = {"type": "announce", "id": next(_announce_seq),
             "ts": time.time(), "text": text[:500]}
     _announces.append(item)
+    # Delivery has been guessed at for several rounds. Make it visible.
+    log(f"announce id={item['id']} -> {len(_sockets)} socket(s): {text[:60]}")
     if _loop is None:
         return          # no server loop yet; it is still recorded for replay
     msg = json.dumps(item)
