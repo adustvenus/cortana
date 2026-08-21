@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import config
+import audio_ducking
 import memory
 import orchestrator
 import tasks
@@ -159,10 +160,12 @@ def voice_loop():
     def on_press(key):
         if key == keyboard.Key.f9:
             state["ptt"] = True
+            audio_ducking.engage("ptt")
 
     def on_release(key):
         if key == keyboard.Key.f9:
             state["ptt"] = False
+            audio_ducking.release("ptt")
         if key == keyboard.Key.f10:
             # No mic -> wake/open would just error-spin. Refuse the swap, stay
             # in PTT, and say why instead of silently doing nothing.
@@ -248,20 +251,26 @@ def voice_loop():
                 else:
                     time.sleep(0.05)
             else:
+                def _on_speech_start():
+                    state["capturing"] = True
+                    audio_ducking.engage("listening")
                 try:
-                    p = mic.listen_segment(
-                        on_speech_start=lambda: state.__setitem__("capturing", True),
-                        should_abort=abort)
+                    p = mic.listen_segment(on_speech_start=_on_speech_start,
+                                           should_abort=abort)
                 except mic.MicUnavailable:
                     # Mic vanished while in wake/open: drop to PTT (the only
                     # mode that doesn't need a always-on mic) and say so once.
+                    # Release too: speech may have started before it vanished,
+                    # and this path skips the release below via `continue`.
                     state["capturing"] = False
+                    audio_ducking.release("listening")
                     state["mode"] = "ptt"
                     hud_state.set_mode("ptt")
                     speech.say("I lost the input device - dropping to push to "
                                "talk. Check the microphone.")
                     continue
                 state["capturing"] = False
+                audio_ducking.release("listening")
                 if p:
                     _enqueue(p)
         except Exception as e:
@@ -270,6 +279,7 @@ def voice_loop():
             # every in-flight background task with it. Log, settle, retry.
             print("[main] mic error, recovering:", e)
             state["capturing"] = False
+            audio_ducking.release("listening")
             time.sleep(0.5)
     speech.flush(timeout=15)
     sys.exit(state["exit"])

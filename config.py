@@ -30,6 +30,11 @@ MIC_DEVICE = int(MIC_DEVICE) if MIC_DEVICE not in (None, "") else None
 MIC_NAME = os.getenv("MIC_NAME", "")  # substring match, e.g. "USB" - overrides MIC_DEVICE, survives index shuffling
 VAD_THRESHOLD = int(os.getenv("VAD_THRESHOLD", "350"))  # raise if it triggers on room noise
 
+# --- Audio ducking (lower Spotify while she's being talked to / talking) ---
+DUCK_ENABLED = os.getenv("DUCK_ENABLED", "1") not in ("0", "false", "False")
+DUCK_SINK_MATCH = os.getenv("DUCK_SINK_MATCH", "spotifyd")  # pactl application.name substring
+DUCK_FACTOR = float(os.getenv("DUCK_FACTOR", "0.25"))       # fraction of current volume while ducked
+
 # --- Budget ---
 BUDGET_MONTHLY_USD = float(os.getenv("BUDGET_MONTHLY_USD", "50"))
 # $/MTok (input, output). Update if Anthropic pricing changes.

@@ -13,6 +13,7 @@ import queue
 import threading
 import time
 
+import audio_ducking
 import hud_state
 
 _q = queue.Queue()
@@ -71,6 +72,7 @@ def flush(timeout=30):
 def _speak(text):
     _speaking.set()
     hud_state.set_state("speaking")
+    audio_ducking.engage("speaking")
     try:
         if _voice:
             from voice import tts
@@ -78,6 +80,7 @@ def _speak(text):
         else:
             print("CORTANA:", text)
     finally:
+        audio_ducking.release("speaking")
         _speaking.clear()
         if _q.empty():
             hud_state.set_state("idle")
