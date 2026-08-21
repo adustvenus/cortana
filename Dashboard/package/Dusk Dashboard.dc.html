@@ -1574,6 +1574,9 @@ class Component extends DCLogic {
         f = document.createElement('iframe');
         f.src = src;
         f.allow = 'encrypted-media;picture-in-picture';
+        // Pairs with the Referer the shell injects for YouTube hosts; the
+        // player refuses to configure itself without referrer information.
+        f.referrerPolicy = 'strict-origin-when-cross-origin';
         f.allowFullscreen = true;
         f.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none';
         el.appendChild(f);

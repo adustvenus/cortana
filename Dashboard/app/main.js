@@ -12,7 +12,7 @@
  * guard). Real quit: tray menu, or right-click the bubble.
  */
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage,
-        powerMonitor, powerSaveBlocker } = require('electron');
+        powerMonitor, powerSaveBlocker, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -168,6 +168,24 @@ function placeForDisplays() {
   else toBubble();
 }
 
+// The YOUTUBE module's player builds its configuration from the Referer of the
+// embedding page. This app is loaded with loadFile(), so the page origin is
+// file:// and no Referer is sent at all - the player then aborts with "Video
+// player configuration error (153)" and shows an empty box. Supplying one for
+// YouTube's own hosts is enough to make it work.
+//
+// Deliberately scoped to those hosts: this is the only place the dashboard
+// talks to them, and a blanket header rewrite would leak a false Referer to
+// every request the app makes.
+function youtubeReferer() {
+  const urls = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*',
+                '*://*.ytimg.com/*', '*://*.googlevideo.com/*'];
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls }, (details, cb) => {
+    details.requestHeaders['Referer'] = 'https://www.youtube.com/';
+    cb({ requestHeaders: details.requestHeaders });
+  });
+}
+
 function createWindows() {
   mainWin = new BrowserWindow({
     show: false,
@@ -273,6 +291,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showMain());
 
   app.whenReady().then(() => {
+    youtubeReferer();
     createWindows();
     createTray();
     placeForDisplays();
