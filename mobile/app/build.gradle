@@ -20,22 +20,37 @@ android {
 
     signingConfigs {
         release {
-            // Persistent keystore committed at mobile/keystore/ so every CI
-            // build carries the SAME signature - otherwise Android refuses to
-            // install an update over the old version. Override the password
-            // with CORTANA_KEYSTORE_PASS if you rotate the keystore.
-            storeFile file('../keystore/cortana-release.p12')
-            storeType 'PKCS12'
-            storePassword System.getenv('CORTANA_KEYSTORE_PASS') ?: '***PURGED-KEY-ROTATED***'
-            keyAlias 'cortana'
-            keyPassword System.getenv('CORTANA_KEYSTORE_PASS') ?: '***PURGED-KEY-ROTATED***'
+            // The keystore is a SECRET and is deliberately NOT committed. The
+            // previous one was, together with its password, on a public repo -
+            // anyone could sign an update this app would silently install. Both
+            // have been rotated; the old key is dead.
+            //
+            // CI writes the keystore from the CORTANA_KEYSTORE_B64 repo secret.
+            // For a local release build, put your copy at
+            // mobile/keystore/cortana-release.p12 and export
+            // CORTANA_KEYSTORE_PASS. Every build must use the SAME keystore -
+            // Android refuses an update signed with a different key.
+            def ksPass = System.getenv('CORTANA_KEYSTORE_PASS')
+            def ks = file('../keystore/cortana-release.p12')
+            if (ks.exists() && ksPass) {
+                storeFile ks
+                storeType 'PKCS12'
+                storePassword ksPass
+                keyAlias 'cortana'
+                keyPassword ksPass
+            }
         }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            // Left unsigned when the keystore/password are absent (a fork, or a
+            // debug-only checkout) instead of breaking every Gradle task. CI
+            // asserts the secret is present before it builds.
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

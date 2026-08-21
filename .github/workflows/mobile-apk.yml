@@ -6,10 +6,11 @@
 # paired phone gets the "update available" pop-up. To ship an update: bump
 # versionCode + versionName in mobile/app/build.gradle and push to main.
 #
-# Signing uses the committed keystore (mobile/keystore/) so every build has
-# the SAME signature - Android refuses to install an update signed differently.
-# Set the CORTANA_KEYSTORE_PASS repo secret if you rotate the keystore to a
-# non-default password.
+# Signing needs TWO repo secrets - the keystore is never committed:
+#   CORTANA_KEYSTORE_B64   base64 of mobile/keystore/cortana-release.p12
+#   CORTANA_KEYSTORE_PASS  its password
+# Every build must use the SAME keystore - Android refuses to install an update
+# signed differently. Rotating it means users reinstall the app.
 name: mobile-apk
 
 on:
@@ -42,10 +43,30 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Restore signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.CORTANA_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::CORTANA_KEYSTORE_B64 is not set - cannot sign the release APK."
+            exit 1
+          fi
+          mkdir -p mobile/keystore
+          printf '%s' "$KEYSTORE_B64" | base64 -d > mobile/keystore/cortana-release.p12
+
       - name: Build signed release APK
         env:
           CORTANA_KEYSTORE_PASS: ${{ secrets.CORTANA_KEYSTORE_PASS }}
-        run: gradle -p mobile assembleRelease --no-daemon
+        run: |
+          if [ -z "$CORTANA_KEYSTORE_PASS" ]; then
+            echo "::error::CORTANA_KEYSTORE_PASS is not set - the APK would be unsigned."
+            exit 1
+          fi
+          gradle -p mobile assembleRelease --no-daemon
+
+      - name: Shred the keystore
+        if: always()
+        run: rm -f mobile/keystore/cortana-release.p12
 
       - name: Read app version
         id: ver

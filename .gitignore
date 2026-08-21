@@ -52,3 +52,8 @@ mobile/local.properties
 
 # Shared Spotify rate-limit cool-off (per-machine runtime state)
 Dashboard/app/spotify_backoff.json
+
+# Android release signing key. NEVER commit - CI reads it from the
+# CORTANA_KEYSTORE_B64 repo secret. (An earlier one leaked here publicly.)
+mobile/keystore/*.p12
+mobile/keystore/*.jks
