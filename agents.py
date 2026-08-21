@@ -47,6 +47,14 @@ TOOL_DEFS = {
                         "interval": {"type": "string"}}, ["symbol"]),
     "video": _schema("video", "Run ffmpeg/ffprobe. Pass args after program name, paths relative to workspace.",
                      {"args": {"type": "string"}}, ["args"]),
+    "continue_work": _schema("continue_work",
+                             "Resume work that stopped at its step limit, with the full "
+                             "transcript intact. Use when the user asks you to continue, "
+                             "keep going, or finish something you ran out of steps on - "
+                             "never redo the task from scratch instead. 'which' is 'lead' "
+                             "for your own work, or the agent name (e.g. 'dev').",
+                             {"which": {"type": "string"},
+                              "nudge": {"type": "string"}}, []),
     "remember": _schema("remember", "Save a permanent fact/preference about the user.",
                         {"key": {"type": "string"}, "value": {"type": "string"}},
                         ["key", "value"]),
@@ -126,7 +134,8 @@ AGENTS = {
     },
 }
 
-LEAD_TOOL_NAMES = ["delegate", "task_status", "cancel_task", "remember", "shell",
+LEAD_TOOL_NAMES = ["delegate", "task_status", "cancel_task", "continue_work",
+                   "remember", "shell",
                    "read_file", "write_file", "list_files", "screenshot",
                    "self_update", "confirm_pending", "cancel_pending",
                    "revert_change", "restart", "shutdown"]
@@ -172,12 +181,13 @@ def lead_system():
             f"{_SPOKEN}")
 
 
-def dispatch(name, args, run_agent=None, cancel=None):
+def dispatch(name, args, run_agent=None, cancel=None, resume=None):
     """Execute a tool. run_agent injected by orchestrator for 'delegate'.
     cancel: the caller's (lead's) cancel token - forwarded only to a SYNCHRONOUS
     delegate, so interrupting the current voice turn also stops it. Background
     delegates get their own independent cancel token from tasks.start and must
-    keep running after this turn ends - that one is untouched here."""
+    keep running after this turn ends - that one is untouched here.
+    resume: injected by orchestrator for 'continue_work'."""
     if name == "delegate":
         agent = args.get("agent", "")
         if agent not in AGENTS:
@@ -188,6 +198,10 @@ def dispatch(name, args, run_agent=None, cancel=None):
             return tasks.start(agent, task_text,
                                runner=lambda a, t, c: run_agent(a, t, cancel=c))
         return run_agent(agent, task_text, cancel=cancel)
+    if name == "continue_work":
+        if resume is None:
+            return "continue_work is unavailable in this context."
+        return resume(args.get("which") or "lead", args.get("nudge", ""), cancel)
     if name == "task_status":
         import tasks
         return tasks.status_summary(args.get("id"))

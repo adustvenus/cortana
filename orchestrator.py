@@ -23,9 +23,19 @@ _turn = {"tool_calls": 0, "sync_work": False}
 
 _BG_ONLY_TOOLS = {"task_status", "cancel_task", "remember"}
 
+# Transcripts of loops that ran out of steps, keyed by who was running ("lead",
+# or the subagent name). Hitting the ceiling used to just discard `messages` -
+# the entire tool-call transcript - so a follow-up "keep going" restarted from
+# twelve lines of plain text out of SQLite and redid work that was already
+# done. Keeping it lets continue_work resume mid-task with full context.
+# Bounded because these hold whole conversations.
+_stalled = {}
+STALL_MAX = 6
+
 # Named so callers can detect these outcomes instead of matching prose.
 CANCELLED_MSG = "Cancelled."
-STEP_LIMIT_MSG = "I hit my step limit on that task. Ask me to continue if you want more."
+STEP_LIMIT_MSG = ("I hit my step limit on that task. The work so far is parked, "
+                  "not lost - say continue and I pick up where I stopped.")
 
 
 def restart_requested():
@@ -48,7 +58,7 @@ def _effort_for(model):
 
 
 def _loop(model, system, messages, tools, max_iters=15, agent_label="",
-          is_lead=False, cancel=None, effort=None):
+          is_lead=False, cancel=None, effort=None, stall_key=None):
     # Adaptive thinking, resolved once per loop - {} for models that reject it.
     reasoning = reasoning_kwargs(model, effort or _effort_for(model))
     for _ in range(max_iters):
@@ -94,7 +104,8 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label="",
                 hud_state.set_state("working", agent=agent_label or b.name)
                 hud_state.think(f"{b.name}: {str(b.input)[:80]}")
             try:
-                out = agents.dispatch(b.name, b.input, run_agent=run_agent, cancel=cancel)
+                out = agents.dispatch(b.name, b.input, run_agent=run_agent,
+                                      cancel=cancel, resume=resume_stalled)
             except RestartRequested:
                 _restart_flag["do"] = True
                 out = "Restarting now to load changes."
@@ -108,7 +119,43 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label="",
             results.append({"type": "tool_result", "tool_use_id": b.id,
                             "content": content})
         messages.append({"role": "user", "content": results})
+    # Out of steps, not out of work. Park the transcript so it can be resumed
+    # instead of thrown away.
+    if stall_key:
+        if len(_stalled) >= STALL_MAX and stall_key not in _stalled:
+            _stalled.pop(next(iter(_stalled)))
+        _stalled[stall_key] = {"model": model, "system": system, "tools": tools,
+                               "messages": messages, "max_iters": max_iters,
+                               "agent_label": agent_label, "is_lead": is_lead,
+                               "effort": effort}
     return STEP_LIMIT_MSG
+
+
+def stalled_keys():
+    """Who currently has parked, resumable work."""
+    return sorted(_stalled)
+
+
+def resume_stalled(key="lead", nudge="", cancel=None):
+    """Continue a loop that ran out of steps, with its full tool transcript.
+
+    Popped before running: if this attempt stalls again _loop re-parks it, and
+    if it raises we do not leave a stale transcript to be resumed twice.
+    """
+    st = _stalled.pop(key, None)
+    if not st:
+        have = ", ".join(stalled_keys()) or "nothing"
+        return f"No parked work for '{key}'. Currently parked: {have}."
+    msgs = st["messages"]
+    msgs.append({"role": "user", "content":
+                 (nudge or "Continue from exactly where you stopped. Do not "
+                           "redo completed steps; finish the remaining work.")})
+    hud_state.set_state("working", agent=st["agent_label"] or "continuing")
+    hud_state.think(f"resuming parked work: {key}")
+    return _loop(st["model"], st["system"], msgs, st["tools"],
+                 max_iters=st["max_iters"], agent_label=st["agent_label"],
+                 is_lead=st["is_lead"], cancel=cancel, effort=st["effort"],
+                 stall_key=key)
 
 
 def run_agent(name, task, cancel=None):
@@ -123,7 +170,7 @@ def run_agent(name, task, cancel=None):
     return _loop(a["model"], a["system"],
                  [{"role": "user", "content": task}], tools, agent_label=name,
                  max_iters=a.get("max_iters", 15), cancel=cancel,
-                 effort=a.get("effort"))
+                 effort=a.get("effort"), stall_key=name)
 
 
 def _critique(user_text, answer):
@@ -164,7 +211,8 @@ def handle(user_text, max_refine=1, cancel=None):
     hud_state.think("understanding the request")
     try:
         reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
-                      is_lead=True, cancel=cancel, effort=EFFORT_LEAD)
+                      is_lead=True, cancel=cancel, effort=EFFORT_LEAD,
+                      stall_key="lead")
         if reply == CANCELLED_MSG:
             memory.log_turn("assistant", "(interrupted by a newer request)")
             return None
@@ -190,7 +238,8 @@ def handle(user_text, max_refine=1, cancel=None):
                 msgs.append({"role": "user",
                              "content": f"Not complete yet. Fix these gaps, then give the full result:\n{gaps}"})
                 reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
-                              is_lead=True, cancel=cancel, effort=EFFORT_LEAD)
+                              is_lead=True, cancel=cancel, effort=EFFORT_LEAD,
+                              stall_key="lead")
                 if reply == CANCELLED_MSG:
                     memory.log_turn("assistant", "(interrupted by a newer request)")
                     return None
