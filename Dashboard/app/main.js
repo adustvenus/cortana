@@ -178,15 +178,23 @@ function placeForDisplays() {
 // talks to them, and a blanket header rewrite would leak a false Referer to
 // every request the app makes.
 function youtubeReferer() {
-  const urls = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*',
-                '*://*.ytimg.com/*', '*://*.googlevideo.com/*'];
+  const urls = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'];
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls }, (details, cb) => {
-    // NOT youtube.com: a Referer claiming the request originates from YouTube
-    // itself is self-referential and gets rejected (that swapped error 153,
-    // "no referrer", for 152). localhost is the ordinary local-development
-    // case and is accepted.
-    details.requestHeaders['Referer'] = 'http://localhost/';
-    details.requestHeaders['Origin'] = 'http://localhost';
+    // ONLY the iframe document ('subFrame'). That single request is what the
+    // player reads to build its configuration, and it is the only one missing
+    // a Referer because the embedding page is file://.
+    //
+    // Everything else must pass through untouched. Rewriting headers on the
+    // player's own XHRs sends a cross-origin Origin it never intended and the
+    // server answers 403 - that is what broke log_event. The same rewrite on
+    // googlevideo.com would break the actual video stream, so those hosts are
+    // not matched at all now.
+    //
+    // Referer only, never Origin: a document navigation does not send Origin,
+    // and inventing one is what triggered the CORS rejection.
+    if (details.resourceType === 'subFrame') {
+      details.requestHeaders['Referer'] = 'http://localhost/';
+    }
     cb({ requestHeaders: details.requestHeaders });
   });
 }
