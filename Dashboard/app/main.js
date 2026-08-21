@@ -218,6 +218,17 @@ function createWindows() {
     w.webContents.on('will-navigate', (e, url) => {
       if (!url.startsWith('file://')) e.preventDefault();
     });
+    // F12 / Ctrl+Shift+I. Without this there is no way to read a console
+    // error out of the running dashboard: a module can fail silently and
+    // the only recourse is guessing. Opening devtools changes nothing else.
+    w.webContents.on('before-input-event', (e, input) => {
+      if (input.type !== 'keyDown') return;
+      const k = (input.key || '').toLowerCase();
+      if (k === 'f12' || (input.control && input.shift && k === 'i')) {
+        w.webContents.toggleDevTools();
+        e.preventDefault();
+      }
+    });
   }
 }
 
