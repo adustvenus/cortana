@@ -822,6 +822,9 @@ function extractThemeFromImage(img) {
   ctx.drawImage(img, 0, 0, 48, 48);
   const d = ctx.getImageData(0, 0, 48, 48).data;
   const bins = new Array(18).fill(0);
+  const satSum = new Array(18).fill(0);
+  const satN = new Array(18).fill(0);
+  let kept = 0;
   for (let i = 0; i < d.length; i += 4) {
     const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), v = mx, sat = mx === 0 ? 0 : (mx - mn) / mx;
@@ -831,17 +834,32 @@ function extractThemeFromImage(img) {
     else if (mx === r) hDeg = (60 * ((g - b) / (mx - mn)) + 360) % 360;
     else if (mx === g) hDeg = 60 * ((b - r) / (mx - mn)) + 120;
     else hDeg = 60 * ((r - g) / (mx - mn)) + 240;
-    bins[Math.floor(hDeg / 20) % 18] += sat * v;
+    const bi = Math.floor(hDeg / 20) % 18;
+    bins[bi] += sat * v;
+    satSum[bi] += sat;
+    satN[bi] += 1;
+    kept++;
   }
+  // Nothing colourful survived the filter - a greyscale or near-white image.
+  // Returning here matters: bin 0 is red, so falling through produced a pink
+  // palette that looked exactly like a stale one that had failed to update.
+  if (!kept) return null;
   let best = 0;
   for (let i = 1; i < 18; i++) if (bins[i] > bins[best]) best = i;
   const H = best * 20 + 10;
+  // Saturation and lightness follow the image, clamped to stay legible on all
+  // three surfaces. They used to be fixed at 72/72, which collapsed every
+  // image into the same pastel family: a vivid red and a soft pink came out
+  // 34 apart in total RGB distance, so a new background looked unchanged.
+  const meanSat = satSum[best] / Math.max(1, satN[best]);
+  const S = Math.round(Math.max(45, Math.min(95, meanSat * 118)));
+  const L = Math.round(Math.max(58, Math.min(76, 82 - meanSat * 26)));
   return {
-    '--accent-rgb':  hsl2rgbStr(H, 72, 72),
-    '--accent2-rgb': hsl2rgbStr((H + 330) % 360, 62, 66),
-    '--accent3-rgb': hsl2rgbStr((H + 45) % 360, 48, 78),
-    '--peach-rgb':   hsl2rgbStr((H + 18) % 360, 85, 83),
-    '--orb-rgb':     hsl2rgbStr((H + 70) % 360, 32, 58)
+    '--accent-rgb':  hsl2rgbStr(H, S, L),
+    '--accent2-rgb': hsl2rgbStr((H + 330) % 360, Math.max(40, S - 12), Math.min(78, L + 4)),
+    '--accent3-rgb': hsl2rgbStr((H + 45) % 360, Math.max(35, S - 24), Math.min(84, L + 10)),
+    '--peach-rgb':   hsl2rgbStr((H + 18) % 360, Math.min(96, S + 14), Math.min(88, L + 12)),
+    '--orb-rgb':     hsl2rgbStr((H + 70) % 360, Math.max(28, S - 40), Math.max(50, L - 16))
   };
 }
 function applyThemeVars(vars) {
@@ -1786,12 +1804,17 @@ class Component extends DCLogic {
       const img = new Image();
       img.onload = () => {
         let vars = null;
-        try { vars = extractThemeFromImage(img); } catch (e) {}
+        // Was a bare catch {}: a failed extraction fell back to the default
+        // palette while still reporting success, which is indistinguishable
+        // from "the colours did not update".
+        try { vars = extractThemeFromImage(img); }
+        catch (e) { console.warn('[dusk] palette extraction failed', e); }
         this.setState({ bgCustom: true, bgImg: rd.result, themeAuto: vars });
         this.applyTheme(vars);   // pinned colors survive the swap
         try {
           localStorage.setItem(LS_BG, JSON.stringify({ img: rd.result, vars }));
-          this.showToast('BACKGROUND + COLOR SCHEME UPDATED');
+          this.showToast(vars ? 'BACKGROUND + COLOR SCHEME UPDATED'
+                              : 'BACKGROUND SET — NO STRONG COLOR FOUND, PALETTE RESET');
         } catch (e) { this.showToast('BACKGROUND SET (TOO LARGE TO SAVE — WON\'T PERSIST)'); }
       };
       img.onerror = () => this.showToast('COULD NOT READ IMAGE');
