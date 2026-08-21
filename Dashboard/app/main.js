@@ -181,7 +181,12 @@ function youtubeReferer() {
   const urls = ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*',
                 '*://*.ytimg.com/*', '*://*.googlevideo.com/*'];
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls }, (details, cb) => {
-    details.requestHeaders['Referer'] = 'https://www.youtube.com/';
+    // NOT youtube.com: a Referer claiming the request originates from YouTube
+    // itself is self-referential and gets rejected (that swapped error 153,
+    // "no referrer", for 152). localhost is the ordinary local-development
+    // case and is accepted.
+    details.requestHeaders['Referer'] = 'http://localhost/';
+    details.requestHeaders['Origin'] = 'http://localhost';
     cb({ requestHeaders: details.requestHeaders });
   });
 }
