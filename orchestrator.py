@@ -2,8 +2,9 @@
 self-critique iteration + HUD state broadcasting."""
 import anthropic
 
-from config import (ANTHROPIC_API_KEY, BUDGET_MONTHLY_USD, MAX_TOKENS, MODEL_LEAD,
-                    MODEL_FAST, PRICES)
+from config import (ANTHROPIC_API_KEY, BUDGET_MONTHLY_USD, EFFORT_HEAVY, EFFORT_LEAD,
+                    MAX_TOKENS, MODEL_HEAVY, MODEL_LEAD, MODEL_FAST, PRICES,
+                    reasoning_kwargs)
 import agents
 from agents import RestartRequested, ShutdownRequested
 import memory
@@ -41,13 +42,21 @@ def _track(model, usage):
     memory.add_usage(model, usage.input_tokens, usage.output_tokens, cost)
 
 
+def _effort_for(model):
+    """Heavy tier thinks harder; the lead stays snappy because its turn is spoken."""
+    return EFFORT_HEAVY if model == MODEL_HEAVY else EFFORT_LEAD
+
+
 def _loop(model, system, messages, tools, max_iters=15, agent_label="",
-          is_lead=False, cancel=None):
+          is_lead=False, cancel=None, effort=None):
+    # Adaptive thinking, resolved once per loop - {} for models that reject it.
+    reasoning = reasoning_kwargs(model, effort or _effort_for(model))
     for _ in range(max_iters):
         if cancel is not None and cancel.is_set():
             return CANCELLED_MSG
         resp = client.messages.create(model=model, max_tokens=MAX_TOKENS,
-                                      system=system, messages=messages, tools=tools)
+                                      system=system, messages=messages, tools=tools,
+                                      **reasoning)
         _track(model, resp.usage)
         if resp.stop_reason != "tool_use":
             return "".join(b.text for b in resp.content if b.type == "text").strip()
@@ -56,7 +65,13 @@ def _loop(model, system, messages, tools, max_iters=15, agent_label="",
         # the work runs ("On it - handing this to dev."), so the user gets an
         # instant acknowledgment instead of silence. Subagents feed the HUD only.
         for b in resp.content:
-            if b.type == "text" and b.text.strip():
+            if b.type == "thinking":
+                # Summarized reasoning drives the HUD's live feed. Never spoken -
+                # it is the model's scratch work, not an answer to the user.
+                summary = (getattr(b, "thinking", "") or "").strip()
+                if summary:
+                    hud_state.think(summary.splitlines()[-1][:140])
+            elif b.type == "text" and b.text.strip():
                 line = b.text.strip()
                 hud_state.think(line[:140])
                 if is_lead:
@@ -107,7 +122,8 @@ def run_agent(name, task, cancel=None):
     hud_state.set_state("working", agent=name)
     return _loop(a["model"], a["system"],
                  [{"role": "user", "content": task}], tools, agent_label=name,
-                 max_iters=a.get("max_iters", 15), cancel=cancel)
+                 max_iters=a.get("max_iters", 15), cancel=cancel,
+                 effort=a.get("effort"))
 
 
 def _critique(user_text, answer):
@@ -148,7 +164,7 @@ def handle(user_text, max_refine=1, cancel=None):
     hud_state.think("understanding the request")
     try:
         reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
-                      is_lead=True, cancel=cancel)
+                      is_lead=True, cancel=cancel, effort=EFFORT_LEAD)
         if reply == CANCELLED_MSG:
             memory.log_turn("assistant", "(interrupted by a newer request)")
             return None
@@ -174,7 +190,7 @@ def handle(user_text, max_refine=1, cancel=None):
                 msgs.append({"role": "user",
                              "content": f"Not complete yet. Fix these gaps, then give the full result:\n{gaps}"})
                 reply = _loop(MODEL_LEAD, agents.lead_system(), msgs, agents.LEAD_TOOLS,
-                              is_lead=True, cancel=cancel)
+                              is_lead=True, cancel=cancel, effort=EFFORT_LEAD)
                 if reply == CANCELLED_MSG:
                     memory.log_turn("assistant", "(interrupted by a newer request)")
                     return None
