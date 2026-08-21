@@ -59,6 +59,11 @@ async def websocket(request):
                     if frame.get("type") == "hello":
                         pairing.set_app_version(device.get("hash", ""),
                                                 frame.get("version"))
+                        # Replay anything announced while this phone was away.
+                        # Without it a completion that landed with no socket
+                        # open was simply lost.
+                        for item in hub.pending_after(frame.get("lastAnnounce")):
+                            await hub.send(ws, json.dumps(item))
                 except Exception:
                     pass
     finally:
