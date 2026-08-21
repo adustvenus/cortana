@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Only what the unit tests actually import. Installing the full
+      # requirements.txt would pull PyQt5/sounddevice/numpy for hardware no
+      # runner has, and none of it is needed to compile or to run these tests.
+      - name: Install test deps
+        run: pip install pytest python-dotenv
+
+      # Same gate selfedit.py applies before accepting a self-edit, run against
+      # every push so a broken commit can't reach the Pi in the first place.
+      - name: Compile every source file
+        run: python -m compileall -q . -x '(__pycache__|venv|cortana_venv|node_modules)'
+
+      - name: Unit tests
+        run: python -m pytest -q
