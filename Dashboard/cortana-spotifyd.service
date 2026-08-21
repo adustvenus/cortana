@@ -1,0 +1,19 @@
+# spotifyd - makes this workstation a Spotify Connect endpoint so the Music
+# module plays through the desk speakers instead of your phone.
+#
+# TEMPLATE: install-dash.sh resolves the config path for this machine. Do not
+# cp it verbatim - %h/cortana is an assumption that breaks on any other
+# checkout location, and a wrong ExecStart shows up only as status=203/EXEC.
+#
+# Logs: journalctl --user -u cortana-spotifyd -f
+[Unit]
+Description=spotifyd (Spotify Connect endpoint for the Dusk Dashboard)
+After=network-online.target sound.target
+
+[Service]
+ExecStart=/usr/bin/spotifyd --no-daemon --config-path %h/cortana/Dashboard/spotifyd.conf
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

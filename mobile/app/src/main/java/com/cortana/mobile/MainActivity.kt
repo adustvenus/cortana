@@ -341,6 +341,7 @@ class MainActivity : Activity(), LinkClient.Listener {
     override fun onAnnounce(text: String) {
         lastAnnounce = text
         signatures.remove("link")
+        signatures.remove("cortana")
         Toast.makeText(this, "Cortana: $text", Toast.LENGTH_LONG).show()
         LinkClient.lastState?.let { render(it) }
     }
@@ -441,7 +442,9 @@ class MainActivity : Activity(), LinkClient.Listener {
     private fun signatureFor(type: String, state: JSONObject): String = when (type) {
         "link" -> "${LinkClient.linkUp}|${state.optString("host")}|" +
                   "${state.optString("bridgeVersion")}|$lastAnnounce|${state.optString("brainError")}"
-        "cortana" -> state.optJSONObject("cortana")?.toString() ?: ""
+        // lastAnnounce is part of this signature: the card shows it once the
+        // live thought feed empties, so it has to repaint when one arrives.
+        "cortana" -> (state.optJSONObject("cortana")?.toString() ?: "") + "|" + lastAnnounce
         "music" -> state.optJSONObject("spotify")?.toString() ?: ""
         "agenda" -> state.optJSONObject("calendar")?.toString() ?: ""
         // Pending state is local, so it is part of these cards' signatures.
@@ -528,10 +531,18 @@ class MainActivity : Activity(), LinkClient.Listener {
             addView(Ui.value(context, sub, 13f, Ui.DIM, mono = true))
         }
         val thoughts = c.optJSONArray("thoughts") ?: JSONArray()
-        if (thoughts.length() > 0) addView(Ui.gap(context, 8))
-        for (i in 0 until thoughts.length()) {
-            addView(Ui.value(context, "· " + thoughts.optString(i), 13f,
-                if (i == thoughts.length() - 1) Ui.TEXT else Ui.DIM))
+        if (thoughts.length() > 0) {
+            addView(Ui.gap(context, 8))
+            for (i in 0 until thoughts.length()) {
+                addView(Ui.value(context, "· " + thoughts.optString(i), 13f,
+                    if (i == thoughts.length() - 1) Ui.TEXT else Ui.DIM))
+            }
+        } else if (lastAnnounce.isNotEmpty()) {
+            // The live feed empties the moment she goes idle, so the card went
+            // blank exactly when the answer arrived. Hold the last result here
+            // instead of showing nothing.
+            addView(Ui.gap(context, 8))
+            addView(Ui.value(context, "› $lastAnnounce", 13f, Ui.LAVENDER))
         }
     }
 

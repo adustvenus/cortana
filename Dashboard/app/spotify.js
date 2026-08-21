@@ -21,6 +21,15 @@ const BACKOFF_FILE = path.join(__dirname, 'spotify_backoff.json');
 const TOKEN_FILE = path.join(__dirname, 'spotify_token.json');
 const REDIRECT_PORT = 8888;
 const REDIRECT_URI = `http://127.0.0.1:${REDIRECT_PORT}/callback`;
+
+// The Spotify Connect device spotifyd advertises on this workstation (see
+// Dashboard/spotifyd.conf). Without targeting it explicitly the Web API acts on
+// whatever device Spotify last considered "active" - in practice the phone - so
+// pressing play on the dashboard played music in your pocket.
+const CORTANA_DEVICE = 'Cortana';
+const DEVICE_TTL_MS = 60000;
+let deviceId = null;
+let deviceUntil = 0;
 const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
 
 function clientId() {
@@ -241,6 +250,24 @@ async function state() {
   } catch (e) { return { configured: true, connected: true, error: String(e.message), grantedScope }; }
 }
 
+// Id of the local spotifyd endpoint, or null when it is not running. Cached:
+// this sits in front of every transport press and the account is already close
+// to Spotify's rate limit (see note429).
+async function localDevice(at) {
+  if (deviceId && Date.now() < deviceUntil) return deviceId;
+  try {
+    const r = await fetch('https://api.spotify.com/v1/me/player/devices',
+                          { headers: { Authorization: 'Bearer ' + at } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const want = CORTANA_DEVICE.toLowerCase();
+    const d = (j.devices || []).find(x => String(x.name || '').toLowerCase() === want);
+    deviceId = d ? d.id : null;
+    deviceUntil = Date.now() + DEVICE_TTL_MS;
+    return deviceId;
+  } catch (e) { return null; }
+}
+
 async function control(action) {
   const at = await accessToken();
   if (!at) return { ok: false, error: 'not connected' };
@@ -248,15 +275,27 @@ async function control(action) {
                 next: ['POST', '/me/player/next'], previous: ['POST', '/me/player/previous'] };
   const m = map[action];
   if (!m) return { ok: false, error: 'bad action' };
+  // Aim at the workstation when spotifyd is up; fall back to Spotify's own
+  // idea of the active device when it is not, so nothing regresses if the
+  // service is stopped or was never installed.
+  const id = await localDevice(at);
+  const target = id ? m[1] + (m[1].includes('?') ? '&' : '?') +
+                      'device_id=' + encodeURIComponent(id) : m[1];
   try {
-    const r = await fetch('https://api.spotify.com/v1' + m[1],
+    const r = await fetch('https://api.spotify.com/v1' + target,
                           { method: m[0], headers: { Authorization: 'Bearer ' + at } });
     if (r.status === 429) {
       const wait = note429(r);
       return { ok: false, error: 'Spotify rate limit - retry in ' + Math.round(wait) + 's' };
     }
     // 404 = no active device; surface a friendly hint for the UI
-    if (r.status === 404) return { ok: false, error: 'no active Spotify device - start playback once on any device' };
+    if (r.status === 404) {
+      // The cached id can outlive the device (spotifyd restarted, machine
+      // slept). Drop it so the next press re-discovers instead of retrying a
+      // dead endpoint for a full TTL.
+      deviceId = null; deviceUntil = 0;
+      return { ok: false, error: 'no active Spotify device - is cortana-spotifyd running?' };
+    }
     idleUntil = 0;      // a transport action changes state
     return { ok: r.ok || r.status === 204, status: r.status };
   } catch (e) { return { ok: false, error: String(e.message) }; }

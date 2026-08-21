@@ -58,3 +58,7 @@ Dashboard/app/spotify_backoff.json
 # CORTANA_KEYSTORE_B64 repo secret. (An earlier one leaked here publicly.)
 mobile/keystore/*.p12
 mobile/keystore/*.jks
+
+# spotifyd per-machine config (names a cache_path holding live session
+# data). spotifyd.conf.example is the committed template.
+Dashboard/spotifyd.conf

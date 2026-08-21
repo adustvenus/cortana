@@ -94,6 +94,33 @@ and is the dashboard end of the phone link:
 
 If it shows BRIDGE OFFLINE: `systemctl --user start cortana-bridge`.
 
+## Playing Spotify on this machine (spotifyd)
+
+By default the Web API acts on whatever device Spotify last considered
+"active" - normally your phone - so pressing play on the dashboard started
+music in your pocket. `spotifyd` fixes that by making the workstation itself a
+Spotify Connect endpoint.
+
+```bash
+sudo apt install -y spotifyd
+cp Dashboard/spotifyd.conf.example Dashboard/spotifyd.conf   # set cache_path
+bash Dashboard/install-dash.sh                                # installs the unit
+systemctl --user start cortana-spotifyd
+```
+
+Then open Spotify on any device on the same network, tap Connect, and choose
+**Cortana** once. Playback control from the dashboard targets it from then on.
+
+`device_name` in `spotifyd.conf` must stay `Cortana`: `app/spotify.js` looks for
+that exact name (`CORTANA_DEVICE`) to find the endpoint. Rename it and the
+dashboard silently falls back to Spotify's active device - the phone again.
+
+The lookup is cached for 60s because it sits in front of every transport press
+and the account already runs close to Spotify's rate limit. A 404 drops the
+cache immediately, so a spotifyd restart is picked up on the next press rather
+than after the full TTL. With spotifyd stopped or not installed, behaviour is
+exactly as before.
+
 ## Spotify rate limiting
 
 Spotify limits requests per rolling 30s window, and TWO processes poll the same

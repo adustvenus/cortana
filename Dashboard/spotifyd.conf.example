@@ -1,0 +1,26 @@
+# Copy to Dashboard/spotifyd.conf and adjust. The real file is gitignored: it
+# names a cache_path holding live session data.
+#
+#   cp Dashboard/spotifyd.conf.example Dashboard/spotifyd.conf
+#
+# Spotify no longer accepts username/password for third-party clients, so
+# spotifyd advertises itself over the network instead: open Spotify on any
+# device on the same LAN, hit the Connect button, and pick "Cortana" once.
+# From then on the dashboard can drive it directly.
+[global]
+# MUST stay "Cortana" - Dashboard/app/spotify.js looks for this exact name to
+# route playback to the workstation. Rename it and the dashboard falls back to
+# whatever device Spotify last considered active, which is usually the phone.
+device_name = Cortana
+
+# pulseaudio suits a desktop session; use "alsa" on a headless box.
+backend = pulseaudio
+device_type = speaker
+bitrate = 320
+
+# Absolute path - systemd does not expand ~ here.
+cache_path = /home/YOUR_USER/.cache/spotifyd
+
+# The dashboard drives playback over the Web API, so the MPRIS bridge is not
+# needed and only adds a dbus dependency.
+use_mpris = false
