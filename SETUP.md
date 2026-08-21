@@ -292,11 +292,11 @@ matters — and finally on the new box:
 
 ```bash
 ./secrets.sh pull
-sudo systemctl restart cortana
+systemctl --user restart cortana
 ```
 
 **Day to day:** rotate a key, edit `.env`, `./secrets.sh push`. On each other
-box, `./secrets.sh pull && sudo systemctl restart cortana`.
+box, `./secrets.sh pull && systemctl --user restart cortana`.
 
 **Per-machine settings go in `.env.local`, not `.env`.** `pull` overwrites
 `.env` on every sync, so anything tuned to one box - `MIC_DEVICE`,

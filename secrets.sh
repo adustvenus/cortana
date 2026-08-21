@@ -139,7 +139,7 @@ cmd_pull() {
     fi
   done
   [ "$n" -gt 0 ] || die "nothing decrypted."
-  echo "done. Restart Cortana to load them: sudo systemctl restart cortana"
+  echo "done. Restart Cortana to load them: systemctl --user restart cortana"
 }
 
 cmd_add_machine() {
