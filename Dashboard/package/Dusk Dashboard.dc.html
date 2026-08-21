@@ -553,6 +553,13 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           </div>
         </sc-if>
 
+        <!-- ═══ HELLO (minimal static greeting) ═══ -->
+        <sc-if value="{{ m.t_hello }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCenter }}">
+            <span style="{{ m.helloStyle }}">{{ helloText }}</span>
+          </div>
+        </sc-if>
+
         <!-- ═══ EDIT CONTROLS ═══ -->
         <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
           <!-- Edit-mode click shield: covers the module's CONTENT while the
@@ -739,7 +746,8 @@ const DEFS = {
   git:     { w: 7,  h: 5, label: 'GIT STATUS' },
   youtube: { w: 8,  h: 5, label: 'YOUTUBE' },
   mobile:  { w: 6,  h: 4, label: 'MOBILE LINK' },
-  files:   { w: 8,  h: 6, label: 'FILES' }
+  files:   { w: 8,  h: 6, label: 'FILES' },
+  hello:   { w: 5,  h: 2, label: 'HELLO' }
 };
 
 // Clean home board: just the AI status module, centered. Everything else is
@@ -1924,6 +1932,14 @@ class Component extends DCLogic {
           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
           color: 'rgb(var(--accent-rgb))', fontSize: '.95rem', userSelect: 'none'
         },
+        t_hello: m.type === 'hello',
+        // Scales with the card like DATE-TIME: 1.0 at the default 5x2, growing
+        // with the square root of the area, clamped so it stays sane at 3x2.
+        helloStyle: (() => {
+          const k = Math.min(2.6, Math.max(0.85, Math.sqrt((m.w * m.h) / 10)));
+          return { fontSize: (1.6 * k).toFixed(2) + 'rem', fontWeight: 600,
+                   color: 'rgb(var(--text-rgb))', letterSpacing: '.01em' };
+        })(),
         t_git: m.type === 'git',
         // GIT scales with the module: type shrinks a little on small cards but
         // never below legibility, the footer is dropped when short, and the
@@ -2597,9 +2613,10 @@ class Component extends DCLogic {
       gitDotColor: (() => { const g = s.gitData; if (!g) return 'rgba(var(--text-rgb),.25)'; return g.status.clean ? '#9be8b8' : 'rgb(var(--accent2-rgb))'; })(),
       gitCommits: (() => { const g = s.gitData; return g && g.log.length ? g.log : [{hash:'———', msg:'no data yet'}]; })(),
       gitAge: s.gitAge || '—',
+      helloText: 'Hello',
       // clock + date stay renderable for saved layouts, but the tray offers
       // the combined DATE-TIME module in their place.
-      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files'].map(t => ({
+      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files', 'hello'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),
