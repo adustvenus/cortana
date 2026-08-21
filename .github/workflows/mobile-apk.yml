@@ -46,13 +46,39 @@ jobs:
       - name: Restore signing keystore
         env:
           KEYSTORE_B64: ${{ secrets.CORTANA_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.CORTANA_KEYSTORE_PASS }}
         run: |
+          # Each failure below is reported distinctly: a missing secret, a
+          # mistyped name and a wrong password all look identical otherwise,
+          # and the logs are unreadable without repo admin.
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::CORTANA_KEYSTORE_B64 is not set - cannot sign the release APK."
+            echo "::error::CORTANA_KEYSTORE_B64 is empty or not set. The name must match EXACTLY, and it must be a REPOSITORY secret under Settings > Secrets and variables > Actions > the Secrets tab - not the Variables tab, and not an Environment secret (this job declares no environment, so it cannot see those)."
             exit 1
           fi
+          if [ -z "$KEYSTORE_PASS" ]; then
+            echo "::error::CORTANA_KEYSTORE_PASS is empty or not set - same checks as above."
+            exit 1
+          fi
+          echo "base64 secret length: ${#KEYSTORE_B64} chars (expected 5752)"
           mkdir -p mobile/keystore
-          printf '%s' "$KEYSTORE_B64" | base64 -d > mobile/keystore/cortana-release.p12
+          # tr tolerates a pasted value that picked up newlines or wrapping.
+          if ! printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]'                | base64 -d > mobile/keystore/cortana-release.p12 2>/tmp/b64.err; then
+            echo "::error::CORTANA_KEYSTORE_B64 is not valid base64: $(cat /tmp/b64.err)"
+            exit 1
+          fi
+          size=$(stat -c%s mobile/keystore/cortana-release.p12)
+          echo "decoded keystore: $size bytes (expected 4314)"
+          if [ "$size" -lt 1000 ]; then
+            echo "::error::decoded keystore is only $size bytes - the secret looks truncated."
+            exit 1
+          fi
+          # Proves BOTH secrets in one shot: a wrong password fails here rather
+          # than deep inside Gradle with an opaque signing error.
+          if ! keytool -list -keystore mobile/keystore/cortana-release.p12                -storetype PKCS12 -storepass "$KEYSTORE_PASS" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but CORTANA_KEYSTORE_PASS did not open it. Re-copy the password with no trailing newline."
+            exit 1
+          fi
+          echo "keystore restored and password verified"
 
       - name: Build signed release APK
         env:
