@@ -6,6 +6,10 @@
     <!-- In-app self-update: download the APK from the bridge and hand it to
          the system installer (pop-up prompt flow). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Banner for a finished background task when the app is not open.
+         Runtime-requested on API 33+; without it banners are silently
+         skipped and toast/inline still work. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- usesCleartextTraffic: the bridge speaks plain HTTP because the
          transport IS encrypted - the phone reaches it only over Tailscale

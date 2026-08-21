@@ -276,8 +276,31 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener {
         sphere.clearAnimation()
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Hold the link open without taking over as listener: MainActivity is
+        // stopped while this screen is up, and without this the socket would
+        // be torn down exactly when the user is talking to her.
+        if (Prefs.paired(this)) LinkClient.retain(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Announcer.onResume(Announcer.SCREEN_TALK)
+        // On the AI screen a completion belongs in the conversation, not in a
+        // toast over the top of it.
+        Announcer.inlineSink = { text -> runOnUiThread { replyTxt.text = "CORTANA: $text" } }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Announcer.onPause(Announcer.SCREEN_TALK)
+        Announcer.inlineSink = null
+    }
+
     override fun onStop() {
         super.onStop()
+        LinkClient.stop()
         recorder?.stop()?.also { it.delete() }
         recorder = null
         sphere.clearAnimation()
