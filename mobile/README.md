@@ -100,6 +100,27 @@ Settings → **INSTALL VIA WORKSTATION (ADB)** does the same thing from the
 phone, and it already targets the tailnet address automatically (the bridge
 uses the address the request arrived on), so Tailscale can stay on there too.
 
+## After a signing-key rotation: uninstall first
+
+Distinct from the silent-drop problem above, and it looks different: you get an
+explicit failure rather than nothing happening. Android identifies an app by
+its signature, so a build signed with a new key is not an update of the old app
+— it is a stranger claiming the same package name, and every install path
+refuses it:
+
+- tap-to-install → **"App not installed"**
+- `adb install -r` → **`INSTALL_FAILED_UPDATE_INCOMPATIBLE`**
+- the in-app updater and *INSTALL VIA WORKSTATION (ADB)* → the same, because
+  both use `install -r`
+
+There is no flag that works around this; the old app has to go first. App data
+and the pairing token go with it, so the phone re-pairs afterwards.
+
+```bash
+adb -s <target> uninstall com.cortana.mobile   # or: Settings -> Apps -> Cortana -> Uninstall
+bash mobile/push-update.sh
+```
+
 Worth trying once on OxygenOS 15, which may restore normal installs:
 Settings → Security & privacy → More security & privacy → **Install unknown
 apps** → Cortana → allow; and Play Store → Play Protect → ⚙ → turn off
@@ -126,11 +147,21 @@ never conflict or discard work.
 Ship an update = bump `versionCode` **and** `versionName` in
 `mobile/app/build.gradle` and push to main. CI does the rest.
 
-Signing uses the committed keystore `mobile/keystore/cortana-release.p12` so
-every build carries the same signature (Android refuses mismatched updates).
-Anyone with repo access can therefore sign an installable update — fine for a
-private personal repo; if that changes, move the keystore to a CI secret and
-set `CORTANA_KEYSTORE_PASS`.
+Signing uses a keystore that is **never committed**. CI restores it from the
+`CORTANA_KEYSTORE_B64` repo secret, signs, and shreds it; `CORTANA_KEYSTORE_PASS`
+is the password. Both steps fail the build if their secret is missing, so a
+misconfigured secret can never ship an unsigned APK.
+
+The keystore used to be committed here, together with its password in
+`build.gradle`, on a public repo — anyone who cloned it could sign an update
+this app installs. That key is dead and the current one replaced it. Keep the
+new keystore off every machine that does not need to sign: the workstation runs
+an agent with an unsandboxed shell, which is the last place a signing key
+belongs.
+
+Every build must use the SAME keystore — Android refuses an update whose
+signature changed. Rotating it is therefore a breaking change for every
+installed phone: see the note below.
 
 ## What's on screen
 
