@@ -93,6 +93,11 @@ cmd_push() {
   local n=0
   for f in "${FILES[@]}"; do
     if [ ! -s "$ROOT/$f" ]; then echo "skip   $f (not present here)"; continue; fi
+    # Sealing an unfilled template is silent and only shows up later as a box
+    # that will not start, so refuse it here where the cause is obvious.
+    if grep -q "PASTE_" "$ROOT/$f"; then
+      die "$f still has PASTE_ placeholders. Fill in the real values first."
+    fi
     age -R "$rcpt" -o "$CACHE/$f.age" "$ROOT/$f"
     echo "sealed $f -> $f.age"
     n=$((n + 1))
