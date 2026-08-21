@@ -251,6 +251,60 @@ answers in Cortana's voice.
 
 ---
 
+## SECRETS ACROSS MACHINES — `./secrets.sh`
+
+Skip this if you only ever run Cortana on one box. If you code on one machine
+and run on another, this replaces retyping keys or carrying a flash drive.
+
+`.env` and `credentials.json` live encrypted in a **separate PRIVATE repo** and
+are readable only by machines whose SSH public key is on the recipient list.
+Each box decrypts with the SSH key it already has for git, so adding a machine
+never means carrying a key file around. Nothing secret ever touches this repo.
+
+GitHub Actions secrets cannot do this job: they are write-only. Nothing can
+read a value back out, so a box can never fetch its keys from there. They are
+for CI only — see `mobile-apk.yml`, which is the one thing that genuinely needs
+them.
+
+**One-time, on the machine that HAS the keys:**
+
+```bash
+sudo apt install age                     # or: winget install FiloSottile.age
+# create an EMPTY PRIVATE repo on GitHub called cortana-secrets, then:
+mkdir -p ~/.config/cortana
+echo git@github.com:<you>/cortana-secrets.git > ~/.config/cortana/secrets-repo
+./secrets.sh add-machine                 # register this box
+./secrets.sh push                        # seal .env + credentials.json, publish
+```
+
+**On every other box, once:**
+
+```bash
+sudo apt install age
+mkdir -p ~/.config/cortana
+echo git@github.com:<you>/cortana-secrets.git > ~/.config/cortana/secrets-repo
+./secrets.sh add-machine                 # register this box
+```
+
+then back on a box that has the plaintext, `./secrets.sh push` to reseal for the
+new recipient — age cannot re-encrypt without the plaintext, so this order
+matters — and finally on the new box:
+
+```bash
+./secrets.sh pull
+sudo systemctl restart cortana
+```
+
+**Day to day:** rotate a key, edit `.env`, `./secrets.sh push`. On each other
+box, `./secrets.sh pull && sudo systemctl restart cortana`.
+
+`./secrets.sh status` shows what is configured. `token.json` and
+`spotify_token.json` are deliberately NOT distributed — they are per-machine
+OAuth state, regenerated locally by `python main.py --google-auth` and the
+dashboard's Spotify Connect button.
+
+---
+
 ## SELF-CHECK — "if the prior step was done right, does the next work?"
 
 | Step | Assumes | If assumption breaks |
