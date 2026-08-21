@@ -219,25 +219,6 @@ class MainActivity : Activity(), LinkClient.Listener {
         if (Prefs.paired(this)) LinkClient.start(this, this)
     }
 
-    override fun onResume() {
-        super.onResume()
-        Announcer.onResume("main")
-        Announcer.ensureChannel(this)
-        // Asked here rather than at first launch: by now the phone is paired,
-        // so the prompt arrives with obvious context. Declining costs only the
-        // banner - toast and inline still work.
-        if (Prefs.paired(this) && !Announcer.canPostBanner(this)) {
-            try {
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7)
-            } catch (e: Exception) { /* older platform: permission does not exist */ }
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        Announcer.onPause("main")
-    }
-
     override fun onStop() {
         super.onStop()
         LinkClient.stop()
@@ -358,10 +339,9 @@ class MainActivity : Activity(), LinkClient.Listener {
     }
 
     override fun onAnnounce(text: String) {
-        // Presentation is Announcer's job now - it already decided banner vs
-        // toast vs inline before this ran. Toasting again here would double up.
         lastAnnounce = text
         signatures.remove("link")
+        Toast.makeText(this, "Cortana: $text", Toast.LENGTH_LONG).show()
         LinkClient.lastState?.let { render(it) }
     }
 

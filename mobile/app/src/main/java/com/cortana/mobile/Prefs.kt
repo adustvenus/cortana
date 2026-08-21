@@ -96,9 +96,6 @@ object Prefs {
     fun deviceName(ctx: Context): String = plain(ctx).getString("deviceName", "") ?: ""
     fun localTtsOnly(ctx: Context): Boolean = plain(ctx).getBoolean("localTts", false)
     fun skippedVersion(ctx: Context): String = plain(ctx).getString("skipVer", "") ?: ""
-    // Highest announcement id this phone has seen. Sent on connect so the
-    // bridge replays only what was missed while the app was closed.
-    fun lastAnnounce(ctx: Context): Int = plain(ctx).getInt("lastAnnounce", 0)
 
     fun defaultDeviceName(): String =
         ("${Build.MANUFACTURER} ${Build.MODEL}").trim().ifEmpty { "Android phone" }
@@ -120,10 +117,6 @@ object Prefs {
 
     fun setLocalTtsOnly(ctx: Context, v: Boolean) {
         plain(ctx).edit().putBoolean("localTts", v).apply()
-    }
-
-    fun setLastAnnounce(ctx: Context, id: Int) {
-        if (id > lastAnnounce(ctx)) plain(ctx).edit().putInt("lastAnnounce", id).apply()
     }
 
     fun setSkippedVersion(ctx: Context, v: String) {

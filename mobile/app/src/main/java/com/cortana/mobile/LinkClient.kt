@@ -86,14 +86,7 @@ object LinkClient {
         b.header("Authorization", "Bearer ${Prefs.token(ctx)}")
 
     // ── WebSocket lifecycle (foreground only - activities call start/stop) ──
-    // Screens currently holding the link open. Android starts the incoming
-    // activity BEFORE stopping the outgoing one, so an unguarded stop() in
-    // MainActivity.onStop tore down the socket that TalkActivity had just
-    // brought up - leaving the AI screen with no live connection at all.
-    private var holders = 0
-
     fun start(ctx: Context, l: Listener) {
-        holders++
         listener = l
         wantRun = true
         backoffSec = 1
@@ -102,18 +95,7 @@ object LinkClient {
         l.onLink(linkUp)
     }
 
-    /** Hold the link without becoming the listener (screens that only need the
-     *  connection alive, e.g. the AI screen). */
-    fun retain(ctx: Context) {
-        holders++
-        wantRun = true
-        connect(ctx.applicationContext)
-    }
-
     fun stop() {
-        holders -= 1
-        if (holders > 0) return       // another screen still needs it
-        holders = 0
         wantRun = false
         listener = null
         ws?.close(1000, "background")
@@ -139,11 +121,7 @@ object LinkClient {
                 // available" next to the linked device.
                 try {
                     webSocket.send(JSONObject().put("type", "hello")
-                        .put("version", BuildConfig.VERSION_NAME)
-                        // Everything announced while this phone was away gets
-                        // replayed from here, so a completion is not lost just
-                        // because the app was closed when it landed.
-                        .put("lastAnnounce", Prefs.lastAnnounce(ctx)).toString())
+                        .put("version", BuildConfig.VERSION_NAME).toString())
                 } catch (e: Exception) { /* presence still works without it */ }
                 setLink(true)
             }
@@ -166,21 +144,7 @@ object LinkClient {
                         }
                         main.post { listener?.onState(j) }
                     }
-                    "announce" -> {
-                        // Recorded before display: if presentation fails the
-                        // announcement must not be replayed forever.
-                        val aid = j.optInt("id", 0)
-                        if (aid > 0) Prefs.setLastAnnounce(ctx, aid)
-                        val body = j.optString("text")
-                        main.post {
-                            // Routes to banner / toast / inline by app state.
-                            // Runs whether or not an Activity is listening -
-                            // a backgrounded app has no listener at all, which
-                            // is exactly when the banner matters most.
-                            Announcer.deliver(ctx, body)
-                            listener?.onAnnounce(body)
-                        }
-                    }
+                    "announce" -> main.post { listener?.onAnnounce(j.optString("text")) }
                 }
             }
 
