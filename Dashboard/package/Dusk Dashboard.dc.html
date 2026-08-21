@@ -521,12 +521,15 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               </sc-for>
               <sc-if value="{{ mlCodeOn }}" hint-placeholder-val="{{ false }}">
                 <div style="display:flex;align-items:center;justify-content:center;gap:1.1rem;margin-top:.15rem;flex-shrink:0;min-width:0">
-                  <canvas ref="{{ m.mlQrRef }}" title="Scan with the phone camera: downloads the app and pairs it" style="width:5.6rem;height:5.6rem;image-rendering:pixelated;border-radius:6px;flex-shrink:0"></canvas>
+                  <canvas ref="{{ m.mlQrRef }}" title="Scan with the phone camera: downloads the app and pairs it" style="{{ m.mlQrStyle }}"></canvas>
                   <div style="display:flex;flex-direction:column;gap:.2rem;align-items:center;min-width:0">
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:1.45rem;letter-spacing:.3em;color:rgb(var(--accent-rgb))">{{ mlCodeTxt }}</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.14em;color:rgba(var(--text-rgb),.45);text-align:center">{{ mlCodeSub }}</div>
+                    <div style="{{ m.mlCodeStyle }}">{{ mlCodeTxt }}</div>
+                    <div style="{{ m.mlCodeSubStyle }}">{{ mlCodeSub }}</div>
                   </div>
                 </div>
+                <sc-if value="{{ mlNetReqOn }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ mlNetReqStyle }}">{{ mlNetReqTxt }}</div>
+                </sc-if>
               </sc-if>
             </div>
             <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0;margin-top:.3rem">
@@ -1304,7 +1307,7 @@ class Component extends DCLogic {
         cv.width = cv.width;   // clear
         return;
       }
-      const n = q.matrix.length, scale = 4, pad = 2;
+      const n = q.matrix.length, scale = 8, pad = 2;
       cv.width = cv.height = (n + pad * 2) * scale;
       ctx.fillStyle = '#fdf3ec';
       ctx.fillRect(0, 0, cv.width, cv.height);
@@ -2008,6 +2011,25 @@ class Component extends DCLogic {
           color: 'rgba(var(--text-rgb),.5)',
           border: '1px solid rgba(var(--text-rgb),.25)'
         },
+        // QR and pairing code scale with the module: 1.0 at the 6x4 DEFS
+        // default, growing with the square root of the area so a 4x-bigger
+        // module reads ~2x larger. Clamped so the 3x2 minimum stays
+        // scannable and a full-width module is not all QR.
+        ...(() => {
+          const k = Math.min(2.4, Math.max(0.8, Math.sqrt((m.w * m.h) / 24)));
+          const qr = (5.6 * k).toFixed(2) + 'rem';
+          return {
+            mlQrStyle: { width: qr, height: qr, imageRendering: 'pixelated',
+                         borderRadius: 6, flexShrink: 0 },
+            mlCodeStyle: { fontFamily: "'JetBrains Mono',monospace",
+                           fontSize: (1.45 * k).toFixed(2) + 'rem',
+                           letterSpacing: '.3em', color: 'rgb(var(--accent-rgb))' },
+            mlCodeSubStyle: { fontFamily: "'JetBrains Mono',monospace",
+                              fontSize: (0.6 * Math.min(k, 1.6)).toFixed(2) + 'rem',
+                              letterSpacing: '.14em', textAlign: 'center',
+                              color: 'rgba(var(--text-rgb),.45)' }
+          };
+        })(),
         mlQrRef: (el) => {
           this._mlQrEl = el;
           if (el && this._drawMlQr) this._drawMlQr();
@@ -2316,6 +2338,7 @@ class Component extends DCLogic {
       mlHelpLines: [
         { t: 'Links your phone to this workstation. The bridge service (cortana-bridge, port 8765) serves the phone a read-only mirror of this board and runs voice turns for it.' },
         { t: 'PAIR A PHONE issues a 6-digit code plus a QR. Scanning the QR on the phone downloads the app and pairs it in one step — nothing to type. Codes are single-use and expire in 10 minutes.' },
+        { t: 'The QR points at whichever address the bridge picked: your tailnet if Tailscale is up, otherwise the LAN. Scanning only works from a phone that can reach that network - if the code shows a 100.x address, start Tailscale ON THE PHONE first or the browser will say the site cannot be reached.' },
         { t: 'Each paired phone appears with ONLINE / SEEN <time>. Tap ✕ twice to revoke it instantly; the phone must then pair again.' },
         { t: 'Reachable over your tailnet (anywhere) or your LAN (at home). The bridge is never exposed to the internet. Tokens are stored here as hashes only.' },
         { t: 'BRIDGE OFFLINE means the service is not running: systemctl --user start cortana-bridge' }
@@ -2451,6 +2474,26 @@ class Component extends DCLogic {
           mlCodeTxt: pairing ? String(pairing.code).replace(/^(\d{3})(\d{3})$/, '$1 $2') : '',
           mlCodeSub: pairing ? 'SCAN WITH THE PHONE CAMERA, OR TYPE THE CODE · '
             + Math.max(1, Math.round((pairing.expires - Date.now() / 1000) / 60)) + ' MIN LEFT' : '',
+          // The QR encodes whichever address the bridge chose (tailnet first,
+          // LAN otherwise). It is only scannable from a device that can route
+          // to that network - a phone off the tailnet is the usual cause of
+          // 'site cannot be reached' after a scan, so name the requirement.
+          mlNetReqOn: !!(pairing && s.mlQr && s.mlQr.url),
+          mlNetReqTxt: (() => {
+            const u = String((s.mlQr && s.mlQr.url) || '');
+            const after = u.split('//')[1];
+            const host = after ? after.split(':')[0].split('/')[0] : '';
+            const oct = host.split('.');
+            const b = parseInt(oct[1], 10);
+            // Tailscale addresses live in 100.64.0.0/10 (CGNAT range).
+            if (oct[0] === '100' && b >= 64 && b <= 127)
+              return 'TAILSCALE MUST BE RUNNING ON THE PHONE';
+            return host ? 'PHONE MUST BE ON THIS NETWORK · ' + host : '';
+          })(),
+          mlNetReqStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+                           letterSpacing: '.14em', textAlign: 'center', marginTop: '.35rem',
+                           color: 'rgb(var(--accent2-rgb))', flexShrink: 0,
+                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
           mlPairOn: up,
           mlNewCodeTxt: locked ? 'LOCKED ' + md.lockedFor + 'S' : pairing ? 'NEW CODE' : 'PAIR A PHONE',
           mlNewCodeStyle: { height: '1.7rem', display: 'flex', alignItems: 'center', padding: '0 .8rem',
