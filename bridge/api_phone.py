@@ -98,6 +98,17 @@ async def task_op(request):
                               "dashboardOpen": state.board_is_fresh()})
 
 
+def _rescue_reply(fut):
+    """Deliver a reply whose phone disconnected mid-turn, instead of dropping it."""
+    try:
+        result = fut.result() or {}
+    except Exception:
+        return
+    reply = str(result.get("reply", "")).strip()
+    if reply:
+        hub.announce(reply)
+
+
 async def converse(request):
     """One voice (multipart WAV) or text turn through Cortana's real pipeline."""
     device = auth.device(request)
@@ -124,8 +135,18 @@ async def converse(request):
             pass
     if not wav_path and not text:
         return web.json_response({"error": "no audio or text"}, status=400)
+    # shield: closing the app aborts this HTTP request, and without it the
+    # await is cancelled and the reply is discarded even though the turn keeps
+    # running on its worker thread. She was still thinking; the answer just had
+    # nowhere to go. Now the turn always finishes, and if the phone has gone the
+    # reply is announced instead - which the hello replay then delivers when the
+    # app comes back.
+    turn = asyncio.ensure_future(asyncio.to_thread(brain.run_turn, wav_path, text))
     try:
-        result = await asyncio.to_thread(brain.run_turn, wav_path, text)
+        result = await asyncio.shield(turn)
+    except asyncio.CancelledError:
+        turn.add_done_callback(_rescue_reply)
+        raise
     finally:
         if wav_path:
             try:

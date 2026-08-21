@@ -31,7 +31,7 @@ import kotlin.concurrent.thread
  * conversation never dead-ends. A typed input is also available for quiet
  * environments. Tapping the sphere while a reply is playing stops playback.
  */
-class TalkActivity : Activity(), TextToSpeech.OnInitListener {
+class TalkActivity : Activity(), TextToSpeech.OnInitListener, LinkClient.Listener {
 
     private lateinit var sphere: ImageView
     private lateinit var stateTxt: TextView
@@ -276,8 +276,29 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener {
         sphere.clearAnimation()
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Hold the link while this screen is up. MainActivity is stopped behind
+        // us, so without this there is no live socket on the one page where you
+        // are actually talking to her, and completions never arrive here.
+        if (Prefs.paired(this)) LinkClient.start(this, this)
+    }
+
+    // On the AI screen a completion belongs in the conversation, spoken - not
+    // as a toast over the top of it.
+    override fun onAnnounce(text: String) {
+        if (text.isBlank()) return
+        replyTxt.text = "CORTANA: $text"
+        speak(text)
+    }
+
+    // This screen does not render the board; it only needs the link alive.
+    override fun onState(state: org.json.JSONObject) {}
+    override fun onLink(up: Boolean) {}
+
     override fun onStop() {
         super.onStop()
+        LinkClient.stop()
         recorder?.stop()?.also { it.delete() }
         recorder = null
         sphere.clearAnimation()

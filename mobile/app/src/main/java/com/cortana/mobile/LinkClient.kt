@@ -86,7 +86,13 @@ object LinkClient {
         b.header("Authorization", "Bearer ${Prefs.token(ctx)}")
 
     // ── WebSocket lifecycle (foreground only - activities call start/stop) ──
+    // Screens holding the link open. Android starts the incoming activity
+    // BEFORE stopping the outgoing one, so MainActivity.onStop would otherwise
+    // tear down the socket the AI screen had just brought up.
+    private var holders = 0
+
     fun start(ctx: Context, l: Listener) {
+        holders++
         listener = l
         wantRun = true
         backoffSec = 1
@@ -96,6 +102,9 @@ object LinkClient {
     }
 
     fun stop() {
+        holders -= 1
+        if (holders > 0) return          // another screen still needs it
+        holders = 0
         wantRun = false
         listener = null
         ws?.close(1000, "background")
@@ -121,7 +130,11 @@ object LinkClient {
                 // available" next to the linked device.
                 try {
                     webSocket.send(JSONObject().put("type", "hello")
-                        .put("version", BuildConfig.VERSION_NAME).toString())
+                        .put("version", BuildConfig.VERSION_NAME)
+                        // Anything announced while this phone was away gets
+                        // replayed from here, so a completion is not lost just
+                        // because the app happened to be closed.
+                        .put("lastAnnounce", Prefs.lastAnnounce(ctx)).toString())
                 } catch (e: Exception) { /* presence still works without it */ }
                 setLink(true)
             }
@@ -144,7 +157,11 @@ object LinkClient {
                         }
                         main.post { listener?.onState(j) }
                     }
-                    "announce" -> main.post { listener?.onAnnounce(j.optString("text")) }
+                    "announce" -> {
+                        val aid = j.optInt("id", 0)
+                        if (aid > 0) Prefs.setLastAnnounce(ctx, aid)
+                        main.post { listener?.onAnnounce(j.optString("text")) }
+                    }
                 }
             }
 
