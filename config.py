@@ -5,6 +5,11 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
+# Per-machine overrides, loaded last so they win. .env is shared across every
+# box by ./secrets.sh and gets overwritten on each pull, so anything tuned to
+# THIS machine - mic index, VAD threshold, voice - belongs here instead or it
+# will be wiped the next time secrets are synced. Never distributed.
+load_dotenv(ROOT / ".env.local", override=True)
 
 # --- API keys (set in .env) ---
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

@@ -298,6 +298,11 @@ sudo systemctl restart cortana
 **Day to day:** rotate a key, edit `.env`, `./secrets.sh push`. On each other
 box, `./secrets.sh pull && sudo systemctl restart cortana`.
 
+**Per-machine settings go in `.env.local`, not `.env`.** `pull` overwrites
+`.env` on every sync, so anything tuned to one box - `MIC_DEVICE`,
+`VAD_THRESHOLD`, `MIC_NAME` - must live in `.env.local`, which is gitignored,
+never distributed, and loaded after `.env` so it always wins.
+
 `./secrets.sh status` shows what is configured. `token.json` and
 `spotify_token.json` are deliberately NOT distributed — they are per-machine
 OAuth state, regenerated locally by `python main.py --google-auth` and the

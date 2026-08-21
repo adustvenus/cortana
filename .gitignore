@@ -1,5 +1,6 @@
 # --- Secrets (NEVER commit; self-edit auto-pushes to GitHub) ---
 .env
+.env.local
 credentials.json
 token.json
 
