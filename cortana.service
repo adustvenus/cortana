@@ -1,9 +1,9 @@
+# TEMPLATE - do not cp this verbatim. %h/cortana and the X cookie path are
+# assumptions that break on any other checkout location or display manager.
+#
 # Install (as the cortana user):
-#   mkdir -p ~/.config/systemd/user
-#   cp cortana.service ~/.config/systemd/user/
-#   systemctl --user daemon-reload
-#   systemctl --user enable --now cortana
-#   loginctl enable-linger $USER
+#   bash install-services.sh        # resolves paths, venv and X cookie for you
+#   systemctl --user start cortana
 # Logs: journalctl --user -u cortana -f
 [Unit]
 Description=Cortana voice assistant
@@ -20,7 +20,11 @@ Restart=always
 RestartPreventExitStatus=42
 RestartSec=2
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/run/user/1001/gdm/Xauthority
+# %t = /run/user/<uid> (never hardcode the uid - this file used to say
+# 1001, which was one machine's user and silently broke screenshots and
+# hotkeys everywhere else). install-services.sh replaces this with the
+# cookie this machine actually has.
+Environment=XAUTHORITY=%t/gdm/Xauthority
 
 [Install]
 WantedBy=default.target

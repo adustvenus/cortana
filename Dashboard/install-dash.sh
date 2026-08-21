@@ -60,9 +60,19 @@ command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database ~/
 
 echo "[3/4] Installing systemd user service (start at boot)..."
 mkdir -p ~/.config/systemd/user
-cp cortana-dash.service ~/.config/systemd/user/
+# The committed unit is a template assuming the checkout is at ~/cortana and a
+# GDM cookie under %t. Resolve both against this machine instead: a wrong
+# ExecStart shows up only as status=203/EXEC, and a wrong XAUTHORITY shows up
+# as nothing at all - Electron just never gets a display.
+XAUTH=""
+for c in "${XAUTHORITY:-}" "/run/user/$(id -u)/gdm/Xauthority" "$HOME/.Xauthority"; do
+  if [ -n "$c" ] && [ -f "$c" ]; then XAUTH="$c"; break; fi
+done
+[ -n "$XAUTH" ] || XAUTH="/run/user/$(id -u)/gdm/Xauthority"
+sed -e "s|^WorkingDirectory=.*|WorkingDirectory=$PWD/app|"     -e "s|^ExecStart=.*|ExecStart=$PWD/app/dusk-dash.sh|"     -e "s|^Environment=DISPLAY=.*|Environment=DISPLAY=${DISPLAY:-:0}|"     -e "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=$XAUTH|"     cortana-dash.service > ~/.config/systemd/user/cortana-dash.service
 systemctl --user daemon-reload
 systemctl --user enable cortana-dash
+echo "      checkout $PWD/app   DISPLAY ${DISPLAY:-:0}   XAUTHORITY $XAUTH"
 
 echo "[4/4] Done. Start now with:  systemctl --user start cortana-dash"
 echo "Or find 'Dusk Dashboard' in your application menu."
