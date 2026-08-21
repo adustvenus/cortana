@@ -2,7 +2,8 @@
 self-critique iteration + HUD state broadcasting."""
 import anthropic
 
-from config import (ANTHROPIC_API_KEY, BUDGET_MONTHLY_USD, EFFORT_HEAVY, EFFORT_LEAD,
+from config import (ANTHROPIC_API_KEY, BUDGET_MONTHLY_USD, CACHE_READ_MULT,
+                    CACHE_WRITE_MULT, EFFORT_HEAVY, EFFORT_LEAD,
                     MAX_TOKENS, MODEL_HEAVY, MODEL_LEAD, MODEL_FAST, PRICES,
                     reasoning_kwargs)
 import agents
@@ -46,10 +47,24 @@ def shutdown_requested():
     return _shutdown_flag["do"]
 
 
+_cache_seen = {"logged": False}
+
+
 def _track(model, usage):
     pin, pout = PRICES.get(model, (3.0, 15.0))
-    cost = usage.input_tokens / 1e6 * pin + usage.output_tokens / 1e6 * pout
-    memory.add_usage(model, usage.input_tokens, usage.output_tokens, cost)
+    # Cached tokens are billed separately and are NOT in input_tokens: a write
+    # costs more than fresh input, a read a tenth. Counting only input_tokens
+    # would under-report every cached turn and hide whether caching works.
+    read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    billed_in = usage.input_tokens + write * CACHE_WRITE_MULT + read * CACHE_READ_MULT
+    cost = billed_in / 1e6 * pin + usage.output_tokens / 1e6 * pout
+    memory.add_usage(model, usage.input_tokens + write + read, usage.output_tokens, cost)
+    # One line, once per process, so "is the cache actually working?" is
+    # answerable from journalctl instead of assumed.
+    if read and not _cache_seen["logged"]:
+        _cache_seen["logged"] = True
+        print(f"[cache] prompt cache HIT: {read} tokens served from cache", flush=True)
 
 
 def _effort_for(model):
@@ -167,7 +182,7 @@ def run_agent(name, task, cancel=None):
     tools = [agents.TOOL_DEFS[t] for t in a["tools"]] + a.get("server_tools", [])
     print(f"  [delegating -> {name}]")
     hud_state.set_state("working", agent=name)
-    return _loop(a["model"], a["system"],
+    return _loop(a["model"], agents.agent_system(name),
                  [{"role": "user", "content": task}], tools, agent_label=name,
                  max_iters=a.get("max_iters", 15), cancel=cancel,
                  effort=a.get("effort"), stall_key=name)

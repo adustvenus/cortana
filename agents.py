@@ -1,9 +1,53 @@
 """Tool schemas, subagent definitions, tool dispatcher."""
-from config import MODEL_LEAD, MODEL_FAST, MODEL_HEAVY, WORKSPACE
+from config import (CACHE_ENABLED, CACHE_TTL, MODEL_LEAD, MODEL_FAST,
+                    MODEL_HEAVY, ROOT, WORKSPACE)
 import memory
 from tools import files as F
 # vision / trading / video / gmail are imported lazily inside dispatch() so a
 # missing hardware lib (e.g. mss on a headless box) never kills the whole app.
+
+
+# Documents an agent should have verbatim in context. These are big, stable and
+# read on every step, which is exactly what prompt caching is for: without it
+# the dev agent must rediscover the module contract by reading files, and with
+# it uncached MODULES.md would be re-billed on every step of every task.
+REFERENCE_DOCS = {
+    "dev": ("Dashboard/package/MODULES.md",),
+}
+
+
+def _doc(rel):
+    try:
+        return (ROOT / rel).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _cached(blocks):
+    """Put the cache breakpoint on the last block given.
+
+    Everything up to and including it is re-used across turns; anything appended
+    AFTER it may change freely without invalidating the prefix. Caching is a
+    prefix match, so ordering is the whole game - one volatile byte early in the
+    prefix costs you the entire cache."""
+    if CACHE_ENABLED and blocks:
+        blocks[-1] = {**blocks[-1],
+                      "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL}}
+    return blocks
+
+
+def agent_system(name):
+    """System blocks for a subagent: its brief, then its reference documents,
+    with the breakpoint after them."""
+    a = AGENTS[name]
+    blocks = [{"type": "text", "text": a["system"]}]
+    for rel in REFERENCE_DOCS.get(name, ()):
+        doc = _doc(rel)
+        if doc:
+            header = "# Reference document: " + rel
+            blocks.append({"type": "text",
+                           "text": header + "\n\n" + doc})
+    return _cached(blocks)
 
 
 def _schema(name, desc, props, req):
@@ -143,42 +187,50 @@ LEAD_TOOLS = [TOOL_DEFS[n] for n in LEAD_TOOL_NAMES]
 
 
 def lead_system():
+    """System blocks for the lead, ordered stable-first.
+
+    The cache breakpoint sits after the static half, so tools + CORTANA.md +
+    operating notes are re-used across turns instead of re-billed. Saved memory
+    is deliberately AFTER it: recall_all() changes the moment `remember` is
+    called, and a volatile byte inside a cached prefix invalidates all of it."""
     md = ""
     try:
         from config import CORTANA_MD
         md = CORTANA_MD.read_text()
     except Exception:
         pass
-    return (f"{md}\n\n## Saved memory\n{memory.recall_all()}\n\n"
-            f"## Operating notes\nWorkspace: {WORKSPACE}\n"
-            "You are the chief of staff, not the workforce. The user talks to YOU; "
-            "specialists do the work. Your job on every request: acknowledge, route, "
-            "get back to listening.\n"
-            "- Routing: anything multi-step, slow, or specialist-shaped goes to "
-            "delegate with background=true - coding/app changes -> dev, web lookups/"
-            "summaries -> research, inbox work -> email, market analysis -> trading, "
-            "media -> video. When you hand off, SAY SO in a few words and end your "
-            "turn ('On it - dev is making that change. I'll tell you when it's done.'). "
-            "Do not wait for the result.\n"
-            "- Do directly ONLY what is faster to do than to explain: a screenshot, "
-            "one shell one-liner, reading one file, answering from knowledge or "
-            "conversation memory. If you're not sure a task fits in 2-3 tool calls, "
-            "it doesn't - delegate it instead of chaining shell/read_file/write_file "
-            "calls yourself. You have a hard step limit; running it out mid-task "
-            "wastes the user's time far more than a quick handoff would.\n"
-            "- delegate background=false is reserved for a single quick lookup whose "
-            "answer the CURRENT sentence needs (one quote, one search). Coding/build "
-            "work is NEVER background=false, even if it looks small - always dev, "
-            "always background=true.\n"
-            "- When you call a tool, any text you write alongside it is spoken aloud "
-            "first - use it for a short acknowledgment or nothing at all.\n"
-            "- Completed background tasks are announced automatically and appear in "
-            "the conversation log as [background task N ...]. Use task_status when "
-            "asked how work is going; cancel_task to stop one.\n"
-            "- Before using the restart tool, check task_status; if tasks are "
-            "running, say what would be lost and get a confirmation first.\n"
-            "Act first, report after - do not ask permission for workspace actions. "
-            f"{_SPOKEN}")
+    stable = (f"{md}\n\n"
+              f"## Operating notes\nWorkspace: {WORKSPACE}\n"
+              "You are the chief of staff, not the workforce. The user talks to YOU; "
+              "specialists do the work. Your job on every request: acknowledge, route, "
+              "get back to listening.\n"
+              "- Routing: anything multi-step, slow, or specialist-shaped goes to "
+              "delegate with background=true - coding/app changes -> dev, web lookups/"
+              "summaries -> research, inbox work -> email, market analysis -> trading, "
+              "media -> video. When you hand off, SAY SO in a few words and end your "
+              "turn ('On it - dev is making that change. I'll tell you when it's done.'). "
+              "Do not wait for the result.\n"
+              "- Do directly ONLY what is faster to do than to explain: a screenshot, "
+              "one shell one-liner, reading one file, answering from knowledge or "
+              "conversation memory. If you're not sure a task fits in 2-3 tool calls, "
+              "it doesn't - delegate it instead of chaining shell/read_file/write_file "
+              "calls yourself. You have a hard step limit; running it out mid-task "
+              "wastes the user's time far more than a quick handoff would.\n"
+              "- delegate background=false is reserved for a single quick lookup whose "
+              "answer the CURRENT sentence needs (one quote, one search). Coding/build "
+              "work is NEVER background=false, even if it looks small - always dev, "
+              "always background=true.\n"
+              "- When you call a tool, any text you write alongside it is spoken aloud "
+              "first - use it for a short acknowledgment or nothing at all.\n"
+              "- Completed background tasks are announced automatically and appear in "
+              "the conversation log as [background task N ...]. Use task_status when "
+              "asked how work is going; cancel_task to stop one.\n"
+              "- Before using the restart tool, check task_status; if tasks are "
+              "running, say what would be lost and get a confirmation first.\n"
+              "Act first, report after - do not ask permission for workspace actions. "
+              f"{_SPOKEN}")
+    return _cached([{"type": "text", "text": stable}]) + [
+        {"type": "text", "text": "## Saved memory\n" + memory.recall_all()}]
 
 
 def dispatch(name, args, run_agent=None, cancel=None, resume=None):

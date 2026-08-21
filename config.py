@@ -74,6 +74,18 @@ DUCK_ENABLED = os.getenv("DUCK_ENABLED", "1") not in ("0", "false", "False")
 DUCK_SINK_MATCH = os.getenv("DUCK_SINK_MATCH", "spotifyd")  # pactl application.name substring
 DUCK_FACTOR = float(os.getenv("DUCK_FACTOR", "0.25"))       # fraction of current volume while ducked
 
+# --- Prompt caching ---
+# The stable prefix (tools + system + any reference documents) is cached so it
+# is not re-billed every turn. 1h suits intermittent voice use better than the
+# 5-minute default: the write costs more, but re-writing it after every pause
+# costs more still.
+CACHE_ENABLED = os.getenv("CACHE_ENABLED", "1") not in ("0", "false", "False")
+CACHE_TTL = os.getenv("CACHE_TTL", "1h")
+# Billing multipliers against normal input: a cache write is 2x at the 1h TTL
+# (1.25x at 5m), a read is 0.1x. _track needs these or reported spend is wrong.
+CACHE_WRITE_MULT = 2.0 if CACHE_TTL == "1h" else 1.25
+CACHE_READ_MULT = 0.1
+
 # --- Budget ---
 BUDGET_MONTHLY_USD = float(os.getenv("BUDGET_MONTHLY_USD", "50"))
 # $/MTok (input, output). Keyed by literal model ID so a MODEL_* override in
