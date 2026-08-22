@@ -47,6 +47,7 @@ class MainActivity : Activity(), LinkClient.Listener {
     private lateinit var swipe: SwipeRefreshLayout
     private lateinit var adapter: CardAdapter
     private lateinit var linkDot: TextView
+    private lateinit var sphereBtn: ImageView
 
     private val cards = HashMap<String, LinearLayout>()   // type -> built view
     private val signatures = HashMap<String, String>()    // type -> data fingerprint
@@ -77,6 +78,10 @@ class MainActivity : Activity(), LinkClient.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Before any view exists: the cached palette is what the last snapshot
+        // delivered, and building the scaffold in the built-in defaults first
+        // produces a visible colour jump a second later.
+        Theme.load(this)
         if (!Prefs.paired(this)) {
             // Right after an app update the Android Keystore can lag a few
             // seconds, making the stored token unreadable - which is NOT the
@@ -127,8 +132,8 @@ class MainActivity : Activity(), LinkClient.Listener {
             setTextColor(Ui.TEXT)
             setPadding(Ui.dp(context, 10), 0, 0, 0)
         }
-        val sphereBtn = ImageView(this).apply {
-            setImageResource(R.drawable.sphere)
+        sphereBtn = ImageView(this).apply {
+            setImageDrawable(Theme.sphere())
             layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 34), Ui.dp(context, 34))
                 .apply { rightMargin = Ui.dp(context, 14) }
             contentDescription = "Talk to Cortana"
@@ -162,6 +167,7 @@ class MainActivity : Activity(), LinkClient.Listener {
             setProgressBackgroundColorSchemeColor(Ui.CARD)
             setOnRefreshListener { forceRefresh() }
         }
+        applySystemBars()
         root.addView(swipe,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
@@ -360,10 +366,37 @@ class MainActivity : Activity(), LinkClient.Listener {
     }
 
     override fun onState(state: JSONObject) {
+        if (Theme.updateFrom(this, state)) repaintForNewTheme()
         UpdateManager.maybeOffer(this, state)
         reconcilePending(state)
         maybeFetchWeather(state)
         render(state)
+    }
+
+    /** A new palette arrived. Every card baked its colours in at construction
+     *  time (Ui.BG and friends are read, not observed), so the only honest way
+     *  to re-colour is to drop the built views and let render() rebuild them -
+     *  which the signature cache would otherwise skip, the DATA being
+     *  unchanged. Cheap: it happens when the board's background changes, not
+     *  on the 1.5s state push. */
+    private fun repaintForNewTheme() {
+        window.decorView.setBackgroundColor(Theme.bg)
+        applySystemBars()
+        signatures.clear()
+        if (::sphereBtn.isInitialized) sphereBtn.setImageDrawable(Theme.sphere())
+        SphereWidget.refresh(this)
+    }
+
+    private fun applySystemBars() {
+        try {
+            window.statusBarColor = Theme.bg
+            window.navigationBarColor = Theme.bg
+            // A light board needs dark status-bar glyphs or the clock vanishes.
+            val insets = androidx.core.view.WindowCompat
+                .getInsetsController(window, window.decorView)
+            insets.isAppearanceLightStatusBars = Theme.isLight
+            insets.isAppearanceLightNavigationBars = Theme.isLight
+        } catch (e: Exception) { /* cosmetic only */ }
     }
 
     // ── rendering ───────────────────────────────────────────────────────────

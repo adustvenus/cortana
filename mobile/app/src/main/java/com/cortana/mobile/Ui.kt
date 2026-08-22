@@ -12,14 +12,24 @@ import android.widget.TextView
 /** Tiny programmatic-view kit that mimics the Dusk dashboard's card look:
  *  rounded dark glass cards, mono labels with letter-spacing, warm text. */
 object Ui {
-    const val BG = 0xFF221D33.toInt()
-    const val CARD = 0xE62C2542.toInt()
-    const val TEXT = 0xFFFDF3EC.toInt()
-    const val DIM = 0xFF9B93A8.toInt()
-    const val ACCENT = 0xFFFFAB8F.toInt()
-    const val ROSE = 0xFFF08A9B.toInt()
-    const val LAVENDER = 0xFFC9B8E8.toInt()
-    const val GREEN = 0xFF9BE8B8.toInt()
+    // These were `const val` hex literals, which is why the app kept the dusk
+    // palette no matter what the dashboard was wearing. They are now live
+    // reads of Theme, so every existing call site (Ui.BG, Ui.ACCENT, ...)
+    // follows the board with no change at the call site - but note they are no
+    // longer compile-time constants, so a colour captured in a field at
+    // construction time will NOT update. Read them at draw/build time.
+    val BG: Int get() = Theme.bg
+    val CARD: Int get() = Theme.card
+    val TEXT: Int get() = Theme.text
+    val DIM: Int get() = Theme.textDim
+    val ACCENT: Int get() = Theme.accent
+    val ROSE: Int get() = Theme.accent2
+    val LAVENDER: Int get() = Theme.accent3
+    val PEACH: Int get() = Theme.peach
+    val SURFACE2: Int get() = Theme.surface2
+    val HAIRLINE: Int get() = Theme.hairline
+    /** Semantic, not themed - see Theme.GREEN. */
+    const val GREEN = Theme.GREEN
 
     fun dp(ctx: Context, v: Int): Int =
         (v * ctx.resources.displayMetrics.density).toInt()
@@ -175,11 +185,5 @@ object Ui {
                 .apply { leftMargin = dp(ctx, 8) }
         }
 
-    fun stateColor(state: String): Int = when (state) {
-        "listening" -> GREEN
-        "thinking", "working" -> LAVENDER
-        "speaking" -> 0xFFAAC8FF.toInt()
-        "idle" -> DIM
-        else -> 0xFF6E6E7D.toInt()   // offline
-    }
+    fun stateColor(state: String): Int = Theme.stateColor(state)
 }

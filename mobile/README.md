@@ -17,6 +17,32 @@ phone (Cortana Mobile)  ──Tailscale (WireGuard)──▶  workstation
                                                        board snapshot, revoke)
 ```
 
+## It wears the dashboard's colours
+
+The app used to carry the dusk palette as hex literals, so it matched the
+dashboard only until you changed the dashboard's background. The board now
+derives its whole scheme from that image and publishes the colour tokens
+through the bridge; the app adopts them from the state snapshot and caches
+them, so it opens in the right palette rather than flashing the defaults.
+
+Themed: every card, label and accent, the header/talk/pairing spheres, the
+system bars, and the **2x2 home-screen widget** - whose sphere is redrawn from
+the same three gradient stops the dashboard and the desktop bubble orb use, so
+all three spheres are one object rather than three lookalikes.
+
+**Not** themed, and it cannot be: the **launcher icon**. Android resolves that
+from the manifest at install time and gives an app no way to repaint its own
+icon while running. `res/drawable/sphere.xml` exists only to feed that static
+icon and is pinned to the shipped default palette. The widget is the closest
+the home screen gets to an icon that tracks the board.
+
+Colours arrive only while the dashboard has the **MOBILE LINK** module on the
+board (they ride in its snapshot, like tasks and the weather ZIP). The bridge
+holds the last good palette, so closing the dashboard leaves the phone's
+colours where they are instead of resetting them.
+
+See `../Dashboard/PALETTE.md` for how the colours are chosen.
+
 ## One-time setup
 
 1. **Workstation:** `bash bridge/install-bridge.sh` (installs + starts

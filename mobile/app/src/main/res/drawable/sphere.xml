@@ -1,40 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Cortana orb, matching the Dusk dashboard exactly. The dashboard paints
-     it as radial-gradient(circle at 35% 30%, peach, rose 55%, orb-purple):
-       peach   255,217,196  #ffd9c4
-       accent2 240,138,155  #f08a9b
-       orb     143,123,184  #8f7bb8
-     Used by the launcher icon, the 2x2 widget, the talk screen and pairing.
+<!-- The Cortana orb, as a STATIC drawable.
+
+     This is no longer what the app draws. Every sphere you can see while the
+     app is running - the header, the talk screen, pairing, the 2x2 widget - is
+     built by Theme.sphere() from the colour tokens the dashboard publishes, so
+     it follows the board's background image.
+
+     This file survives for the one surface that cannot: the adaptive LAUNCHER
+     icon (ic_launcher_fg.xml insets this). Android resolves that from the
+     manifest at install time and gives an app no way to repaint its own icon
+     at runtime, so it is pinned to the shipped default palette - what
+     assets/bg-dusk.png extracts to.
+
+     The board paints the orb as
+     radial-gradient(circle at 35% 30%, orb-hi, orb-mid 55%, orb):
+       orb-hi   253,227,200  #fde3c8
+       orb-mid  211,142,155  #d38e9b
+       orb       80,101,129  #506581
      (XML forbids a double hyphen inside comments.) -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- depth: purple base so edges fall away like the dashboard orb -->
+    <!-- depth: the deep stop as a base, so edges fall away like the board orb -->
     <item>
         <shape android:shape="oval">
             <gradient
                 android:type="radial"
                 android:gradientRadius="58%p"
                 android:centerX="0.5" android:centerY="0.5"
-                android:startColor="#a892d6"
-                android:centerColor="#8f7bb8"
-                android:endColor="#5d4f82" />
+                android:startColor="#6b83a3"
+                android:centerColor="@color/dusk_orb"
+                android:endColor="#37475c" />
         </shape>
     </item>
-    <!-- the lit face: peach highlight into rose, offset up-left at 35%/30% -->
+    <!-- the lit face: highlight into the mid stop, offset up-left at 35%/30% -->
     <item>
         <shape android:shape="oval">
             <gradient
                 android:type="radial"
                 android:gradientRadius="62%p"
                 android:centerX="0.35" android:centerY="0.30"
-                android:startColor="#ffd9c4"
-                android:centerColor="#f08a9b"
-                android:endColor="#008f7bb8" />
+                android:startColor="@color/dusk_orb_hi"
+                android:centerColor="@color/dusk_orb_mid"
+                android:endColor="#00506581" />
         </shape>
     </item>
-    <!-- coral rim, the dashboard's accent -->
+    <!-- accent rim -->
     <item>
         <shape android:shape="oval">
-            <stroke android:width="1.5dp" android:color="#7dffab8f" />
+            <stroke android:width="1.5dp" android:color="#7de1aa84" />
         </shape>
     </item>
 </layer-list>

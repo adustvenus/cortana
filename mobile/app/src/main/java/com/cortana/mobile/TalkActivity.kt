@@ -48,6 +48,10 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener, LinkClient.Listene
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Every activity loads the palette itself: the widget can launch the
+        // talk screen straight into a cold process, with no MainActivity to
+        // have done it. Cheap, idempotent, and reads a cached value.
+        Theme.load(this)
         if (!Prefs.paired(this)) {
             startActivity(Intent(this, PairActivity::class.java))
             finish()
@@ -83,7 +87,9 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener, LinkClient.Listene
         col.addView(Ui.gap(this, 14))
 
         sphere = ImageView(this).apply {
-            setImageResource(R.drawable.sphere)
+            // Drawn from the board's palette, not R.drawable.sphere, whose
+            // colours were hex literals frozen at the old dusk theme.
+            setImageDrawable(Theme.sphere())
             layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 190), Ui.dp(context, 190))
             contentDescription = "Tap to talk"
             setOnClickListener { onSphereTap() }
@@ -233,7 +239,7 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener, LinkClient.Listene
 
     private fun speak(text: String) {
         stateTxt.text = "speaking…"
-        stateTxt.setTextColor(0xFFAAC8FF.toInt())
+        stateTxt.setTextColor(Theme.stateColor("speaking"))
         thread {
             val audio = if (Prefs.localTtsOnly(this)) null else try {
                 LinkClient.tts(this, text)

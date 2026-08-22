@@ -32,6 +32,10 @@ class PairActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Every activity loads the palette itself: the widget can launch the
+        // talk screen straight into a cold process, with no MainActivity to
+        // have done it. Cheap, idempotent, and reads a cached value.
+        Theme.load(this)
         val pad = Ui.dp(this, 24)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -42,7 +46,7 @@ class PairActivity : Activity() {
 
         // ── primary: scan the QR ──
         col.addView(ImageView(this).apply {
-            setImageResource(R.drawable.sphere)
+            setImageDrawable(Theme.sphere())
             layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 96), Ui.dp(context, 96))
         })
         col.addView(Ui.gap(this, 20))

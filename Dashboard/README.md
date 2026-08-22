@@ -53,6 +53,25 @@ With no microphone at all she stays up rather than crashing: F9 answers "I have
 no input device", F10 refuses to leave push-to-talk, and plugging one in needs
 no restart.
 
+## Colours follow the background
+
+Set a background (edit mode -> CHANGE BACKGROUND) and the whole board
+re-colours: page, panels, text, accents and the sphere. The extraction works in
+OKLab, picks one of four schemes from measured statistics, and contrast-fits
+every text and accent role before applying it, so a solid black image gives a
+black board and a bright one gives a light board with dark text. The toast names
+the scheme it chose (RICH / MONO / CHAOTIC / ACHROMATIC) - that is the one place
+you can see *why* a picture produced the palette it did.
+
+The palette does not stay on the board. It is pushed to the Electron shell, so
+the **minimized bubble orb** is the same sphere as the one on the board, and to
+the bridge, so the **phone** wears the same colours and draws the same sphere.
+`COLORS` in the edit tray still pins any individual role by hand; pinned roles
+survive a background change and `ALL AUTO` releases them.
+
+Full write-up, including the measurements behind each threshold and how to
+verify a change without the Linux box: **`PALETTE.md`**.
+
 ## Multiple agents
 
 `app/agents.json` is the registry. Add an entry (id, name, stateFile,
@@ -70,9 +89,9 @@ are status-only. State files use the `hud_state.json` shape:
 - **Corrupt/missing hud_state.json?** Module shows OFFLINE; no crash.
 - **Layout broke / want a clean board?** Edit mode (⌘/Ctrl-E) → RESET LAYOUT.
 - **Self-edit safety:** Cortana's self-edit layer refuses to touch
-  `Dashboard/app/`, `package/support.js`, and `package/vendor/` (see
-  `selfedit.py PROTECTED`). Module authoring in the `.dc.html` stays allowed,
-  per `package/MODULES.md`.
+  `Dashboard/app/`, `package/support.js`, `package/palette.js`, and
+  `package/vendor/` (see `selfedit.py PROTECTED`). Module authoring in the
+  `.dc.html` stays allowed, per `package/MODULES.md`.
 
 ## MOBILE LINK module (phone pairing)
 
@@ -88,8 +107,9 @@ and is the dashboard end of the phone link:
   tries locks pairing for 5 minutes) **and a QR code**. Scanning the QR with a
   phone camera downloads the app from this machine and pairs it in one step —
   nothing to type.
-- **Board snapshot** — pushes module order, tasks and the weather ZIP to the
-  bridge every 20s so the phone mirrors this exact board.
+- **Board snapshot** — pushes module order, tasks, the weather ZIP and the
+  board's colour tokens to the bridge every 20s (and immediately on a colour
+  change) so the phone mirrors this exact board, palette included.
 - **?** — explains all of the above in place.
 
 If it shows BRIDGE OFFLINE: `systemctl --user start cortana-bridge`.

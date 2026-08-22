@@ -1,18 +1,27 @@
 <resources>
-    <!-- Dusk dashboard palette: the single source of truth for the app's theme,
-         kept in step with the dashboard's CSS variables.
-         accent 255,171,143 · accent2 240,138,155 · accent3 201,184,232
-         peach 255,217,196 · orb 143,123,184 · text 253,243,236
-         (XML forbids a double hyphen inside comments, so the CSS variable
-         names are written here without their leading dashes.) -->
-    <color name="dusk_bg">#221d33</color>
-    <color name="dusk_card">#2c2542</color>
-    <color name="dusk_text">#fdf3ec</color>
-    <color name="dusk_dim">#9b93a8</color>
-    <color name="dusk_accent">#ffab8f</color>
-    <color name="dusk_rose">#f08a9b</color>
-    <color name="dusk_lavender">#c9b8e8</color>
-    <color name="dusk_peach">#ffd9c4</color>
-    <color name="dusk_orb">#8f7bb8</color>
+    <!-- Manifest-time defaults ONLY. Android paints windowBackground and the
+         adaptive launcher icon from these before a line of Kotlin runs, so they
+         exist to stop a flash of the wrong colour - the live palette comes from
+         Theme.kt, which reads the tokens the dashboard publishes through the
+         bridge (see Dashboard/PALETTE.md).
+
+         Values below are what the shipped assets/bg-dusk.png extracts to, so a
+         fresh install matches the dashboard's own default board.
+         (XML forbids a double hyphen inside comments, so the CSS token names
+         are written here without their leading dashes.)
+         bg 23,31,41 . surface 35,43,55 . text 244,249,255
+         accent 225,170,132 . accent2 224,162,173 . accent3 165,198,245
+         orb-hi 253,227,200 . orb-mid 211,142,155 . orb 80,101,129 -->
+    <color name="dusk_bg">#171f29</color>
+    <color name="dusk_card">#232b37</color>
+    <color name="dusk_text">#f4f9ff</color>
+    <color name="dusk_dim">#aeb5be</color>
+    <color name="dusk_accent">#e1aa84</color>
+    <color name="dusk_rose">#e0a2ad</color>
+    <color name="dusk_lavender">#a5c6f5</color>
+    <color name="dusk_peach">#fad7b5</color>
+    <color name="dusk_orb_hi">#fde3c8</color>
+    <color name="dusk_orb_mid">#d38e9b</color>
+    <color name="dusk_orb">#506581</color>
     <color name="dusk_green">#9be8b8</color>
 </resources>

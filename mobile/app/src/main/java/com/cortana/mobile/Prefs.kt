@@ -154,6 +154,15 @@ object Prefs {
         plain(ctx).edit().putString("weatherZip", zip).apply()
     }
 
+    /** The dashboard's colour tokens, as the raw JSON object the bridge sent.
+     *  Cached so the app opens in the right palette instead of showing the
+     *  built-in defaults until the first snapshot lands. Not secret. */
+    fun themeTokens(ctx: Context): String = plain(ctx).getString("themeTokens", "") ?: ""
+
+    fun setThemeTokens(ctx: Context, json: String) {
+        plain(ctx).edit().putString("themeTokens", json).apply()
+    }
+
     /** Phone-local module order from drag-and-drop; empty = follow the board. */
     fun moduleOrder(ctx: Context): List<String> =
         (plain(ctx).getString("moduleOrder", "") ?: "")

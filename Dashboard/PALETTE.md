@@ -121,6 +121,50 @@ A bright image (`Lmean ≥ 0.68`) produces a **light board** — dark text on a 
 ramp. The threshold is deliberately high: this design's home turf is dark, so
 mid-bright images stay dark.
 
+## Where the palette travels
+
+The board is the only writer. Everything else reads.
+
+```
+  background image
+        │
+        ▼
+  palette.js  ──▶  the page's localStorage  (dusk.bg.v1 / dusk.theme.v1)
+        │
+        ├── IPC  theme:set ──▶ main.js ──▶ userData/theme.json ──▶ bubble orb
+        │                              └──▶ the window's own frame colour
+        │
+        └── board snapshot ──▶ cortana-bridge ──▶ phone: cards, labels,
+                                                  spheres, 2x2 widget
+```
+
+Both hops validate the tokens with the same `^\d{1,3},\d{1,3},\d{1,3}$` shape,
+in `Dashboard/app/main.js` and in `bridge/state.py`. `test_theme_tokens.py`
+compares those two lists against the set `palette.js` actually emits *and*
+against `THEME_DEFAULTS`, because a token added to the engine and missed in a
+guard is dropped **silently** — and the only symptom is a phone or a bubble
+wearing half the theme, on a machine this code isn't written on.
+
+Three things deliberately do **not** travel:
+
+- **The background image.** Colours cross the bridge; wallpaper does not. The
+  phone gets a ~500 byte token blob, not a photo.
+- **State colours.** Green means listening and grey means offline in every
+  palette. A dead assistant must not look like a healthy one wearing today's
+  colours.
+- **The Android launcher icon.** Android resolves it from the manifest at
+  install time and gives an app no way to repaint its own icon at runtime. The
+  2×2 widget sphere *is* repainted, and it is the closest themed thing the home
+  screen can have. `mobile/.../res/drawable/sphere.xml` survives only to feed
+  that static icon; every sphere you can see while the app runs is built by
+  `Theme.sphere()`.
+
+The phone only receives a palette while the dashboard has the **MOBILE LINK**
+module on the board — the tokens ride in that module's board snapshot, exactly
+as tasks and the weather ZIP already do. The bridge keeps the last good palette,
+so closing the dashboard leaves the phone's colours standing rather than
+snapping it back to the built-in defaults.
+
 ## Verifying a change
 
 The engine is browser JS, so it **can** be run and checked on the Windows dev

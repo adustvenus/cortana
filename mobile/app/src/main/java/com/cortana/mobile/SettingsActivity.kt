@@ -44,6 +44,10 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Every activity loads the palette itself: the widget can launch the
+        // talk screen straight into a cold process, with no MainActivity to
+        // have done it. Cheap, idempotent, and reads a cached value.
+        Theme.load(this)
         val pad = Ui.dp(this, 22)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
