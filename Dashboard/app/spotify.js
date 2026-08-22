@@ -103,8 +103,12 @@ async function refreshToken() {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   if (!r.ok) return null;
   const j = await r.json();
+  // Carry the granted scope forward. A refresh response usually omits it, and
+  // dropping it blanks grantedScope from the first refresh onward - which is
+  // precisely when a scope shortfall needs telling apart from a Premium 403.
   const nt = { access_token: j.access_token,
                refresh_token: j.refresh_token || t.refresh_token,
+               scope: j.scope || t.scope || '',
                expires_at: Date.now() + j.expires_in * 1000 };
   saveToken(nt);
   return nt;
