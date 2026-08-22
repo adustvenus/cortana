@@ -731,6 +731,13 @@ const LS_KEY = 'dusk.layout.v3';          // ENGINE — never rename
 const LS_BG = 'dusk.bg.v1';               // ENGINE
 const SPRING = 'cubic-bezier(.3,1.4,.5,1)';
 const SURFACES = ['light', 'dark', 'clear'];
+// The button shows what the NEXT press gives you, not the state you are in -
+// a control that displays its own current value reads as a label. Filled is
+// dark, hollow is light, dotted is clear/transparent.
+const SURFACE_GLYPH = { light: '○', dark: '●', clear: '⊘' };
+// Clear is ⊘, not ◌: at 22px a dotted circle is indistinguishable from the
+// hollow one next to it in the cycle, which are exactly the two you must be
+// able to tell apart. The slash reads as "no surface at all".
 const LS_THEME = 'dusk.theme.v1';         // ENGINE — user-pinned colors
 // Must list EVERY token palette.js emits: applyTheme() merges
 // defaults <- auto-extracted <- user-pinned, so a token missing here would keep
@@ -1813,15 +1820,14 @@ class Component extends DCLogic {
   // ══════════ END ENGINE ══════════
 
   // ── module ops ──
-  // Straight light/dark toggle, landing on whatever the button is showing.
-  // 'clear' is still a VALID stored surface (sanitizeLayout accepts it, and the
-  // frameless prop still renders every module that way) - it is just no longer
-  // a third stop on this button, because a three-way cycle cannot honestly
-  // advertise its destination in one glyph. A module already saved as clear
-  // resolves to light on the first press.
-  toggleSurface(id) {
-    const modules = this.state.modules.map(m =>
-      m.id !== id ? m : { ...m, surface: m.surface === 'light' ? 'dark' : 'light' });
+  // light -> dark -> clear -> light. The glyph names the destination, so the
+  // cycle stays honest at every stop (see SURFACE_GLYPH).
+  cycleSurface(id) {
+    const modules = this.state.modules.map(m => {
+      if (m.id !== id) return m;
+      const cur = SURFACES.indexOf(m.surface || 'light');
+      return { ...m, surface: SURFACES[(cur + 1) % SURFACES.length] };
+    });
     this.setState({ modules }); this.persist(modules);
   }
   // double-tap guard: first tap arms, second tap (within 2.5s) removes
@@ -2002,6 +2008,9 @@ class Component extends DCLogic {
       const base = surfaceStyle(m);
       const dragging = drag && movedIds.includes(m.id);
       const armed = s.armRemove === m.id;
+      // -1 for an unrecognised stored surface lands on 'light', which is also
+      // what surfaceStyle falls back to.
+      const nextSurface = SURFACES[(SURFACES.indexOf(m.surface || 'light') + 1) % SURFACES.length];
       // Same colour as the module's own border (--hairline), just dashed, so
       // edit mode outlines the frame that is already there instead of drawing
       // an unrelated accent around it.
@@ -2255,7 +2264,7 @@ class Component extends DCLogic {
                          cursor: 'nwse-resize', fontSize: '.75rem', zIndex: 30 },
         resizeBtn: (e) => this.startDrag(e, m.id, 'resize'),
         resizeTlBtn: (e) => this.startDrag(e, m.id, 'resize-tl'),
-        surfaceBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.toggleSurface(m.id); },
+        surfaceBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.cycleSurface(m.id); },
         removeBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.requestRemove(m.id); },
         // Edit chrome is deliberately STATIC - the same neutral treatment as the
         // "+ ADD" pills. Themed chrome meant the controls restyled themselves
@@ -2264,8 +2273,8 @@ class Component extends DCLogic {
         // The glyph names what you will GET, not what you have: on a dark
         // module it offers light. Showing the current state made the button
         // read as a label.
-        surfaceBtnTxt: m.surface === 'light' ? '●' : '○',
-        surfaceBtnTitle: m.surface === 'light' ? 'Switch to dark surface' : 'Switch to light surface',
+        surfaceBtnTxt: SURFACE_GLYPH[nextSurface],
+        surfaceBtnTitle: 'Switch to ' + nextSurface + ' surface',
         // Always red, whatever the palette. Delete is the one control that must
         // never blend in.
         removeBtnStyle: {
