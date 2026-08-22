@@ -37,6 +37,7 @@ PROTECTED = (
     "Dashboard/cortana-dash.service",
     "Dashboard/app/",
     "Dashboard/package/support.js",
+    "Dashboard/package/palette.js",   # colour engine - numeric, measured, not a module
     "Dashboard/package/vendor/",
     "bridge/",              # phone link server - breaking it strands the phone
     "mobile/",              # Android app + signing keystore + CI-built APK
