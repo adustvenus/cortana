@@ -1985,7 +1985,11 @@ class Component extends DCLogic {
           width: '3.4rem', height: '3.4rem', flexShrink: 0, borderRadius: 8,
           backgroundImage: (s.spotify && s.spotify.art) ? `url("${s.spotify.art}")` : 'none',
           backgroundSize: 'cover', backgroundPosition: 'center',
-          background: (s.spotify && s.spotify.art) ? undefined : 'rgba(var(--hairline-rgb),.08)',
+          // backgroundColor, never the `background` shorthand. React 18 writes
+          // style keys in object order and turns undefined into '', so a
+          // shorthand sitting after backgroundImage clears the art on mount -
+          // it only appeared later, when a track change re-set the image alone.
+          backgroundColor: (s.spotify && s.spotify.art) ? 'transparent' : 'rgba(var(--hairline-rgb),.08)',
           boxShadow: '0 4px 14px rgba(20,16,40,.35)'
         },
         spBtnSide: { fontSize: '1.15rem', color: 'rgba(var(--text-rgb),.75)', cursor: 'pointer', userSelect: 'none' },
