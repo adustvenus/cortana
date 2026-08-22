@@ -460,21 +460,6 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                 <span onPointerDown="{{ helpClose }}" style="{{ helpCloseStyle }}">✕</span>
               </div>
             </sc-if>
-            <sc-if value="{{ m.orbPanelOn }}" hint-placeholder-val="{{ false }}">
-              <div style="position:absolute;inset:6% 8%;z-index:32;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;background:rgba(var(--surface2-rgb),.95);backdrop-filter:blur(14px);border:1px solid rgba(var(--hairline-rgb),.3);border-radius:14px;padding:.9rem">
-                <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.22em;color:rgb(var(--accent3-rgb))">SPHERE</div>
-                <div style="display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;justify-content:center">
-                  <sc-for list="{{ orbRows }}" as="orr" hint-placeholder-count="3">
-                    <div style="display:flex;flex-direction:column;align-items:center;gap:.25rem">
-                      <input type="color" value="{{ orr.hex }}" onChange="{{ orr.onPick }}" style="width:1.9rem;height:1.9rem;border:1px solid rgba(var(--hairline-rgb),.3);border-radius:8px;background:none;padding:1px;cursor:pointer">
-                      <span style="font-family:'JetBrains Mono',monospace;font-size:.55rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.75)">{{ orr.label }}</span>
-                    </div>
-                  </sc-for>
-                </div>
-                <span onPointerDown="{{ orbAutoClick }}" title="Follow the extracted palette again" style="{{ orbAutoStyle }}">{{ orbAutoTxt }}</span>
-                <span onPointerDown="{{ m.orbPanelClose }}" style="position:absolute;top:.4rem;right:.5rem;width:1.7rem;height:1.7rem;display:flex;align-items:center;justify-content:center;border-radius:50%;color:rgba(var(--text-rgb),.6);cursor:pointer;font-size:.8rem">✕</span>
-              </div>
-            </sc-if>
             <sc-if value="{{ m.aiMenuOn }}" hint-placeholder-val="{{ false }}">
               <div style="position:absolute;inset:10% 14%;z-index:25;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.55rem;background:rgba(var(--surface2-rgb),.93);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.5);border-radius:14px;padding:.9rem">
                 <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.22em;color:rgb(var(--accent3-rgb))">{{ aiMenuTitle }}</div>
@@ -602,6 +587,26 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <span onPointerDown="{{ m.surfaceBtn }}" title="{{ m.surfaceBtnTitle }}" style="{{ m.surfaceBtnStyle }}">{{ m.surfaceBtnTxt }}</span>
             <span onPointerDown="{{ m.removeBtn }}" title="Remove module (tap twice)" style="{{ m.removeBtnStyle }}">✕</span>
           </div>
+          <sc-if value="{{ m.orbPanelOn }}" hint-placeholder-val="{{ false }}">
+            <!-- Sibling of the edit-mode click shield, NOT a child of the card.
+                 The card sets backdrop-filter, which creates a stacking context,
+                 so a z-index inside it cannot beat the shield at 28 no matter how
+                 large - the swatches were rendered but unclickable. Out here 33
+                 means what it says.
+                 Anchored to the bottom so the sphere stays visible above it:
+                 the whole point is watching the orb change as you pick. -->
+            <div style="position:absolute;left:8px;right:8px;bottom:8px;z-index:33;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;justify-content:center;background:rgba(var(--panel-rgb),.16);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(var(--hairline-rgb),.3);border-radius:12px;padding:.5rem .7rem">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.2em;color:rgb(var(--accent3-rgb))">SPHERE</span>
+              <sc-for list="{{ orbRows }}" as="orr" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:.3rem">
+                  <input type="color" value="{{ orr.hex }}" onChange="{{ orr.onPick }}" style="width:1.6rem;height:1.6rem;border:1px solid rgba(var(--hairline-rgb),.35);border-radius:7px;background:none;padding:1px;cursor:pointer">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:.52rem;letter-spacing:.08em;color:rgba(var(--text-rgb),.75)">{{ orr.label }}</span>
+                </div>
+              </sc-for>
+              <span onPointerDown="{{ orbAutoClick }}" title="Follow the extracted palette again" style="{{ orbAutoStyle }}">{{ orbAutoTxt }}</span>
+              <span onPointerDown="{{ m.orbPanelClose }}" title="Close" style="{{ m.orbCloseStyle }}">✕</span>
+            </div>
+          </sc-if>
           <span onPointerDown="{{ m.resizeBtn }}" title="Resize from this corner" style="{{ m.resizeBrStyle }}">◢</span>
           <span onPointerDown="{{ m.resizeTlBtn }}" title="Resize from this corner" style="{{ m.resizeTlStyle }}">◤</span>
         </sc-if>
@@ -763,8 +768,24 @@ const THEME_DEFAULTS = {
 //   HIGHLIGHT (--peach) is gone: it reached almost nothing a user would notice.
 //     The token still exists and stays auto-derived.
 //   ORB moved out entirely - it lives on the CORTANA module now, see ORB_ROWS.
+// PANEL used to write only --surface2, which paints the DARK surface - so the
+// swatch appeared to do nothing on a light module. One pick now sets both: the
+// colour itself for the light surface, and a darkened companion for the dark
+// one, so the swatch tints the whole board either way.
+const PANEL_KEY = '--panel-rgb';
+const PANEL_MATE = '--surface2-rgb';
+// How far the dark companion is pushed toward black. 0.80 reproduces the stock
+// pair (near-white panel -> the old 47,56,70); 0.83 widens the gap ~15%.
+const PANEL_DARKEN = 0.83;
+function mixToward(rgbStr, target, t) {
+  return String(rgbStr).split(',')
+    .map(function (v) { var n = parseInt(v, 10) || 0; return Math.round(n + (target - n) * t); })
+    .join(',');
+}
+function panelMate(rgbStr) { return mixToward(rgbStr, 0, PANEL_DARKEN); }
+
 const COLOR_ROWS = [
-  ['--bg-rgb', 'BOARD'], ['--surface2-rgb', 'PANEL'], ['--text-rgb', 'TEXT'],
+  ['--bg-rgb', 'BOARD'], [PANEL_KEY, 'PANEL'], ['--text-rgb', 'TEXT'],
   ['--accent-rgb', 'TEXT 2'], ['--accent2-rgb', 'ALERT'], ['--accent3-rgb', 'TITLES']
 ];
 // The sphere's three gradient stops. Deliberately NOT in COLOR_ROWS: they are
@@ -775,6 +796,7 @@ const ORB_ROWS = [
   ['--orb-rgb', 'BASE'], ['--orb-mid-rgb', 'MID'], ['--orb-hi-rgb', 'LIGHT']
 ];
 const ORB_KEYS = ORB_ROWS.map(r => r[0]);
+
 // One neutral treatment for every edit-mode control, matching the "+ ADD"
 // pills. Static on purpose: chrome that follows the palette can end up
 // invisible against the module it is sitting on.
@@ -1958,7 +1980,10 @@ class Component extends DCLogic {
     try { localStorage.setItem(LS_THEME, JSON.stringify(custom)); } catch (e) {}
   }
   setCustomColor(k, hex) {
-    const custom = { ...this.state.themeCustom, [k]: hex2rgbStr(hex) };
+    const rgb = hex2rgbStr(hex);
+    const custom = { ...this.state.themeCustom, [k]: rgb };
+    // PANEL is one control over two tokens - see PANEL_KEY.
+    if (k === PANEL_KEY) custom[PANEL_MATE] = panelMate(rgb);
     this.setState({ themeCustom: custom });
     this.applyTheme(undefined, custom);
     this.persistTheme(custom);
@@ -1967,6 +1992,7 @@ class Component extends DCLogic {
     if (!(k in this.state.themeCustom)) return;
     const custom = { ...this.state.themeCustom };
     delete custom[k];
+    if (k === PANEL_KEY) delete custom[PANEL_MATE];   // released as a pair
     this.setState({ themeCustom: custom });
     this.applyTheme(undefined, custom);
     this.persistTheme(custom);
@@ -1989,12 +2015,17 @@ class Component extends DCLogic {
     // so on a light board it stays light and the dark body text still reads.
     // Hardcoding these to white and to rgba(20,16,32) is what made a light
     // board impossible.
+    // Light and dark read as the same module in two moods unless the wash is
+    // pushed further apart: the light surface gets 15% more of its (pale)
+    // panel colour, the dark surface 15% more of its dark one.
+    const gaLight = Math.min(0.95, ga * 1.15);
+    const gaDark = Math.min(0.95, (0.35 + ga * 2) * 1.15);
     const glass = {
-      background: `rgba(var(--panel-rgb),${ga})`, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+      background: `rgba(var(--panel-rgb),${gaLight})`, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
       border: '1px solid rgba(var(--hairline-rgb),.24)', borderRadius: 14, boxShadow: '0 8px 32px rgba(var(--bg-rgb),.35)'
     };
     const dark = {
-      background: `rgba(var(--surface2-rgb),${Math.min(.9, .35 + ga * 2)})`, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+      background: `rgba(var(--surface2-rgb),${gaDark})`, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
       border: '1px solid rgba(var(--hairline-rgb),.14)', borderRadius: 14, boxShadow: '0 8px 32px rgba(var(--bg-rgb),.42)'
     };
     const clear = { background: 'transparent', border: '1px solid transparent', borderRadius: 14 };
@@ -2230,6 +2261,10 @@ class Component extends DCLogic {
                          this.setState(x => ({ orbPanel: x.orbPanel === m.id ? null : m.id })); },
         orbPanelClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ orbPanel: null }); },
         orbBtnStyle: { ...CHROME_BTN, fontSize: '.72rem' },
+        orbCloseStyle: { width: '1.4rem', height: '1.4rem', display: 'flex',
+                         alignItems: 'center', justifyContent: 'center',
+                         borderRadius: '50%', color: 'rgba(var(--text-rgb),.6)',
+                         cursor: 'pointer', fontSize: '.7rem' },
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
         aiMenuClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ aiMenu: null, aiSent: '' }); },
         aiWaveRef: (el) => {
@@ -2269,7 +2304,9 @@ class Component extends DCLogic {
         // Edit chrome is deliberately STATIC - the same neutral treatment as the
         // "+ ADD" pills. Themed chrome meant the controls restyled themselves
         // with the board and could land on top of whatever they sat over.
-        surfaceBtnStyle: { ...CHROME_BTN },
+        // Double size: the three surface glyphs have to be told apart at a
+        // glance, and at 1.7rem they were not.
+        surfaceBtnStyle: { ...CHROME_BTN, width: '3.4rem', height: '3.4rem', fontSize: '1.7rem' },
         // The glyph names what you will GET, not what you have: on a dark
         // module it offers light. Showing the current state made the button
         // read as a label.
