@@ -39,6 +39,15 @@
   var HOUSE = { accent: 26.0, accent2: 8.0, accent3: 300.0 };
   // Temperature anchors for placing a counterpoint accent in mono schemes.
   var WARM = 42.0, COOL = 250.0;
+  // A TINTED NEUTRAL fills an accent slot the picture cannot supply: accent1's
+  // hue at a fraction of the chroma. Deliberately not a pure grey - --text is
+  // nearly achromatic, so a tint stays distinguishable from body copy at a
+  // lightness where a grey would not.
+  var NEUTRAL_C = [0.050, 0.030];
+  // Lightness midway between --text and --text-dim (dark board, light board):
+  // where a small label belongs - clearly under body copy, clearly over
+  // secondary text.
+  var NEUTRAL_L = [0.88, 0.34];
 
   // ── sRGB <-> linear ───────────────────────────────────────────────────────
   function lin(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
@@ -277,7 +286,8 @@
       // No trustworthy hue. Cortana's identity hues at restrained chroma, so a
       // colourless or busy background never fights the UI.
       c = scheme === 'chaotic' ? 0.075 : 0.105;
-      return [[HOUSE.accent, c], [HOUSE.accent2, c * 0.85], [HOUSE.accent3, c * 0.8]];
+      return [[HOUSE.accent, c, false], [HOUSE.accent2, c * 0.85, false],
+              [HOUSE.accent3, c * 0.8, false]];
     }
     if (scheme === 'mono') {
       var h = st.meanH;
@@ -287,7 +297,7 @@
       // temperature anchor is FARTHER from the base gives a blue board a warm
       // amber second colour and a green board a cool violet one.
       var second = angDist(h, WARM) > angDist(h, COOL) ? WARM : COOL;
-      return [[h, c], [second, c * 0.85], [(h + 32) % 360, c * 0.82]];
+      return [[h, c, false], [second, c * 0.85, false], [(h + 32) % 360, c * 0.82, false]];
     }
     // rich: the image's own colours, most salient first, each >= 34 degrees
     // from the ones already taken.
@@ -305,11 +315,22 @@
     var out = [];
     for (var i = 0; i < cand.length && out.length < 3; i++) {
       var far = out.every(function (o) { return angDist(cand[i].h, o[0]) > 34; });
-      if (far) out.push([cand[i].h, Math.max(0.075, Math.min(0.16, cand[i].C * 1.25))]);
+      if (far) out.push([cand[i].h, Math.max(0.075, Math.min(0.16, cand[i].C * 1.25)), false]);
     }
-    while (out.length < 3) {                    // fewer than 3 real hues: fan out
-      var base = out.length ? out[0] : [bgH, 0.10];
-      out.push([(base[0] + 40 * out.length) % 360, base[1] * 0.85]);
+    // Out of real hues. Do NOT rotate off accent1 to manufacture more - that is
+    // precisely what v1 did, and an invented hue is a lie about the picture: a
+    // red/cyan duotone was given a lavender label, a blue-and-sand desert a
+    // green one. Take a tinted neutral instead. It reads as deliberate - this
+    // image has one usable colour, so the rest of the hierarchy is carried by
+    // neutrals - and it can neither clash nor turn to mud.
+    //
+    // A second neutral is separated from the first by CHROMA, not lightness:
+    // the band between --text-dim and --text is narrow, and stepping through
+    // it collides with body text.
+    var taken = out.length;
+    for (var slot = taken; slot < 3; slot++) {
+      var h0 = out.length ? out[0][0] : bgH;
+      out.push([h0, NEUTRAL_C[Math.min(slot - taken, NEUTRAL_C.length - 1)], true]);
     }
     return out;
   }
@@ -357,7 +378,13 @@
     var acc = pickAccents(st, scheme, bgH);
     var L0 = dark ? [0.78, 0.74, 0.82] : [0.52, 0.50, 0.46];
     var roles = acc.map(function (a, k) {
-      return { L: fitContrast(L0[k], a[1], a[0], ref, 4.5, dark), C: a[1], h: a[0] };
+      // A tinted neutral needs its own lightness: at the accent lightness a
+      // near-grey reads as dirty text rather than as a label. The flag is
+      // explicit rather than sniffed from chroma - inferring it from a
+      // threshold breaks silently the moment a scheme's chroma dips under it,
+      // turning a real accent into a neutral with nothing to notice it.
+      var start = a[2] ? (dark ? NEUTRAL_L[0] : NEUTRAL_L[1]) : L0[k];
+      return { L: fitContrast(start, a[1], a[0], ref, 4.5, dark), C: a[1], h: a[0] };
     });
     var a0 = roles[0];
 

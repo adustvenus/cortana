@@ -70,6 +70,40 @@ solid white             1.00  0.000  0.000  0.0000    0    1.00      achromatic
 - **otherwise → rich.** Two or more genuine, separated hues — take the image's
   actual colours.
 
+### When the image runs out of hues
+
+`rich` takes up to three clusters, each **≥34°** from the ones already chosen.
+Plenty of real images cannot supply three: a red/cyan duotone has two, and a
+desert photo has one usable hue plus the board's own.
+
+v1's answer — and this engine's, until it was measured — was to **rotate +40°
+off accent1** for the remainder. That is the same fabrication the rewrite
+existed to remove: it gave the red/cyan duotone a *lavender* label and the
+blue-and-sand desert a *green* one, neither colour present anywhere in the
+picture. It fired on 2 of the 5 `rich` test images.
+
+The slot is now filled with a **tinted neutral**: accent1's own hue at 0.050
+chroma (0.030 for a second one), at the lightness midway between `--text` and
+`--text-dim`. It reads as deliberate — this image has one usable colour, so the
+rest of the hierarchy is carried by neutrals — and it can neither clash nor turn
+to mud.
+
+Deliberately a *tint*, not a pure grey. Both sit at the same lightness and
+therefore separate from body text equally by luminance (≈1.3:1), but `--text`
+is nearly achromatic, so only the tinted version stays distinguishable by
+**chroma** as well. A pure near-white/near-black label reads as a slightly
+dimmer copy of the body text.
+
+The flag is carried explicitly through `pickAccents`, not inferred from a
+chroma threshold: sniffing it would break silently the first time any scheme's
+chroma dipped below the threshold, turning a real accent into a neutral with
+nothing to notice it.
+
+Note this is *not* triggered by the 30° board-hue penalty, which fires on 4 of 5
+rich images and is benign — lightness already separates an accent from the board
+it sits on (the sunset's periwinkle `accent3` is 27° from the board hue, real,
+and looks right).
+
 One boundary is genuinely fuzzy, and deliberately so. Whether colour *noise*
 reads as `achromatic` or as `chaotic` depends on how much of its chroma survives
 the 64x64 downsample, which is a function of the source resolution: a 4K noise
