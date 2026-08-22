@@ -127,6 +127,52 @@ cache immediately, so a spotifyd restart is picked up on the next press rather
 than after the full TTL. With spotifyd stopped or not installed, behaviour is
 exactly as before.
 
+### When "Cortana" never shows up in Spotify Connect
+
+If the phone's Connect list has no **Cortana** in it, the problem is not
+routing - `app/spotify.js` cannot target a device the Web API cannot see
+either. spotifyd is not advertising, and nine times out of ten it is not
+running:
+
+```bash
+systemctl --user status cortana-spotifyd --no-pager
+journalctl --user -u cortana-spotifyd -n 80 --no-pager
+```
+
+The unit is `Restart=always` with `RestartSec=5`, so a config spotifyd rejects
+produces a **silent 5-second crash loop**: `systemctl start` returns success,
+the shell says nothing, and the endpoint simply never appears. The journal is
+the only place that says why. Known causes, commonest first:
+
+- **`cache_path` still says `/home/YOUR_USER`.** The example ships a
+  placeholder. `install-dash.sh` now substitutes the real path when it creates
+  the file, and warns if an existing one still has the placeholder, but a
+  config written by hand or copied before that change will crash-loop:
+
+  ```bash
+  sed -i "s|^cache_path *=.*|cache_path = $HOME/.cache/spotifyd|" Dashboard/spotifyd.conf
+  ```
+
+- **`backend = pulseaudio` on a box with no PulseAudio in the user session.**
+  Fine for a desktop login, wrong for a machine you mostly reach over SSH.
+  Use `backend = alsa` there.
+
+- **The user manager is not lingering.** A `systemctl --user` service started
+  over SSH can be torn down at logout along with the rest of the session. Fix
+  it once with `loginctl enable-linger $USER`.
+
+If it *is* running - `ss -lntup | grep -i spotifyd` shows a listening socket -
+then the daemon is healthy and the problem is the network between it and the
+phone. Spotify Connect discovery is link-local, so "same network" has to mean
+the same broadcast domain: a firewall on the box, WiFi client isolation, or a
+phone on a guest SSID or separate VLAN will all hide it while looking correct
+from both ends.
+
+Remember the claim itself is a one-time manual step. Until some Spotify client
+picks **Cortana** out of its Connect list, the endpoint exists only on the LAN
+and is absent from `/v1/me/player/devices`, so the dashboard falls back to
+whatever device Spotify thinks is active - the phone.
+
 ## Spotify rate limiting
 
 Spotify limits requests per rolling 30s window, and TWO processes poll the same

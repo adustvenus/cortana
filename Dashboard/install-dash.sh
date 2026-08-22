@@ -84,12 +84,27 @@ if [ -z "$SPOTIFYD" ] && [ -x "$HOME/.local/bin/spotifyd" ]; then
   SPOTIFYD="$HOME/.local/bin/spotifyd"
 fi
 if [ -n "$SPOTIFYD" ]; then
-  [ -f spotifyd.conf ] || cp spotifyd.conf.example spotifyd.conf
+  # Resolve cache_path as we copy. The example ships a /home/YOUR_USER
+  # placeholder, and a config that keeps it parses fine but cannot create its
+  # cache directory - so spotifyd exits, the Restart=always unit respawns it
+  # every 5s, and "systemctl start" still reports success. The endpoint just
+  # never appears in Spotify Connect, with nothing in the shell to say why.
+  CACHE="$HOME/.cache/spotifyd"
+  [ -f spotifyd.conf ] || sed "s|^cache_path *=.*|cache_path = $CACHE|" spotifyd.conf.example > spotifyd.conf
+  mkdir -p "$CACHE"
   sed -e "s|^ExecStart=.*|ExecStart=$SPOTIFYD --no-daemon --config-path $PWD/spotifyd.conf|"       cortana-spotifyd.service > ~/.config/systemd/user/cortana-spotifyd.service
   systemctl --user daemon-reload
   systemctl --user enable cortana-spotifyd
-  echo "      spotifyd unit installed. Edit Dashboard/spotifyd.conf (cache_path),"
-  echo "      then: systemctl --user start cortana-spotifyd"
+  # An existing conf is left alone - it may be deliberately customised - but a
+  # surviving placeholder is always a crash loop, so do not let it pass quietly.
+  if grep -q YOUR_USER spotifyd.conf; then
+    echo "      WARNING: Dashboard/spotifyd.conf still has the YOUR_USER placeholder in"
+    echo "               cache_path. spotifyd will crash-loop until that is a real path:"
+    echo '                 sed -i "s|^cache_path *=.*|cache_path = $HOME/.cache/spotifyd|" Dashboard/spotifyd.conf'
+  else
+    echo "      spotifyd unit installed, cache_path $CACHE"
+  fi
+  echo "      Start it: systemctl --user start cortana-spotifyd"
 else
   echo "      spotifyd not installed - Music will use Spotify's active device."
   echo "      To play on this machine:  bash Dashboard/install-spotifyd.sh"
