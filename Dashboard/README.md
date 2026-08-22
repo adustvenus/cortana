@@ -101,8 +101,14 @@ By default the Web API acts on whatever device Spotify last considered
 music in your pocket. `spotifyd` fixes that by making the workstation itself a
 Spotify Connect endpoint.
 
+spotifyd is **not** in the Ubuntu/Debian archives - `apt install spotifyd`
+fails. `install-spotifyd.sh` fetches the upstream prebuilt binary for this
+architecture, verifies its published SHA-512, and installs it to
+`~/.local/bin`. The checksum step is not ceremony: that binary ends up
+holding a live Spotify session.
+
 ```bash
-sudo apt install -y spotifyd
+bash Dashboard/install-spotifyd.sh                            # not in apt
 cp Dashboard/spotifyd.conf.example Dashboard/spotifyd.conf   # set cache_path
 bash Dashboard/install-dash.sh                                # installs the unit
 systemctl --user start cortana-spotifyd

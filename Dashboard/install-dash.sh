@@ -77,16 +77,23 @@ echo "      checkout $PWD/app   DISPLAY ${DISPLAY:-:0}   XAUTHORITY $XAUTH"
 # Optional: spotifyd makes this box a Spotify Connect endpoint so the Music
 # module plays here rather than on the phone. Skipped silently when spotifyd is
 # not installed - the dashboard falls back to Spotify's active device.
-if command -v spotifyd >/dev/null 2>&1; then
+SPOTIFYD="$(command -v spotifyd 2>/dev/null || true)"
+# Also ~/.local/bin: install-spotifyd.sh puts it there, and a non-login
+# shell running this may not have that directory on PATH yet.
+if [ -z "$SPOTIFYD" ] && [ -x "$HOME/.local/bin/spotifyd" ]; then
+  SPOTIFYD="$HOME/.local/bin/spotifyd"
+fi
+if [ -n "$SPOTIFYD" ]; then
   [ -f spotifyd.conf ] || cp spotifyd.conf.example spotifyd.conf
-  sed -e "s|^ExecStart=.*|ExecStart=$(command -v spotifyd) --no-daemon --config-path $PWD/spotifyd.conf|"       cortana-spotifyd.service > ~/.config/systemd/user/cortana-spotifyd.service
+  sed -e "s|^ExecStart=.*|ExecStart=$SPOTIFYD --no-daemon --config-path $PWD/spotifyd.conf|"       cortana-spotifyd.service > ~/.config/systemd/user/cortana-spotifyd.service
   systemctl --user daemon-reload
   systemctl --user enable cortana-spotifyd
   echo "      spotifyd unit installed. Edit Dashboard/spotifyd.conf (cache_path),"
   echo "      then: systemctl --user start cortana-spotifyd"
 else
   echo "      spotifyd not installed - Music will use Spotify's active device."
-  echo "      To play on this machine: sudo apt install spotifyd, then re-run this."
+  echo "      To play on this machine:  bash Dashboard/install-spotifyd.sh"
+  echo "      (not in the apt archives; that script fetches a verified build)"
 fi
 
 echo "[4/4] Done. Start now with:  systemctl --user start cortana-dash"
