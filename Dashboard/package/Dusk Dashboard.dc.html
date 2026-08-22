@@ -92,7 +92,6 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
   @keyframes orbPulse { 0%,100%{ box-shadow:0 0 20px 5px rgba(var(--accent-rgb),.4);} 50%{ box-shadow:0 0 36px 12px rgba(var(--accent3-rgb),.5);} }
   @keyframes popIn { from { opacity:0; transform:scale(.86); } to { opacity:1; transform:scale(1); } }
   @keyframes caret { 0%,55%{opacity:1} 56%,100%{opacity:0} }
-  @keyframes linkPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(var(--accent-rgb),.7);} 50%{ box-shadow:0 0 0 6px rgba(var(--accent-rgb),0);} }
   @keyframes aiPulse { 0%,100%{ box-shadow:0 0 18px 4px rgba(var(--ai-glow),.35); transform:scale(1);} 50%{ box-shadow:0 0 34px 12px rgba(var(--ai-glow),.65); transform:scale(1.05);} }
   /* Kiosk mode (running inside the Dusk app): fixed fullscreen, never scroll.
      The <html.dusk-app> class is set at boot only when the bridge is present,
@@ -340,15 +339,8 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         <!-- ═══ CHART ═══ -->
         <sc-if value="{{ m.t_chart }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleCol }}">
-            <div style="display:flex;justify-content:space-between;align-items:baseline">
-              <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">PORTFOLIO · 1M</div>
-              <div style="font-size:1.2rem;font-weight:600;color:rgb(var(--text-rgb))">$128,410 <span style="font-size:.85rem;color:#9be8b8">▲4.2%</span></div>
-            </div>
-            <div style="flex:1;display:flex;align-items:flex-end;gap:.5rem;margin-top:.8rem">
-              <sc-for list="{{ chartBars }}" as="bar" hint-placeholder-count="8">
-                <div style="{{ bar.style }}"></div>
-              </sc-for>
-            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">PORTFOLIO</div>
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.12em;color:rgba(var(--text-rgb),.45)">WIP — ROBINHOOD API</div>
           </div>
         </sc-if>
 
@@ -466,6 +458,21 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                   </sc-for>
                 </div>
                 <span onPointerDown="{{ helpClose }}" style="{{ helpCloseStyle }}">✕</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ m.orbPanelOn }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;inset:6% 8%;z-index:32;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;background:rgba(var(--surface2-rgb),.95);backdrop-filter:blur(14px);border:1px solid rgba(var(--hairline-rgb),.3);border-radius:14px;padding:.9rem">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.22em;color:rgb(var(--accent3-rgb))">SPHERE</div>
+                <div style="display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;justify-content:center">
+                  <sc-for list="{{ orbRows }}" as="orr" hint-placeholder-count="3">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:.25rem">
+                      <input type="color" value="{{ orr.hex }}" onChange="{{ orr.onPick }}" style="width:1.9rem;height:1.9rem;border:1px solid rgba(var(--hairline-rgb),.3);border-radius:8px;background:none;padding:1px;cursor:pointer">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:.55rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.75)">{{ orr.label }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <span onPointerDown="{{ orbAutoClick }}" title="Follow the extracted palette again" style="{{ orbAutoStyle }}">{{ orbAutoTxt }}</span>
+                <span onPointerDown="{{ m.orbPanelClose }}" style="position:absolute;top:.4rem;right:.5rem;width:1.7rem;height:1.7rem;display:flex;align-items:center;justify-content:center;border-radius:50%;color:rgba(var(--text-rgb),.6);cursor:pointer;font-size:.8rem">✕</span>
               </div>
             </sc-if>
             <sc-if value="{{ m.aiMenuOn }}" hint-placeholder-val="{{ false }}">
@@ -589,17 +596,19 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
                overlays (26), which would otherwise stay clickable. -->
           <div style="position:absolute;inset:0;z-index:28;cursor:grab"></div>
           <div style="position:absolute;top:2px;right:2px;display:flex;gap:6px;z-index:30">
-            <span onPointerDown="{{ m.linkBtn }}" title="Link / unlink module" style="{{ m.linkBtnStyle }}">∞</span>
-            <span onPointerDown="{{ m.surfaceBtn }}" title="Surface: light → dark → clear" style="{{ m.surfaceBtnStyle }}">◐</span>
+            <sc-if value="{{ m.t_cortana }}" hint-placeholder-val="{{ false }}">
+              <span onPointerDown="{{ m.orbBtn }}" title="Sphere colours" style="{{ m.orbBtnStyle }}">C</span>
+            </sc-if>
+            <span onPointerDown="{{ m.surfaceBtn }}" title="{{ m.surfaceBtnTitle }}" style="{{ m.surfaceBtnStyle }}">{{ m.surfaceBtnTxt }}</span>
             <span onPointerDown="{{ m.removeBtn }}" title="Remove module (tap twice)" style="{{ m.removeBtnStyle }}">✕</span>
           </div>
-          <span onPointerDown="{{ m.resizeBtn }}" style="position:absolute;bottom:2px;right:2px;width:1.7rem;height:1.7rem;border-radius:50%;background:rgba(var(--surface2-rgb),.75);border:1px solid rgba(var(--accent3-rgb),.6);color:rgb(var(--accent3-rgb));display:flex;align-items:center;justify-content:center;cursor:nwse-resize;font-size:.75rem;z-index:30">◢</span>
-          <span onPointerDown="{{ m.resizeTlBtn }}" title="Resize from this corner" style="position:absolute;top:2px;left:2px;width:1.7rem;height:1.7rem;border-radius:50%;background:rgba(var(--surface2-rgb),.75);border:1px solid rgba(var(--accent3-rgb),.6);color:rgb(var(--accent3-rgb));display:flex;align-items:center;justify-content:center;cursor:nwse-resize;font-size:.75rem;z-index:30">◤</span>
+          <span onPointerDown="{{ m.resizeBtn }}" title="Resize from this corner" style="{{ m.resizeBrStyle }}">◢</span>
+          <span onPointerDown="{{ m.resizeTlBtn }}" title="Resize from this corner" style="{{ m.resizeTlStyle }}">◤</span>
         </sc-if>
       </div>
     </sc-for>
 
-    <!-- drag/resize snap previews (whole link-group) -->
+    <!-- drag/resize snap previews -->
     <sc-if value="{{ previewOn }}" hint-placeholder-val="{{ false }}">
       <sc-for list="{{ previews }}" as="pv" hint-placeholder-count="1">
         <div style="{{ pv.style }}"></div>
@@ -619,12 +628,12 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
         </sc-for>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-        <label style="padding:.45rem 1rem;border-radius:999px;background:rgba(var(--surface2-rgb),.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.55);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--accent3-rgb));cursor:pointer">CHANGE BACKGROUND<input type="file" accept="image/*" onChange="{{ setBg }}" style="display:none"></label>
+        <label style="{{ chromePill }}">CHANGE BACKGROUND<input type="file" accept="image/*" onChange="{{ setBg }}" style="display:none"></label>
         <sc-if value="{{ bgCustomOn }}" hint-placeholder-val="{{ false }}">
-          <span onClick="{{ resetBg }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(var(--surface2-rgb),.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent3-rgb),.4);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgba(var(--text-rgb),.7);cursor:pointer">RESET BACKGROUND</span>
+          <span onClick="{{ resetBg }}" style="{{ chromePill }}">RESET BACKGROUND</span>
         </sc-if>
-        <span onClick="{{ toggleColors }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(var(--surface2-rgb),.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--peach-rgb),.55);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--peach-rgb));cursor:pointer">{{ colorsPillTxt }}</span>
-        <span onClick="{{ resetLayout }}" style="padding:.45rem 1rem;border-radius:999px;background:rgba(var(--surface2-rgb),.55);backdrop-filter:blur(14px);border:1px solid rgba(var(--accent2-rgb),.5);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--accent2-rgb));cursor:pointer">RESET LAYOUT</span>
+        <span onClick="{{ toggleColors }}" style="{{ chromePill }}">{{ colorsPillTxt }}</span>
+        <span onClick="{{ resetLayout }}" style="{{ chromePill }}">RESET LAYOUT</span>
       </div>
       <sc-if value="{{ colorsOpen }}" hint-placeholder-val="{{ false }}">
         <div style="display:flex;gap:1.1rem;flex-wrap:wrap;justify-content:center;align-items:center;padding:.7rem 1.1rem;border-radius:14px;background:rgba(var(--surface2-rgb),.7);backdrop-filter:blur(14px);border:1px solid rgba(var(--hairline-rgb),.18)">
@@ -637,7 +646,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
               </div>
             </div>
           </sc-for>
-          <span onClick="{{ resetColors }}" style="padding:.35rem .8rem;border-radius:999px;border:1px solid rgba(var(--accent2-rgb),.5);font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.1em;color:rgb(var(--accent2-rgb));cursor:pointer">ALL AUTO</span>
+          <span onClick="{{ resetColors }}" style="{{ chromePillSm }}">ALL AUTO</span>
         </div>
       </sc-if>
     </sc-if>
@@ -735,15 +744,43 @@ const THEME_DEFAULTS = {
   '--peach-rgb': '250,215,181',
   '--orb-hi-rgb': '253,227,200', '--orb-mid-rgb': '211,142,155', '--orb-rgb': '80,101,129'
 };
-// Only the roles worth hand-picking get a swatch. The rest (surface2, border,
-// hairline, panel, text-dim, and the orb's upper stops) are derived from these
-// and stay automatic - exposing fifteen swatches would be a paint program, not
-// a preference.
+// Only the roles worth hand-picking get a swatch; the rest are derived and stay
+// automatic. Labels name what the swatch VISIBLY changes, which the old ones
+// did not - they named the colour instead of its job, so picking one was
+// guesswork:
+//   PANEL was --surface-rgb, which nothing rendered. Modules are painted with
+//     --surface2, so the swatch now points there and actually does something.
+//   ACCENT -> TEXT 2   (it is the secondary text colour)
+//   LAVENDER -> TITLES (it is the module title colour)
+//   ROSE -> ALERT      (git dirty, negative ticker, console warnings, SHUT DOWN)
+//   HIGHLIGHT (--peach) is gone: it reached almost nothing a user would notice.
+//     The token still exists and stays auto-derived.
+//   ORB moved out entirely - it lives on the CORTANA module now, see ORB_ROWS.
 const COLOR_ROWS = [
-  ['--bg-rgb', 'BOARD'], ['--surface-rgb', 'PANEL'], ['--text-rgb', 'TEXT'],
-  ['--accent-rgb', 'ACCENT'], ['--accent2-rgb', 'ROSE'], ['--accent3-rgb', 'LAVENDER'],
-  ['--peach-rgb', 'HIGHLIGHT'], ['--orb-rgb', 'ORB']
+  ['--bg-rgb', 'BOARD'], ['--surface2-rgb', 'PANEL'], ['--text-rgb', 'TEXT'],
+  ['--accent-rgb', 'TEXT 2'], ['--accent2-rgb', 'ALERT'], ['--accent3-rgb', 'TITLES']
 ];
+// The sphere's three gradient stops. Deliberately NOT in COLOR_ROWS: they are
+// edited from the CORTANA module, and the board's ALL AUTO must not reset them
+// (nor this panel's AUTO reset the board). Still generated by the palette
+// engine like everything else - only the manual override is scoped.
+const ORB_ROWS = [
+  ['--orb-rgb', 'BASE'], ['--orb-mid-rgb', 'MID'], ['--orb-hi-rgb', 'LIGHT']
+];
+const ORB_KEYS = ORB_ROWS.map(r => r[0]);
+// One neutral treatment for every edit-mode control, matching the "+ ADD"
+// pills. Static on purpose: chrome that follows the palette can end up
+// invisible against the module it is sitting on.
+const CHROME_BTN = {
+  width: '1.7rem', height: '1.7rem', borderRadius: '50%',
+  background: 'rgba(var(--panel-rgb),.12)',
+  backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+  border: '1px solid rgba(var(--hairline-rgb),.3)', color: 'rgb(var(--text-rgb))',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'pointer', fontSize: '.85rem'
+};
+// Same treatment for the tray pills (CHANGE BACKGROUND, COLORS, RESET ...).
+const CHROME_PILL = "padding:.45rem 1rem;border-radius:999px;background:rgba(var(--panel-rgb),.12);backdrop-filter:blur(14px);border:1px solid rgba(var(--hairline-rgb),.3);font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;color:rgb(var(--text-rgb));cursor:pointer";
 // WMO weather interpretation codes -> short human labels (Open-Meteo current.weather_code)
 const WMO_DESC = {
   0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast',
@@ -782,7 +819,7 @@ const DEFS = {
   tasks:   { w: 6,  h: 4, label: 'TASKS' },
   agenda:  { w: 6,  h: 4, label: 'AGENDA' },
   image:   { w: 6,  h: 3, label: 'IMAGE' },
-  chart:   { w: 6,  h: 3, label: 'CHART' },
+  chart:   { w: 6,  h: 3, label: 'PORTFOLIO' },
   console: { w: 5,  h: 2, label: 'CONSOLE' },
   cortana: { w: 10, h: 7, label: 'CORTANA' },
   // 7 wide so it fits the gap beside a centered cortana module (which leaves
@@ -800,7 +837,7 @@ const DEFS = {
 // added modules have somewhere to land (a 10-wide default fragmented the grid
 // into gaps too small for anything big -> "NO ROOM" on add).
 const DEFAULT_MODULES = [
-  { id: 'ai0', type: 'cortana', x: 8, y: 4, w: 8, h: 8, surface: 'dark', link: null }
+  { id: 'ai0', type: 'cortana', x: 8, y: 4, w: 8, h: 8, surface: 'dark' }
 ];
 
 // ── ENGINE: layout sanitizer (guards against corrupt/hostile saved data) ──
@@ -820,7 +857,6 @@ function sanitizeLayout(arr) {
       id, type: m.type,
       x: ci(m.x, 0, COLS - w, 0), y: ci(m.y, 0, ROWS - h, 0), w, h,
       surface: SURFACES.includes(m.surface) ? m.surface : 'light',
-      link: typeof m.link === 'string' && m.link ? m.link : null,
       img: (typeof m.img === 'string' && m.img.startsWith('data:image')) ? m.img : undefined
     });
     if (out.length >= MAX_MODULES) break;
@@ -833,15 +869,15 @@ function migrateV2(arr) {
   for (const m of arr) {
     const surface = m.surface || (m.ghost ? 'clear' : (m.type === 'console' ? 'dark' : 'light'));
     if (m.type === 'topbar') {
-      out.push({ id: m.id + 'a', type: 'clock',  x: m.x,     y: m.y, w: 4, h: m.h, surface, link: 'bar' });
-      out.push({ id: m.id + 'b', type: 'date',   x: m.x + 4, y: m.y, w: 5, h: m.h, surface, link: 'bar' });
-      out.push({ id: m.id + 'c', type: 'ticker', x: m.x + 9, y: m.y, w: Math.max(4, m.w - 9), h: m.h, surface, link: 'bar' });
+      out.push({ id: m.id + 'a', type: 'clock',  x: m.x,     y: m.y, w: 4, h: m.h, surface });
+      out.push({ id: m.id + 'b', type: 'date',   x: m.x + 4, y: m.y, w: 5, h: m.h, surface });
+      out.push({ id: m.id + 'c', type: 'ticker', x: m.x + 9, y: m.y, w: Math.max(4, m.w - 9), h: m.h, surface });
     } else if (m.type === 'stats') {
       const h2 = Math.max(2, Math.floor(m.h / 2));
-      out.push({ id: m.id + 'a', type: 'cpu', x: m.x, y: m.y,      w: m.w, h: h2,       surface, link: 'sys' });
-      out.push({ id: m.id + 'b', type: 'ram', x: m.x, y: m.y + h2, w: m.w, h: m.h - h2, surface, link: 'sys' });
+      out.push({ id: m.id + 'a', type: 'cpu', x: m.x, y: m.y,      w: m.w, h: h2,       surface });
+      out.push({ id: m.id + 'b', type: 'ram', x: m.x, y: m.y + h2, w: m.w, h: m.h - h2, surface });
     } else {
-      out.push({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface, link: m.link || null, img: m.img });
+      out.push({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface, img: m.img });
     }
   }
   return out;
@@ -897,7 +933,8 @@ class Component extends DCLogic {
       }
     } catch (e) {}
     return {
-      modules, boot, bgCustom, bgImg, themeAuto, themeCustom, colorsOpen: false, edit: false, now: new Date(), drag: null, linking: null, toast: null, armRemove: null,
+      modules, boot, bgCustom, bgImg, themeAuto, themeCustom, colorsOpen: false, edit: false, now: new Date(), drag: null, toast: null, armRemove: null,
+      orbPanel: null,      // module id whose sphere-colour panel is open
       hostStats: null,     // real CPU/RAM/swap/thermal from the shell; null until first poll
       tickers: [
         { s: 'NASDAQ', v: 21482.11, c: 0.84, dec: 1 },
@@ -1018,7 +1055,7 @@ class Component extends DCLogic {
         e.preventDefault();
         // Same reset as the DONE EDITING pill: leave no overlay floating above
         // a card that is about to become a drag handle.
-        this.setState(s => ({ edit: !s.edit, linking: null, armRemove: null,
+        this.setState(s => ({ edit: !s.edit, armRemove: null, orbPanel: null,
                               trayMin: false, aiMenu: null, help: null }));
       }
     };
@@ -1571,7 +1608,7 @@ class Component extends DCLogic {
 
   persist(modules) {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(modules.map(m => ({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface: m.surface || 'light', link: m.link || null, img: m.img || undefined }))));
+      localStorage.setItem(LS_KEY, JSON.stringify(modules.map(m => ({ id: m.id, type: m.type, x: m.x, y: m.y, w: m.w, h: m.h, surface: m.surface || 'light', img: m.img || undefined }))));
     } catch (e) { this.showToast('SAVE FAILED — STORAGE FULL (LARGE IMAGES?)'); }
   }
 
@@ -1671,10 +1708,11 @@ class Component extends DCLogic {
   }
   componentDidUpdate() { this._syncYoutube(); }
 
-  groupOf(m) {
-    if (!m.link) return [m];
-    return this.state.modules.filter(o => o.link === m.link && !o.removing);
-  }
+  // Modules used to be linkable into groups that dragged together. The feature
+  // was removed: it added a button, a pulse animation, a persisted field and a
+  // whole grouping path through drag/snap/preview, to do something nobody used.
+  // Kept as a function so the drag code reads the same.
+  groupOf(m) { return [m]; }
 
   // ══════════ ENGINE: drag / resize / snap (DO NOT MODIFY) ══════════
   bindDrag() {
@@ -1775,38 +1813,16 @@ class Component extends DCLogic {
   // ══════════ END ENGINE ══════════
 
   // ── module ops ──
-  cycleSurface(id) {
-    const modules = this.state.modules.map(m => {
-      if (m.id !== id) return m;
-      const cur = SURFACES.indexOf(m.surface || 'light');
-      return { ...m, surface: SURFACES[(cur + 1) % SURFACES.length] };
-    });
+  // Straight light/dark toggle, landing on whatever the button is showing.
+  // 'clear' is still a VALID stored surface (sanitizeLayout accepts it, and the
+  // frameless prop still renders every module that way) - it is just no longer
+  // a third stop on this button, because a three-way cycle cannot honestly
+  // advertise its destination in one glyph. A module already saved as clear
+  // resolves to light on the first press.
+  toggleSurface(id) {
+    const modules = this.state.modules.map(m =>
+      m.id !== id ? m : { ...m, surface: m.surface === 'light' ? 'dark' : 'light' });
     this.setState({ modules }); this.persist(modules);
-  }
-  onLink(id) {
-    const s = this.state;
-    const m = s.modules.find(x => x.id === id);
-    if (!m) return;
-    if (s.linking === id) { this.setState({ linking: null }); this.showToast('LINK CANCELLED'); return; }
-    if (s.linking) {
-      const src = s.modules.find(x => x.id === s.linking);
-      const grp = (src && src.link) || m.link || ('g' + Date.now());
-      const modules = s.modules.map(x => (x.id === id || x.id === s.linking) ? { ...x, link: grp } : x);
-      this.setState({ modules, linking: null }); this.persist(modules);
-      this.showToast('MODULES LINKED — THEY NOW MOVE TOGETHER');
-      return;
-    }
-    if (m.link) {
-      let modules = s.modules.map(x => x.id === id ? { ...x, link: null } : x);
-      const counts = {};
-      modules.forEach(x => { if (x.link) counts[x.link] = (counts[x.link] || 0) + 1; });
-      modules = modules.map(x => (x.link && counts[x.link] < 2) ? { ...x, link: null } : x);
-      this.setState({ modules }); this.persist(modules);
-      this.showToast('UNLINKED');
-      return;
-    }
-    this.setState({ linking: id });
-    this.showToast('NOW TAP ∞ ON ANOTHER MODULE TO LINK');
   }
   // double-tap guard: first tap arms, second tap (within 2.5s) removes
   requestRemove(id) {
@@ -1847,7 +1863,7 @@ class Component extends DCLogic {
     const slot = this.findFreeSlot(def.w, def.h);
     if (!slot) { this.showToast('NO ROOM — CLEAR OR SHRINK MODULES FIRST'); return; }
     const id = uid('m');
-    const modules = [...this.state.modules, { id, type, x: slot.x, y: slot.y, w: def.w, h: def.h, surface: 'light', link: null, fresh: true }];
+    const modules = [...this.state.modules, { id, type, x: slot.x, y: slot.y, w: def.w, h: def.h, surface: 'light', fresh: true }];
     this.setState({ modules });
     this.persist(modules);
   }
@@ -1985,14 +2001,12 @@ class Component extends DCLogic {
     const modules = s.modules.map((m, i) => {
       const base = surfaceStyle(m);
       const dragging = drag && movedIds.includes(m.id);
-      const isLinkSrc = s.linking === m.id;
       const armed = s.armRemove === m.id;
+      // Same colour as the module's own border (--hairline), just dashed, so
+      // edit mode outlines the frame that is already there instead of drawing
+      // an unrelated accent around it.
       const editOutline = s.edit
-        ? (isLinkSrc
-          ? { outline: '2px solid rgba(var(--accent-rgb),.9)', outlineOffset: 2 }
-          : (m.link
-            ? { outline: '1px dashed rgba(var(--accent3-rgb),.75)', outlineOffset: 2 }
-            : { outline: '1px dashed rgba(var(--accent-rgb),.55)', outlineOffset: 2 }))
+        ? { outline: '1px dashed rgba(var(--hairline-rgb),.55)', outlineOffset: 2 }
         : {};
       const pad = { padding: '.5rem .6rem', boxSizing: 'border-box', width: '100%', height: '100%', position: 'relative', overflow: 'hidden' };
 
@@ -2200,6 +2214,13 @@ class Component extends DCLogic {
           overflow: 'hidden', textOverflow: 'ellipsis'
         },
         aiMenuOn: s.aiMenu === m.id,
+        // Sphere colours live on this module, not in the board's COLORS tray:
+        // the orb is the one role that belongs to a specific module.
+        orbPanelOn: s.orbPanel === m.id,
+        orbBtn: (e) => { e.stopPropagation(); e.preventDefault();
+                         this.setState(x => ({ orbPanel: x.orbPanel === m.id ? null : m.id })); },
+        orbPanelClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ orbPanel: null }); },
+        orbBtnStyle: { ...CHROME_BTN, fontSize: '.72rem' },
         aiOrbDown: (e) => { e.stopPropagation(); e.preventDefault(); this.setState(x => ({ aiMenu: x.aiMenu === m.id ? null : m.id, aiSent: '' })); },
         aiMenuClose: (e) => { e.stopPropagation(); e.preventDefault(); this.setState({ aiMenu: null, aiSent: '' }); },
         aiWaveRef: (el) => {
@@ -2227,29 +2248,31 @@ class Component extends DCLogic {
         cardStyleTicker: { ...base, ...editOutline, width: '100%', height: '100%', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: '1.5rem', padding: '0 1.4rem', boxSizing: 'border-box', fontFamily: "'JetBrains Mono',monospace", fontSize: '.82rem' },
         cardStyleImage: { ...(m.img ? { borderRadius: 14, overflow: 'hidden', boxShadow: glass.boxShadow } : { ...base, borderStyle: (frameless || m.surface === 'clear') ? 'solid' : 'dashed' }), ...editOutline, width: '100%', height: '100%', position: 'relative', boxSizing: 'border-box' },
         drag: (e) => { if (e.target.closest('label,input')) return; this.startDrag(e, m.id, 'move'); },
+        // Resize handles wear the module's border colour, like the edit outline.
+        resizeBrStyle: { ...CHROME_BTN, position: 'absolute', bottom: 2, right: 2,
+                         cursor: 'nwse-resize', fontSize: '.75rem', zIndex: 30 },
+        resizeTlStyle: { ...CHROME_BTN, position: 'absolute', top: 2, left: 2,
+                         cursor: 'nwse-resize', fontSize: '.75rem', zIndex: 30 },
         resizeBtn: (e) => this.startDrag(e, m.id, 'resize'),
         resizeTlBtn: (e) => this.startDrag(e, m.id, 'resize-tl'),
-        surfaceBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.cycleSurface(m.id); },
+        surfaceBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.toggleSurface(m.id); },
         removeBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.requestRemove(m.id); },
-        linkBtn: (e) => { e.stopPropagation(); e.preventDefault(); this.onLink(m.id); },
-        linkBtnStyle: {
-          width: '1.7rem', height: '1.7rem', borderRadius: '50%',
-          background: isLinkSrc ? 'rgba(var(--accent-rgb),.5)' : (m.link ? 'rgba(var(--accent3-rgb),.45)' : 'rgba(var(--surface2-rgb),.75)'),
-          border: '1px solid rgba(var(--accent3-rgb),.8)', color: isLinkSrc ? 'rgb(var(--text-rgb))' : 'rgb(var(--accent3-rgb))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '.85rem',
-          animation: isLinkSrc ? 'linkPulse 1.2s ease-in-out infinite' : 'none'
-        },
-        surfaceBtnStyle: {
-          width: '1.7rem', height: '1.7rem', borderRadius: '50%',
-          background: m.surface === 'dark' ? 'rgba(var(--surface2-rgb),.9)' : (m.surface === 'clear' ? 'transparent' : 'rgba(var(--panel-rgb),.35)'),
-          border: '1px solid rgba(var(--accent-rgb),.7)', color: 'rgb(var(--accent-rgb))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '.85rem'
-        },
+        // Edit chrome is deliberately STATIC - the same neutral treatment as the
+        // "+ ADD" pills. Themed chrome meant the controls restyled themselves
+        // with the board and could land on top of whatever they sat over.
+        surfaceBtnStyle: { ...CHROME_BTN },
+        // The glyph names what you will GET, not what you have: on a dark
+        // module it offers light. Showing the current state made the button
+        // read as a label.
+        surfaceBtnTxt: m.surface === 'light' ? '●' : '○',
+        surfaceBtnTitle: m.surface === 'light' ? 'Switch to dark surface' : 'Switch to light surface',
+        // Always red, whatever the palette. Delete is the one control that must
+        // never blend in.
         removeBtnStyle: {
-          width: '1.7rem', height: '1.7rem', borderRadius: '50%',
-          background: armed ? 'rgba(240,80,90,.9)' : 'rgba(var(--surface2-rgb),.75)',
-          border: '1px solid rgba(var(--accent2-rgb),.7)', color: armed ? '#fff' : 'rgb(var(--accent2-rgb))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '.8rem',
+          ...CHROME_BTN,
+          background: armed ? 'rgba(220,50,60,.95)' : 'rgba(220,50,60,.18)',
+          border: '1px solid rgba(220,50,60,.85)', color: armed ? '#fff' : '#ff8a93',
+          fontSize: '.8rem',
           transform: armed ? 'scale(1.15)' : 'none', transition: 'transform .15s ease, background .15s ease'
         },
         onImg: (e) => this.setImage(m.id, e.target.files && e.target.files[0]),
@@ -2310,8 +2333,6 @@ class Component extends DCLogic {
     const ud = Math.floor(up / 86400000), uh = Math.floor(up / 3600000) % 24, um = Math.floor(up / 60000) % 60;
     const openTasks = s.tasks.filter(t => !t.done).length;
 
-    const chartHeights = [34, 42, 38, 55, 49, 63, 58, 71, 67, 85, 79, 92];
-    const chartCols = ['rgb(var(--accent-rgb))', 'rgb(var(--accent-rgb))', 'rgb(var(--accent-rgb))', 'rgb(var(--accent2-rgb))', 'rgb(var(--accent2-rgb))', 'rgb(var(--accent2-rgb))', 'rgb(var(--accent3-rgb))', 'rgb(var(--accent3-rgb))', 'rgb(var(--accent3-rgb))', 'rgb(var(--peach-rgb))', 'rgb(var(--peach-rgb))', 'rgb(var(--peach-rgb))'];
 
     return {
       bgFilter: `blur(${blur}px) saturate(1.05)`,
@@ -2323,6 +2344,36 @@ class Component extends DCLogic {
       toastOn: !!s.toast,
       toastTxt: s.toast,
       bgCustomOn: !!(s.bgCustom && s.bgImg),
+      // Sphere swatches. Same pin/auto machinery as the board roles - the orb
+      // is still generated by the palette engine - but scoped, so the board's
+      // ALL AUTO leaves a hand-picked sphere alone and this AUTO leaves the
+      // board alone.
+      orbRows: ORB_ROWS.map(([k, label]) => {
+        const cur = s.themeCustom[k] || (s.themeAuto && s.themeAuto[k]) || THEME_DEFAULTS[k];
+        return { label, hex: rgbStr2hex(cur), onPick: (e) => this.setCustomColor(k, e.target.value) };
+      }),
+      orbAutoTxt: ORB_KEYS.some(k => k in s.themeCustom) ? 'AUTO' : '✓ AUTO',
+      orbAutoStyle: {
+        padding: '.3rem .75rem', borderRadius: 999,
+        border: '1px solid rgba(var(--hairline-rgb),.3)',
+        background: 'rgba(var(--panel-rgb),.12)',
+        fontFamily: "'JetBrains Mono',monospace", fontSize: '.58rem', letterSpacing: '.1em',
+        color: ORB_KEYS.some(k => k in s.themeCustom) ? 'rgb(var(--text-rgb))' : 'rgba(var(--text-rgb),.45)',
+        cursor: 'pointer', userSelect: 'none'
+      },
+      orbAutoClick: (e) => {
+        e.stopPropagation(); e.preventDefault();
+        if (!ORB_KEYS.some(k => k in s.themeCustom)) return;   // already auto
+        const next = { ...s.themeCustom };
+        for (const k of ORB_KEYS) delete next[k];
+        this.setState({ themeCustom: next });
+        this.applyTheme(undefined, next);
+        this.persistTheme(next);
+        this.showToast('SPHERE BACK TO AUTO');
+      },
+      chromePill: CHROME_PILL,
+      chromePillSm: CHROME_PILL.replace('padding:.45rem 1rem', 'padding:.35rem .8rem')
+                               .replace('font-size:.72rem', 'font-size:.62rem'),
       colorsOpen: s.colorsOpen,
       colorsPillTxt: s.colorsOpen ? '✓ COLORS' : 'COLORS',
       toggleColors: () => this.setState(x => ({ colorsOpen: !x.colorsOpen })),
@@ -2343,10 +2394,14 @@ class Component extends DCLogic {
         };
       }),
       resetColors: () => {
-        this.setState({ themeCustom: {} });
-        this.applyTheme(undefined, {});
-        this.persistTheme({});
-        this.showToast('ALL COLORS BACK TO AUTO');
+        // Board roles only - the sphere has its own AUTO on the CORTANA module,
+        // and a hand-picked orb must survive resetting the board's palette.
+        const keep = {};
+        for (const k of ORB_KEYS) if (k in s.themeCustom) keep[k] = s.themeCustom[k];
+        this.setState({ themeCustom: keep });
+        this.applyTheme(undefined, keep);
+        this.persistTheme(keep);
+        this.showToast('BOARD COLORS BACK TO AUTO');
       },
       bgLayerStyle: s.bgImg ? {
         position: 'absolute', inset: -28,
@@ -2761,9 +2816,6 @@ class Component extends DCLogic {
       youtubeInput: s.youtubeInput,
       ytOnInput: (e) => this.setState({ youtubeInput: e.target.value }),
       ytOnKey: (e) => { if (e.key === 'Enter') this._setYoutube(); },
-      chartBars: chartHeights.map((h, i) => ({
-        style: { flex: 1, height: h + '%', borderRadius: '5px 5px 2px 2px', background: `linear-gradient(180deg,${chartCols[i]},transparent)` }
-      })),
       // The ring holds LOG_KEEP; the card shows only what fits.
       logItems: s.logs.slice(-LOG_SHOW).map((l, i, arr) => ({
         ts: l.ts, msg: l.msg,
@@ -2784,11 +2836,11 @@ class Component extends DCLogic {
       })),
       resetLayout: () => {
         const modules = DEFAULT_MODULES.map(m => ({ ...m, fresh: true }));
-        this.setState({ modules, linking: null, armRemove: null }); this.persist(modules);
+        this.setState({ modules, armRemove: null }); this.persist(modules);
       },
       // Entering edit mode also dismisses any open overlay (power menu, help),
       // so nothing is left floating above a card that is now a drag handle.
-      toggleEdit: () => this.setState(x => ({ edit: !x.edit, linking: null,
+      toggleEdit: () => this.setState(x => ({ edit: !x.edit, orbPanel: null,
                                               armRemove: null, trayMin: false,
                                               aiMenu: null, help: null })),
       editPillTxt: s.edit ? '✓ DONE EDITING' : '⌘E — EDIT LAYOUT',
