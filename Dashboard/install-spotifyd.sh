@@ -44,6 +44,22 @@ WORK="$(mktemp -d)" || { echo "Cannot create a temp directory." >&2; exit 1; }
 trap 'rm -rf "$WORK"' EXIT
 ERRF="$WORK/curl.err"
 
+# curl error 23 ("client returned ERROR on write") means it could not write
+# the output file, which is almost always a full or unwritable filesystem -
+# and curl reports it as a network-ish error, so check up front and say so.
+if ! : > "$WORK/.probe" 2>/dev/null; then
+  echo "Cannot write to $WORK - check permissions on the temp filesystem." >&2
+  exit 1
+fi
+rm -f "$WORK/.probe"
+FREE_KB="$(df -Pk "$WORK" | awk 'NR==2 {print $4}')"
+if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 20480 ]; then
+  echo "Only ${FREE_KB}KB free on the filesystem holding $WORK." >&2
+  echo "  spotifyd needs ~15MB to unpack. Free some space and retry:" >&2
+  df -h "$WORK" | sed 's/^/    /' >&2
+  exit 1
+fi
+
 # curl -f prints only "curl: (22) ..." on an HTTP error, which says nothing
 # about WHICH request failed or why. Report the url and the status code.
 fetch() {   # fetch <url> <dest>

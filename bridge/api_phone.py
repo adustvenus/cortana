@@ -132,16 +132,23 @@ def _unlink(path):
         pass
 
 
-def _rescue_reply(fut):
-    """Deliver a reply whose phone disconnected mid-turn, instead of dropping it."""
-    try:
-        result = fut.result() or {}
-    except Exception:
-        return
-    reply = str(result.get("reply", "")).strip()
-    log(f"phone left mid-turn; rescuing reply ({len(reply)} chars)")
+def _announce_result(result, why):
+    """Send a reply the phone will never receive over HTTP to the announcement
+    channel instead, where the hello replay can deliver it later."""
+    reply = str((result or {}).get("reply", "")).strip()
+    log(f"{why}: reply {len(reply)} chars -> {'announced' if reply else 'nothing to send'}")
     if reply:
         hub.announce(reply)
+
+
+def _rescue_reply(fut):
+    """Handler was cancelled outright. Rarer than it sounds - see converse()."""
+    try:
+        result = fut.result() or {}
+    except Exception as e:
+        log(f"rescued turn raised: {e}")
+        return
+    _announce_result(result, "phone left mid-turn (handler cancelled)")
 
 
 async def converse(request):
@@ -189,6 +196,16 @@ async def converse(request):
     except asyncio.CancelledError:
         turn.add_done_callback(_rescue_reply)
         raise
+    # Cancellation is NOT the usual way a departed phone shows up. The request
+    # body is already read, so aiohttp keeps running the handler and only
+    # discovers the peer is gone when it writes the response - by which point
+    # this function has returned and there is nothing left to rescue. That is
+    # why closing the app produced no rescue log at all. Check the transport
+    # directly instead of waiting for a cancellation that never comes.
+    gone = request.transport is None or request.transport.is_closing()
+    log(f"turn complete (client {'gone' if gone else 'present'})")
+    if gone:
+        _announce_result(result, "phone gone at reply time")
     return web.json_response(result, status=200 if "error" not in result else 503)
 
 
