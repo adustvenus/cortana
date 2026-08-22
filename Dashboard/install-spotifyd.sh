@@ -11,6 +11,16 @@
 set -e
 cd "$(dirname "$0")"
 
+# Fail on a missing tool by name. Discovering curl is absent three steps
+# later, as an opaque substitution failure, wastes everyone's time.
+for tool in curl tar sha512sum install; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "Missing required tool: $tool" >&2
+    echo "  sudo apt install -y curl tar coreutils" >&2
+    exit 1
+  }
+done
+
 DEST="$HOME/.local/bin"
 REPO="Spotifyd/spotifyd"
 
@@ -26,15 +36,22 @@ esac
 # "full" rather than "slim": the dashboard's config uses the pulseaudio backend,
 # which the slim build does not carry.
 ASSET="spotifyd-linux-${ARCH}-full.tar.gz"
+# Upstream names the checksum after the BUILD, not the tarball: it is
+# spotifyd-linux-x86_64-full.sha512, not ...full.tar.gz.sha512.
+SUMS="spotifyd-linux-${ARCH}-full.sha512"
+
+WORK="$(mktemp -d)" || { echo "Cannot create a temp directory." >&2; exit 1; }
+trap 'rm -rf "$WORK"' EXIT
+ERRF="$WORK/curl.err"
 
 # curl -f prints only "curl: (22) ..." on an HTTP error, which says nothing
 # about WHICH request failed or why. Report the url and the status code.
 fetch() {   # fetch <url> <dest>
   local url="$1" dest="$2" code
-  code="$(curl -sSL -w '%{http_code}' -o "$dest" "$url" 2>/tmp/spotifyd-curl.err)" || {
+  code="$(curl -sSL -w '%{http_code}' -o "$dest" "$url" 2>"$ERRF")" || {
     echo "  x Network error fetching:" >&2
     echo "      $url" >&2
-    sed 's/^/      /' /tmp/spotifyd-curl.err >&2
+    [ -s "$ERRF" ] && sed 's/^/      /' "$ERRF" >&2
     return 1
   }
   if [ "$code" != "200" ]; then
@@ -50,29 +67,30 @@ echo "[1/4] Finding the latest release..."
 # SPOTIFYD_TAG=v0.4.2 skips the API entirely when it is rate-limited or down.
 TAG="${SPOTIFYD_TAG:-}"
 if [ -z "$TAG" ]; then
-  fetch "https://api.github.com/repos/$REPO/releases/latest" /tmp/spotifyd-rel.json || {
+  fetch "https://api.github.com/repos/$REPO/releases/latest" "$WORK/release.json" || {
     echo "      Set the version explicitly to skip this lookup:" >&2
     echo "        SPOTIFYD_TAG=v0.4.2 bash Dashboard/install-spotifyd.sh" >&2
     exit 1
   }
-  TAG="$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' /tmp/spotifyd-rel.json | head -1)"
-  rm -f /tmp/spotifyd-rel.json
+  TAG="$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$WORK/release.json" | head -1)"
+  rm -f "$WORK/release.json"
 fi
-[ -n "$TAG" ] || { echo "Could not reach the GitHub API." >&2; exit 1; }
+[ -n "$TAG" ] || { echo "Could not determine the release tag from the API response." >&2
+                   echo "  Retry with: SPOTIFYD_TAG=v0.4.2 bash Dashboard/install-spotifyd.sh" >&2
+                   exit 1; }
 BASE="https://github.com/$REPO/releases/download/$TAG"
 echo "      $TAG  ($ARCH)"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+TMP="$WORK"
 
 echo "[2/4] Downloading $ASSET..."
 fetch "$BASE/$ASSET" "$TMP/$ASSET" || exit 1
-fetch "$BASE/$ASSET.sha512" "$TMP/$ASSET.sha512" || exit 1
+fetch "$BASE/$SUMS" "$TMP/$SUMS" || exit 1
 
 echo "[3/4] Verifying checksum..."
 # Upstream publishes "<hash>  <filename>", so sha512sum -c works directly once
 # both files sit in the same directory.
-( cd "$TMP" && sha512sum -c "$ASSET.sha512" >/dev/null ) || {
+( cd "$TMP" && sha512sum -c "$SUMS" >/dev/null ) || {
   echo "      ✗ CHECKSUM MISMATCH - refusing to install." >&2
   echo "      This binary would hold a live Spotify session; do not run it." >&2
   exit 1
