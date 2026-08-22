@@ -9,7 +9,11 @@ import asyncio
 import collections
 import itertools
 import json
+import os
+import tempfile
+import threading
 import time
+from pathlib import Path
 
 from bridge.settings import log
 
@@ -27,7 +31,47 @@ _loop = None
 # survives the app being closed.
 ANNOUNCE_HISTORY = 50
 _announces = collections.deque(maxlen=ANNOUNCE_HISTORY)
-_announce_seq = itertools.count(1)
+
+# The id counter MUST survive a bridge restart. The phone stores the highest id
+# it has seen and only ever raises it (Prefs.setLastAnnounce), then sends it in
+# its hello so pending_after() can replay what it missed. A per-process
+# count(1) therefore broke replay completely after every restart - and the unit
+# is Restart=always: a phone holding id 37 would ask for "newer than 37", get
+# fresh ids 1, 2, 3..., and receive nothing until 37 more announcements had
+# accumulated in one process lifetime. Live delivery hid it, so the only thing
+# that ever failed was the exact case this mechanism exists for: a completion
+# landing while the app is closed.
+SEQ_FILE = Path(__file__).resolve().parent.parent / "announce_seq.json"
+_seq_lock = threading.Lock()
+
+
+def _load_seq():
+    """Next id to hand out. Absent file = first run, start at 1."""
+    try:
+        return max(1, int(json.loads(SEQ_FILE.read_text())["next"]))
+    except FileNotFoundError:
+        return 1
+    except Exception:
+        # Corrupt/unreadable. Restarting at 1 would silently reinstate the very
+        # bug above, so fall back to the clock - always higher than any small
+        # id already issued, and still inside the Int32 the app stores.
+        return int(time.time())
+
+
+def _persist_seq(next_id):
+    try:
+        tmp = tempfile.NamedTemporaryFile("w", dir=SEQ_FILE.parent,
+                                          delete=False, suffix=".tmp")
+        json.dump({"next": next_id}, tmp)
+        tmp.close()
+        os.replace(tmp.name, SEQ_FILE)
+    except Exception as e:
+        # Not fatal: ids stay correct for this process, only replay across the
+        # next restart degrades. Worth a line so it is not silent.
+        log("announce seq not persisted", e)
+
+
+_announce_seq = itertools.count(_load_seq())
 
 
 def bind_loop(loop):
@@ -64,7 +108,12 @@ async def send(ws, msg):
     try:
         await ws.send_str(msg)
     except Exception:
-        _sockets.discard(ws)
+        # pop, not discard: _sockets is a dict. discard() raised AttributeError
+        # from inside this handler, which escaped through broadcast() into the
+        # server's push loop and killed it for EVERY phone until a restart -
+        # while the heartbeat kept the sockets open, so the app showed a healthy
+        # green dot over frozen data.
+        _sockets.pop(ws, None)
 
 
 async def broadcast(msg):
@@ -94,7 +143,10 @@ def announce(text, **_kwargs):
     text = (text or "").strip()
     if not text:
         return
-    item = {"type": "announce", "id": next(_announce_seq),
+    with _seq_lock:                    # called from worker threads
+        seq = next(_announce_seq)
+        _persist_seq(seq + 1)
+    item = {"type": "announce", "id": seq,
             "ts": time.time(), "text": text[:500]}
     _announces.append(item)
     # Delivery has been guessed at for several rounds. Make it visible.

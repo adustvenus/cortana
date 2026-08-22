@@ -42,6 +42,10 @@ Dashboard/app/spotify.json
 # Mobile bridge: paired-phone token hashes + device names (per-machine)
 mobile_link.json
 
+# Announcement id counter. Per-machine, and must survive a bridge restart or
+# replay to a reconnecting phone breaks (see bridge/hub.py).
+announce_seq.json
+
 # Android build outputs (mobile/dist/ IS committed - CI publishes the APK there)
 mobile/.gradle/
 mobile/build/

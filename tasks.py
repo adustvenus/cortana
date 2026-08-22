@@ -25,11 +25,34 @@ from voice import speech
 MAX_CONCURRENT = 4
 CODE_AGENTS = {"dev"}          # agents whose work must hold the code lock
 ANNOUNCE_CHARS = 320           # spoken completion summary cap
+FINISHED_KEEP = 20             # finished records kept in memory (see _prune)
 
 _code_lock = threading.Lock()
 _reg_lock = threading.Lock()
 _ids = itertools.count(1)
 _tasks = {}                    # id -> record dict
+
+
+def _prune():
+    """Drop all but the newest FINISHED_KEEP completed records. Call holding
+    _reg_lock. Running and queued tasks are never touched.
+
+    _tasks used to grow for the whole process lifetime, and each record pins
+    the full uncapped agent result plus a threading.Event - on a service that
+    is Restart=always and therefore effectively never restarts.
+
+    Safe to drop old entries because nothing indexes them: cancel() already
+    refuses anything not running/queued, status_summary() lists only the last
+    8, and the durable record goes to sqlite via memory.log_task() in _report.
+    In particular the phone's "a completion survives the app being closed"
+    guarantee rides on bridge.hub's announcement deque, not on this dict - the
+    only thing lost is status_summary(id) for a long-finished id.
+    """
+    done = sorted((t for t in _tasks.values()
+                   if t["status"] not in ("running", "queued")),
+                  key=lambda t: t["id"])
+    for t in done[:-FINISHED_KEEP]:
+        _tasks.pop(t["id"], None)
 
 
 @contextmanager
@@ -90,7 +113,9 @@ def _run(rec, runner):
         if needs_lock:
             _code_lock.release()
         rec["finished"] = time.time()
-        _report(rec)
+        _report(rec)          # persists to sqlite before the record can be pruned
+        with _reg_lock:
+            _prune()
 
 
 def _report(rec):

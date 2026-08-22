@@ -1,9 +1,32 @@
 """Shared primitives: the TTL cache every state reader uses, and subprocess
 helpers. Imports only settings, so anything may depend on it."""
+import json
 import subprocess
 import time
 
 _cache = {}
+
+
+def dedup_key(snap):
+    """Serialised snapshot minus the fields that move on their own, so an
+    unchanged house actually compares equal.
+
+    Lives here rather than in server.py so it stays unit-testable: server.py
+    needs aiohttp, which CI deliberately does not install.
+
+    Exactly two fields tick with nothing happening - the top-level `ts`, stamped
+    fresh by every state.build(), and each device's `last_seen`, which advances
+    on any REST call. `online` is deliberately KEPT: it flips when a phone ages
+    past ONLINE_WINDOW, and that is a real change the app should be told about.
+    Never mutates the snapshot it is given; the original still gets sent.
+    """
+    trimmed = {k: v for k, v in snap.items() if k != "ts"}
+    devices = trimmed.get("devices")
+    if isinstance(devices, list):
+        trimmed["devices"] = [
+            {k: v for k, v in d.items() if k != "last_seen"} if isinstance(d, dict) else d
+            for d in devices]
+    return json.dumps(trimmed, sort_keys=True, default=str)
 
 
 def cached(key, ttl, fn):

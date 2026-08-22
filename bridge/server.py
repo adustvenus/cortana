@@ -28,31 +28,52 @@ Run: venv/bin/python -m bridge.server
 """
 import asyncio
 import json
+import time
 
 from aiohttp import web
 
-from bridge import api_local, api_phone, hub, state
+from bridge import api_local, api_phone, hub, state, util
 from bridge.settings import (BIND, BRIDGE_VERSION, HOST_NAME, MAX_UPLOAD, PORT,
-                             PUSH_INTERVAL, log)
+                             PUSH_FLOOR, PUSH_INTERVAL, log)
 
 
 async def _push_loop():
-    """Push a fresh snapshot to every connected phone, skipping identical
-    payloads so an idle house costs nothing on the wire or the battery."""
-    last = ""
+    """Push a fresh snapshot to every connected phone, deduped with a floor.
+
+    The dedup here used to be unconditional, and was dead code: state.build()
+    stamps a fresh `ts` on every call, so no two payloads ever compared equal
+    and the old "an idle house costs nothing" claim was false - a full snapshot
+    went out every 1.5s forever, to every phone.
+
+    It cannot simply be repaired either. The app runs its pending-edit
+    reconciliation only on an incoming state frame, so a perfectly silent idle
+    board would leave a phone's task edits pending with no timeout and no
+    warning. Hence PUSH_FLOOR: dedupe the chatter, never go quiet.
+    """
+    last_key, last_push = "", 0.0
     while True:
         await asyncio.sleep(PUSH_INTERVAL)
         if not hub.count():
             continue
         try:
-            payload = json.dumps(await asyncio.to_thread(state.build))
+            snap = await asyncio.to_thread(state.build)
+            key = util.dedup_key(snap)
+            payload = json.dumps(snap)
         except Exception as e:
             log("state build failed", e)
             continue
-        if payload == last:
+        now = time.monotonic()
+        if key == last_key and now - last_push < PUSH_FLOOR:
             continue
-        last = payload
-        await hub.broadcast(payload)
+        last_key, last_push = key, now
+        # Guarded: hub.send swallows per-socket failures, but an unexpected
+        # raise here would end this task permanently and silently - phones keep
+        # a live socket and simply stop receiving state. One bad push is worth
+        # a log line, never the loop.
+        try:
+            await hub.broadcast(payload)
+        except Exception as e:
+            log("broadcast failed", e)
 
 
 def make_app():
