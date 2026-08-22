@@ -90,7 +90,7 @@ if [ -n "$SPOTIFYD" ]; then
   # every 5s, and "systemctl start" still reports success. The endpoint just
   # never appears in Spotify Connect, with nothing in the shell to say why.
   CACHE="$HOME/.cache/spotifyd"
-  [ -f spotifyd.conf ] || sed "s|^cache_path *=.*|cache_path = $CACHE|" spotifyd.conf.example > spotifyd.conf
+  [ -f spotifyd.conf ] || sed "s|^cache_path *=.*|cache_path = \"$CACHE\"|" spotifyd.conf.example > spotifyd.conf
   mkdir -p "$CACHE"
   sed -e "s|^ExecStart=.*|ExecStart=$SPOTIFYD --no-daemon --config-path $PWD/spotifyd.conf|"       cortana-spotifyd.service > ~/.config/systemd/user/cortana-spotifyd.service
   systemctl --user daemon-reload
@@ -100,7 +100,7 @@ if [ -n "$SPOTIFYD" ]; then
   if grep -q YOUR_USER spotifyd.conf; then
     echo "      WARNING: Dashboard/spotifyd.conf still has the YOUR_USER placeholder in"
     echo "               cache_path. spotifyd will crash-loop until that is a real path:"
-    echo '                 sed -i "s|^cache_path *=.*|cache_path = $HOME/.cache/spotifyd|" Dashboard/spotifyd.conf'
+    echo '                 sed -i "s|^cache_path *=.*|cache_path = \"$HOME/.cache/spotifyd\"|" Dashboard/spotifyd.conf'
   else
     echo "      spotifyd unit installed, cache_path $CACHE"
   fi

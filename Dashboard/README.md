@@ -150,7 +150,7 @@ the only place that says why. Known causes, commonest first:
   config written by hand or copied before that change will crash-loop:
 
   ```bash
-  sed -i "s|^cache_path *=.*|cache_path = $HOME/.cache/spotifyd|" Dashboard/spotifyd.conf
+  sed -i "s|^cache_path *=.*|cache_path = \"$HOME/.cache/spotifyd\"|" Dashboard/spotifyd.conf
   ```
 
 - **`backend = pulseaudio` on a box with no PulseAudio in the user session.**
