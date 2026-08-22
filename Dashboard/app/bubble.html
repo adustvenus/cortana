@@ -3,14 +3,29 @@
 <head>
 <meta charset="utf-8">
 <style>
+  /* The minimized sphere. Its three gradient stops are the SAME tokens the
+     board paints its orb with (--orb-hi / --orb-mid / --orb), pushed over IPC
+     by the dashboard page and cached by the main process - so this orb and the
+     one on the board are the same object, not two things that happen to look
+     alike. The values below are only the first-run fallback, used until a
+     palette has ever been pushed. */
   html, body { margin: 0; background: transparent; overflow: hidden; user-select: none;
                -webkit-user-select: none; height: 100%; }
+  :root {
+    --orb-hi-rgb: 253,227,200;
+    --orb-mid-rgb: 211,142,155;
+    --orb-rgb: 80,101,129;
+  }
   #orb {
     position: absolute; inset: 10px; border-radius: 50%; cursor: pointer;
-    background: radial-gradient(circle at 35% 30%, #ffd9c4, #f08a9b 55%, #8f7bb8);
+    background: radial-gradient(circle at 35% 30%,
+                rgb(var(--orb-hi-rgb)), rgb(var(--orb-mid-rgb)) 55%, rgb(var(--orb-rgb)));
     animation: pulse 4.5s ease-in-out infinite;
     -webkit-app-region: no-drag;
+    transition: background .45s ease;
   }
+  /* Offline stays deliberately grey in every palette: a dead assistant should
+     not look like a healthy one wearing today's colours. */
   #orb.offline {
     background: radial-gradient(circle at 35% 30%, #8a8a96, #565664 55%, #33333e);
     animation: none;
@@ -25,9 +40,12 @@
 <body>
 <div id="orb" title="Cortana — click to open the dashboard (right-click for menu)"></div>
 <script>
+  // Glow colour tracks STATE, not theme: green means listening on every
+  // palette. Only the sphere's body follows the board.
   const COLORS = { idle: '150,165,195', listening: '110,210,175', thinking: '150,170,255',
                    working: '150,170,255', speaking: '170,200,255', offline: '135,135,150' };
   const SPEED  = { idle: 4.5, listening: 2.2, thinking: 3, working: 3, speaking: 1.2 };
+  const ORB_STOPS = ['--orb-hi-rgb', '--orb-mid-rgb', '--orb-rgb'];
   const orb = document.getElementById('orb');
   orb.addEventListener('click', () => window.duskBridge && window.duskBridge.open());
   window.addEventListener('contextmenu', (e) => {
@@ -43,6 +61,15 @@
       orb.style.setProperty('--glow', COLORS[state] || COLORS.idle);
       orb.style.animationDuration = (SPEED[state] || 4.5) + 's';
     });
+    if (window.duskBridge.theme) {
+      window.duskBridge.theme.onTheme((vars) => {
+        if (!vars) return;
+        // Only the three sphere stops matter here; the bubble has no other
+        // chrome. Anything missing simply keeps its fallback.
+        for (const k of ORB_STOPS)
+          if (vars[k]) document.documentElement.style.setProperty(k, vars[k]);
+      });
+    }
   } else {
     orb.classList.add('offline');
   }

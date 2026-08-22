@@ -99,6 +99,10 @@ async def board(request):
         return web.json_response({"error": "snapshot too large"}, status=413,
                                  headers=auth.CORS)
     state.set_board(body)
+    # Colour tokens ride along in the snapshot. Lifted out and kept separately
+    # so the phone reads them from one stable place, and so a snapshot that
+    # arrives without them leaves the last good palette standing.
+    state.set_theme(body.get("theme"))
     return web.json_response({"ok": True}, headers=auth.CORS)
 
 

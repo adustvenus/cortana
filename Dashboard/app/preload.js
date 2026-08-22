@@ -31,6 +31,23 @@ contextBridge.exposeInMainWorld('duskBridge', {
   control(id, action) {
     return ipcRenderer.invoke('agents:control', { id: String(id), action: String(action) });
   },
+  /** Theme tokens. The dashboard page owns the palette (it lives in that page's
+   *  localStorage) and pushes it here with set(); the bubble reads it with
+   *  onTheme(). Without this channel the bubble orb could only ever show the
+   *  hardcoded default colours, whatever the board was wearing. */
+  theme: {
+    set(vars) { return ipcRenderer.invoke('theme:set', vars); },
+    get() { return ipcRenderer.invoke('theme:get'); },
+    /** Subscribe to palette changes. Delivers the current palette immediately,
+     *  then on every change. Returns an unsubscribe function. */
+    onTheme(cb) {
+      if (typeof cb !== 'function') return () => {};
+      const handler = (_e, vars) => { try { cb(vars); } catch (err) {} };
+      ipcRenderer.on('theme:update', handler);
+      ipcRenderer.invoke('theme:get').then(v => { try { cb(v); } catch (err) {} }).catch(() => {});
+      return () => ipcRenderer.removeListener('theme:update', handler);
+    }
+  },
   gitStatus() { return ipcRenderer.invoke('git:status'); },
   /** Today's calendar events (read-only): {events:[{time,title,allDay,past}], error}. */
   calendar() { return ipcRenderer.invoke('calendar:today'); },

@@ -6,6 +6,7 @@ plus the board snapshot the MOBILE LINK module pushes over loopback. Each
 source is TTL-cached and failure-tolerant: one broken reader degrades its own
 section, never the whole feed.
 """
+import re
 import socket
 import threading
 import time
@@ -30,6 +31,53 @@ _task_lock = threading.Lock()
 def set_board(snapshot):
     _board["data"] = snapshot
     _board["ts"] = time.time()
+
+
+# The dashboard's colour tokens, carried inside the board snapshot. Kept
+# separately as well as inside `board` so the phone has one stable place to look
+# and, more importantly, so the LAST GOOD palette survives a board snapshot that
+# arrives without one - otherwise closing the dashboard would strip the phone
+# back to its built-in colours, which looks exactly like the theme breaking.
+_theme = {"data": None, "ts": 0.0}
+
+_THEME_KEYS = frozenset((
+    "--bg-rgb", "--surface-rgb", "--surface2-rgb", "--border-rgb",
+    "--panel-rgb", "--hairline-rgb", "--text-rgb", "--text-dim-rgb",
+    "--accent-rgb", "--accent2-rgb", "--accent3-rgb", "--peach-rgb",
+    "--orb-hi-rgb", "--orb-mid-rgb", "--orb-rgb",
+))
+
+
+# Deliberately a regex and not int(): int() also accepts " 2", "+2" and "1_0"
+# (which is TEN). Dashboard/app/main.js guards the same payload with exactly
+# this shape, and two validators that disagree are how you end up with a phone
+# that is themed and a bubble orb that is not.
+_RGB_TRIPLE = re.compile(r"^\d{1,3},\d{1,3},\d{1,3}$")
+
+
+def _clean_theme(raw):
+    """Known tokens holding a literal 'r,g,b' triple, nothing else. The phone
+    parses these into colour ints; anything malformed would either crash the
+    parse or paint an invisible UI on a device with no console to read."""
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for key, value in raw.items():
+        if key not in _THEME_KEYS or not isinstance(value, str):
+            continue
+        if not _RGB_TRIPLE.match(value):
+            continue
+        nums = [int(p) for p in value.split(",")]
+        if all(0 <= n <= 255 for n in nums):
+            out[key] = "%d,%d,%d" % tuple(nums)
+    return out or None
+
+
+def set_theme(raw):
+    cleaned = _clean_theme(raw)
+    if cleaned:
+        _theme["data"] = cleaned
+        _theme["ts"] = time.time()
 
 
 def queue_task_op(op):
@@ -138,6 +186,7 @@ def build():
         "spotify": util.cached("spotify", 20, spotify_link.state),   # 20s: two pollers share one Spotify quota
         "board": _board["data"],
         "boardTs": _board["ts"],
+        "theme": _theme["data"],
         "devices": pairing.devices(hub.online_idents()),
         "ts": time.time(),
     }

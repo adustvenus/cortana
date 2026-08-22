@@ -1386,7 +1386,12 @@ class Component extends DCLogic {
             layout: this.state.modules.map(m => ({ type: m.type, x: m.x, y: m.y, w: m.w, h: m.h })),
             tasks: this.state.tasks,
             weatherZip: this.state.weatherZip,
-            youtubeId: this.state.youtubeId
+            youtubeId: this.state.youtubeId,
+            // The board's colour tokens, so the phone wears the same palette
+            // and paints the same sphere. ~500 bytes; the snapshot ceiling is
+            // 200KB. The image itself is deliberately NOT sent - colours
+            // travel, wallpaper does not.
+            theme: this._themeVars || null
           }) });
       } catch (e) { /* bridge down - next interval retries */ }
     };
@@ -1820,7 +1825,26 @@ class Component extends DCLogic {
   applyTheme(auto, custom) {
     if (auto === undefined) auto = this.state.themeAuto;
     if (custom === undefined) custom = this.state.themeCustom;
-    applyThemeVars({ ...THEME_DEFAULTS, ...(auto || {}), ...(custom || {}) });
+    const vars = { ...THEME_DEFAULTS, ...(auto || {}), ...(custom || {}) };
+    applyThemeVars(vars);
+    this.publishTheme(vars);
+  }
+  /* The palette lives in THIS page's localStorage, so every other surface -
+   * the minimized bubble orb, the phone - used to be stuck on hardcoded
+   * defaults no matter what the board was wearing. One writer, two readers:
+   *   - the Electron shell (bubble orb + the window's own frame colour)
+   *   - the mobile bridge, riding along in the board snapshot
+   * Both are best-effort: a missing shell or a stopped bridge must never stop
+   * the board from re-colouring itself. */
+  publishTheme(vars) {
+    this._themeVars = vars;
+    try {
+      if (window.duskBridge && window.duskBridge.theme) window.duskBridge.theme.set(vars);
+    } catch (e) { /* not running inside the Dusk app */ }
+    // Push immediately rather than waiting out the 20s board interval - a
+    // colour change you can see on the board but not on your phone reads as
+    // broken, not as pending.
+    if (this._pushBoard) this._pushBoard();
   }
   persistTheme(custom) {
     try { localStorage.setItem(LS_THEME, JSON.stringify(custom)); } catch (e) {}

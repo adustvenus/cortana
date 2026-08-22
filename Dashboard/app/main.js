@@ -49,6 +49,56 @@ try {
 
 const serviceState = {};   // agentId -> 'active' | 'inactive' | 'failed' | 'unknown'
 
+// ── theme ───────────────────────────────────────────────────────────────────
+// The palette lives in the dashboard page's localStorage, which nothing outside
+// that one renderer can see - so the bubble orb was painted with hardcoded
+// defaults and could never follow the board. The page now pushes its tokens
+// here on every change; we cache them to disk and re-broadcast, so the bubble
+// is themed even when it is the only window that has ever been shown.
+//
+// Stored under userData, NOT in the repo: this is per-machine state and
+// Dashboard/app/ is checked in.
+const THEME_KEYS = new Set([
+  '--bg-rgb', '--surface-rgb', '--surface2-rgb', '--border-rgb',
+  '--panel-rgb', '--hairline-rgb', '--text-rgb', '--text-dim-rgb',
+  '--accent-rgb', '--accent2-rgb', '--accent3-rgb', '--peach-rgb',
+  '--orb-hi-rgb', '--orb-mid-rgb', '--orb-rgb'
+]);
+const RGB_TRIPLE = /^\d{1,3},\d{1,3},\d{1,3}$/;
+let themeFile = null;      // resolved once the app is ready (needs getPath)
+let theme = {};            // last known good token set
+
+/** Keep only known tokens holding a literal "r,g,b" triple. The page is
+ *  trusted, but this value is written to disk and injected into the bubble's
+ *  CSS - validating it here means a corrupt cache can't become a style
+ *  injection or a silently broken orb. */
+function sanitizeTheme(obj) {
+  const out = {};
+  if (!obj || typeof obj !== 'object') return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!THEME_KEYS.has(k) || typeof v !== 'string' || !RGB_TRIPLE.test(v)) continue;
+    if (v.split(',').every(n => Number(n) >= 0 && Number(n) <= 255)) out[k] = v;
+  }
+  return out;
+}
+
+function loadTheme() {
+  try {
+    themeFile = path.join(app.getPath('userData'), 'theme.json');
+    theme = sanitizeTheme(JSON.parse(fs.readFileSync(themeFile, 'utf8')));
+  } catch (e) { theme = {}; }   // never themed yet, or unreadable: bubble uses its own defaults
+}
+
+function saveTheme() {
+  if (!themeFile) return;
+  try {
+    fs.mkdirSync(path.dirname(themeFile), { recursive: true });
+    const tmp = themeFile + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(theme));
+    fs.renameSync(tmp, themeFile);   // atomic: a crash mid-write can't leave half a palette
+  } catch (e) { console.error('[dusk] theme cache unwritable:', e.message); }
+}
+
 function readAgent(a) {
   let st = { state: 'offline', agent: '', detail: '', thoughts: [], ts: 0, mode: '' };
   try {
@@ -305,6 +355,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     youtubeReferer();
+    loadTheme();          // before the bubble loads, so it never flashes defaults
     createWindows();
     createTray();
     placeForDisplays();
@@ -351,6 +402,27 @@ if (!app.requestSingleInstanceLock()) {
 
   // ── IPC ───────────────────────────────────────────────────────────────────
   ipcMain.handle('agents:get', () => snapshot());
+
+  // Theme: the dashboard page is the only writer; the bubble is a reader.
+  ipcMain.handle('theme:get', () => theme);
+  ipcMain.handle('theme:set', (_e, vars) => {
+    const clean = sanitizeTheme(vars);
+    if (!Object.keys(clean).length) return { ok: false, error: 'no valid tokens' };
+    if (JSON.stringify(clean) === JSON.stringify(theme)) return { ok: true, unchanged: true };
+    theme = clean;
+    saveTheme();
+    for (const w of [bubbleWin, mainWin])
+      if (w && !w.isDestroyed()) w.webContents.send('theme:update', theme);
+    // The frame behind the page is painted by Chromium before any CSS runs;
+    // leaving it at the old purple showed a flash of the previous palette on
+    // every reload and behind the fullscreen transition.
+    try {
+      if (mainWin && !mainWin.isDestroyed() && theme['--bg-rgb'])
+        mainWin.setBackgroundColor('#' + theme['--bg-rgb'].split(',')
+          .map(n => Number(n).toString(16).padStart(2, '0')).join(''));
+    } catch (e) { /* older Electron: cosmetic only */ }
+    return { ok: true };
+  });
 
   ipcMain.handle('agents:control', (_e, payload) => {
     const { id, action } = payload || {};
