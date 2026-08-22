@@ -70,6 +70,15 @@ solid white             1.00  0.000  0.000  0.0000    0    1.00      achromatic
 - **otherwise → rich.** Two or more genuine, separated hues — take the image's
   actual colours.
 
+One boundary is genuinely fuzzy, and deliberately so. Whether colour *noise*
+reads as `achromatic` or as `chaotic` depends on how much of its chroma survives
+the 64x64 downsample, which is a function of the source resolution: a 4K noise
+wallpaper averages to grey, a 240x160 one keeps visible colour. Both branches
+produce the same restrained house palette (they differ only in chroma), so the
+distinction has no visual consequence - which is why `palette-check.html`
+accepts either for a noise image. What must never happen is noise being read as
+a *real* scheme and allowed to dictate a hue.
+
 Achromatic and chaotic both fall back to Cortana's identity hues at restrained
 chroma. That is the deliberate answer to "there is no colour here" and to "there
 are too many colours here" alike: a colourless or a frantic background must
@@ -166,6 +175,18 @@ so closing the dashboard leaves the phone's colours standing rather than
 snapping it back to the built-in defaults.
 
 ## Verifying a change
+
+The quickest check needs no tooling at all: open **`package/palette-check.html`**
+in any browser, including on the Linux box. It runs the engine over eight
+generated images covering all four schemes and both extremes, audits every role
+against all four surfaces, and prints PASS or FAIL with the numbers. It also has
+a drop zone - drag a wallpaper in to see exactly what palette it would produce
+before committing to it on the board.
+
+Its test images are generated in-canvas on purpose: loading a `file://` image
+into a canvas taints it and `getImageData` throws, so a check that depended on
+an asset would fail for reasons unrelated to the palette. Dropped files arrive
+as data URLs, which do not taint.
 
 The engine is browser JS, so it **can** be run and checked on the Windows dev
 box — only the Electron shell can't be. Chrome and Edge are both present:

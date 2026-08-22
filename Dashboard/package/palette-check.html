@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Dusk palette — self check</title>
+<!--
+  Open this file in any browser (including on the Linux box, where the real
+  dashboard runs) to prove palette.js still behaves. Two halves:
+
+    1. A self-test over procedurally generated images - the four schemes and
+       the awkward extremes. Every text and accent role must clear its WCAG
+       target against all four surfaces. Prints PASS or FAIL.
+
+    2. A drop zone. Drag in any wallpaper to see the exact palette it would
+       produce, before committing to it on the board.
+
+  Test images are generated IN CANVAS on purpose. Loading a file:// image into
+  a canvas taints it and getImageData throws, so a check that depended on an
+  asset would fail for reasons that have nothing to do with the palette. Files
+  you drop arrive as data URLs, which do not taint.
+-->
+<script src="./palette.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 28px; background: #0e1116; color: #e8edf4;
+         font: 14px/1.55 ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: .01em; }
+  .sub { color: #8b97a6; margin: 0 0 22px; }
+  #verdict { display: inline-block; padding: 7px 16px; border-radius: 999px;
+             font-weight: 650; letter-spacing: .08em; margin-bottom: 22px; }
+  .pass { background: rgba(80,200,140,.16); color: #7ee2ab; border: 1px solid rgba(126,226,171,.45); }
+  .fail { background: rgba(240,90,100,.16); color: #ff9aa2; border: 1px solid rgba(255,154,162,.5); }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 26px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #1e242e;
+           font-variant-numeric: tabular-nums; }
+  th { color: #8b97a6; font-weight: 500; font-size: 12px; letter-spacing: .06em;
+       text-transform: uppercase; }
+  td.bad { color: #ff9aa2; font-weight: 650; }
+  .row { display: flex; gap: 14px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .sw { width: 34px; height: 34px; border-radius: 7px; border: 1px solid #2a323e; }
+  .thumb { width: 96px; height: 62px; border-radius: 7px; border: 1px solid #2a323e;
+           object-fit: cover; }
+  .board { width: 300px; height: 62px; border-radius: 8px; padding: 8px 11px;
+           box-sizing: border-box; font-size: 11px; overflow: hidden; }
+  .orb { width: 34px; height: 34px; border-radius: 50%; }
+  .scheme { font: 11px ui-monospace, monospace; letter-spacing: .12em;
+            color: #8b97a6; min-width: 88px; }
+  #drop { border: 1.5px dashed #2f3a48; border-radius: 12px; padding: 26px;
+          text-align: center; color: #8b97a6; margin-bottom: 22px; }
+  #drop.over { border-color: #7ee2ab; color: #7ee2ab; }
+  code { font: 12px ui-monospace, monospace; color: #a9b6c6; }
+</style>
+</head>
+<body>
+<h1>Dusk palette — self check</h1>
+<p class="sub">Runs <code>palette.js</code> over generated images and audits every
+role's contrast against all four surfaces. See <code>../PALETTE.md</code>.</p>
+
+<div id="verdict">running…</div>
+
+<div id="drop">Drop any image here to see the palette it would produce.</div>
+
+<div id="out"></div>
+
+<script>
+// ── the same targets the engine fits to ─────────────────────────────────────
+var TARGETS = { '--text-rgb': 9.0, '--text-dim-rgb': 4.6, '--accent-rgb': 4.5,
+                '--accent2-rgb': 4.5, '--accent3-rgb': 4.5, '--peach-rgb': 4.5 };
+var SURFACES = ['--bg-rgb', '--surface-rgb', '--surface2-rgb', '--border-rgb'];
+var SHOWN = ['bg', 'surface', 'surface2', 'border', 'panel', 'hairline',
+             'text', 'text-dim', 'accent', 'accent2', 'accent3', 'peach',
+             'orb-hi', 'orb-mid', 'orb'];
+
+function rgb(v) { return 'rgb(' + v + ')'; }
+function to01(s) { return s.split(',').map(function (n) { return +n / 255; }); }
+
+// ── generated test images ───────────────────────────────────────────────────
+function make(w, h, paint) {
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  paint(c.getContext('2d'), w, h);
+  return c;
+}
+function solid(hex) {
+  return function () { return make(240, 160, function (x, w, h) { x.fillStyle = hex; x.fillRect(0, 0, w, h); }); };
+}
+// Deterministic pseudo-random: a fixed palette must stay fixed between runs.
+var seed = 7;
+function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+
+var CASES = [
+  ['sunset ridges', function () {
+    return make(320, 220, function (x, w, h) {
+      var g = x.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, '#f7966a'); g.addColorStop(1, '#eea894');
+      x.fillStyle = g; x.fillRect(0, 0, w, h);
+      var bands = [[0.30, '#967896'], [0.38, '#b08596'], [0.46, '#7e6c94'],
+                   [0.56, '#60648c'], [0.66, '#465c7e'], [0.78, '#2e4a68'], [0.90, '#182a42']];
+      for (var i = 0; i < bands.length; i++) {
+        x.fillStyle = bands[i][1];
+        x.beginPath(); x.moveTo(0, h);
+        for (var px = 0; px <= w; px += 6) {
+          var t = px / w;
+          var y = bands[i][0] * h - (60 * (1 - i / bands.length) + 16) *
+                  (Math.sin(t * 3.1 + i) * 0.6 + Math.sin(t * 7.3 + i * 2) * 0.25);
+          x.lineTo(px, y);
+        }
+        x.lineTo(w, h); x.closePath(); x.fill();
+      }
+    });
+  }, 'rich'],
+  ['duotone', function () {
+    return make(240, 160, function (x, w, h) {
+      x.fillStyle = '#d62c34'; x.fillRect(0, 0, w, h / 2);
+      x.fillStyle = '#1eb0be'; x.fillRect(0, h / 2, w, h / 2);
+    });
+  }, 'rich'],
+  ['teal gradient', function () {
+    return make(240, 160, function (x, w, h) {
+      var g = x.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, '#082830'); g.addColorStop(1, '#1c6e78');
+      x.fillStyle = g; x.fillRect(0, 0, w, h);
+    });
+  }, 'mono'],
+  ['solid dark blue', solid('#0c163a'), 'mono'],
+  ['solid black', solid('#000000'), 'achromatic'],
+  ['solid white', solid('#ffffff'), 'achromatic'],
+  // Noise may land as achromatic or chaotic depending on how much of its
+  // colour survives the 64x64 downsample - which is a function of the source
+  // resolution, not of the engine. Both branches produce the same restrained
+  // house palette (they differ only in chroma), so both are correct here; what
+  // must NOT happen is noise being read as a real scheme and dictating a hue.
+  ['per-pixel static', function () {
+    return make(240, 160, function (x, w, h) {
+      var d = x.createImageData(w, h);
+      for (var i = 0; i < d.data.length; i += 4) {
+        d.data[i] = rnd() * 255; d.data[i + 1] = rnd() * 255;
+        d.data[i + 2] = rnd() * 255; d.data[i + 3] = 255;
+      }
+      x.putImageData(d, 0, 0);
+    });
+  }, ['achromatic', 'chaotic']],
+  ['random blocks', function () {
+    return make(240, 160, function (x, w, h) {
+      for (var y = 0; y < h; y += 12) for (var px = 0; px < w; px += 12) {
+        x.fillStyle = 'rgb(' + ((rnd() * 255) | 0) + ',' + ((rnd() * 255) | 0) + ',' + ((rnd() * 255) | 0) + ')';
+        x.fillRect(px, y, 12, 12);
+      }
+    });
+  }, ['achromatic', 'chaotic']]
+];
+
+// ── rendering ───────────────────────────────────────────────────────────────
+function preview(vars, scheme, label, thumbEl) {
+  var d = document.createElement('div');
+  d.className = 'row';
+  if (thumbEl) { thumbEl.className = 'thumb'; d.appendChild(thumbEl); }
+  var s = document.createElement('span');
+  s.className = 'scheme';
+  s.textContent = scheme.toUpperCase();
+  d.appendChild(s);
+
+  var b = document.createElement('div');
+  b.className = 'board';
+  b.style.background = rgb(vars['--bg-rgb']);
+  b.style.border = '1px solid ' + rgb(vars['--border-rgb']);
+  b.innerHTML =
+    '<div style="display:flex;align-items:center;gap:9px">' +
+      '<div class="orb" style="background:radial-gradient(circle at 35% 30%,' +
+        rgb(vars['--orb-hi-rgb']) + ',' + rgb(vars['--orb-mid-rgb']) + ' 55%,' +
+        rgb(vars['--orb-rgb']) + ')"></div>' +
+      '<div><div style="color:' + rgb(vars['--accent3-rgb']) + ';font:10px ui-monospace,monospace;letter-spacing:.14em">CORTANA · IDLE</div>' +
+      '<div style="color:' + rgb(vars['--text-rgb']) + ';font-size:13px">' + label + '</div>' +
+      '<div style="color:' + rgb(vars['--text-dim-rgb']) + ';font-size:10px">weather.sync → OK</div></div>' +
+      '<div style="margin-left:auto;color:' + rgb(vars['--accent-rgb']) + ';font:10px ui-monospace,monospace">CONNECT</div>' +
+    '</div>';
+  d.appendChild(b);
+
+  SHOWN.forEach(function (k) {
+    var sw = document.createElement('div');
+    sw.className = 'sw';
+    sw.style.background = rgb(vars['--' + k + '-rgb']);
+    sw.title = k + ' = ' + vars['--' + k + '-rgb'];
+    d.appendChild(sw);
+  });
+  return d;
+}
+
+function audit(vars) {
+  var worst = {}, ok = true;
+  Object.keys(TARGETS).forEach(function (role) {
+    var lo = Infinity;
+    SURFACES.forEach(function (s) {
+      lo = Math.min(lo, duskPalette.contrast(to01(vars[role]), to01(vars[s])));
+    });
+    worst[role] = lo;
+    if (lo < TARGETS[role] - 0.005) ok = false;
+  });
+  return { worst: worst, ok: ok };
+}
+
+function run() {
+  var out = document.getElementById('out');
+  var tbl = document.createElement('table');
+  var head = '<tr><th>image</th><th>scheme</th>';
+  Object.keys(TARGETS).forEach(function (r) {
+    head += '<th>' + r.replace('--', '').replace('-rgb', '') + '</th>';
+  });
+  tbl.innerHTML = head + '</tr>';
+
+  var allOk = true, previews = document.createElement('div');
+  CASES.forEach(function (c) {
+    var canvas = c[1]();
+    var res, a;
+    try {
+      res = duskPalette.build(canvas);
+      a = audit(res.vars);
+    } catch (e) {
+      allOk = false;
+      var er = document.createElement('tr');
+      er.innerHTML = '<td>' + c[0] + '</td><td colspan="9" class="bad">THREW: ' + e + '</td>';
+      tbl.appendChild(er);
+      return;
+    }
+    var want = Array.isArray(c[2]) ? c[2] : [c[2]];
+    var schemeOk = want.indexOf(res.scheme) >= 0;
+    if (!a.ok || !schemeOk) allOk = false;
+    var tr = document.createElement('tr');
+    var cells = '<td>' + c[0] + '</td><td' + (schemeOk ? '' : ' class="bad"') + '>' +
+                res.scheme + (schemeOk ? '' : ' (want ' + want.join('/') + ')') + '</td>';
+    Object.keys(TARGETS).forEach(function (r) {
+      var v = a.worst[r], bad = v < TARGETS[r] - 0.005;
+      cells += '<td' + (bad ? ' class="bad"' : '') + '>' + v.toFixed(1) + '</td>';
+    });
+    tr.innerHTML = cells;
+    tbl.appendChild(tr);
+    previews.appendChild(preview(res.vars, res.scheme, c[0], canvas));
+  });
+
+  out.appendChild(tbl);
+  out.appendChild(previews);
+  var v = document.getElementById('verdict');
+  v.className = allOk ? 'pass' : 'fail';
+  v.textContent = allOk
+    ? 'PASS · ' + CASES.length + ' images, every role clears its target on all four surfaces'
+    : 'FAIL · see the highlighted cells';
+}
+
+// ── drop zone ───────────────────────────────────────────────────────────────
+var drop = document.getElementById('drop');
+['dragenter', 'dragover'].forEach(function (e) {
+  drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add('over'); });
+});
+['dragleave', 'drop'].forEach(function (e) {
+  drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.remove('over'); });
+});
+drop.addEventListener('drop', function (ev) {
+  var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () {
+    var im = new Image();
+    im.onload = function () {
+      var res = duskPalette.build(im);
+      var a = audit(res.vars);
+      var row = preview(res.vars, res.scheme, f.name.slice(0, 28), im);
+      var note = document.createElement('div');
+      note.style.cssText = 'font:12px ui-monospace,monospace;color:' + (a.ok ? '#7ee2ab' : '#ff9aa2');
+      note.textContent = a.ok ? 'contrast OK on all four surfaces'
+                              : 'CONTRAST SHORTFALL — this should not happen; note the image';
+      row.appendChild(note);
+      drop.parentNode.insertBefore(row, drop.nextSibling);
+    };
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+});
+
+run();
+</script>
+</body>
+</html>

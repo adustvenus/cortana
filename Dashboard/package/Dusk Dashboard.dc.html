@@ -1483,6 +1483,7 @@ class Component extends DCLogic {
     clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearTimeout(this._spotifyPoll);
     clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
+    clearTimeout(this._themePushT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
     window.removeEventListener('keydown', this._key);
@@ -1838,13 +1839,20 @@ class Component extends DCLogic {
    * the board from re-colouring itself. */
   publishTheme(vars) {
     this._themeVars = vars;
+    // Local and deduplicated on the other side, so it can fire freely - and
+    // firing freely is what lets the bubble orb track the colour picker live.
     try {
       if (window.duskBridge && window.duskBridge.theme) window.duskBridge.theme.set(vars);
     } catch (e) { /* not running inside the Dusk app */ }
-    // Push immediately rather than waiting out the 20s board interval - a
-    // colour change you can see on the board but not on your phone reads as
-    // broken, not as pending.
-    if (this._pushBoard) this._pushBoard();
+    // The bridge hop is debounced. React's onChange on <input type="color">
+    // fires continuously while the picker is dragged, and an HTTP POST per
+    // frame would hammer a service that is also polling Spotify. 500ms is
+    // still far inside the 20s board interval, so a colour change you can see
+    // on the board reaches the phone before it reads as broken.
+    clearTimeout(this._themePushT);
+    this._themePushT = setTimeout(() => {
+      if (this._pushBoard) this._pushBoard();
+    }, 500);
   }
   persistTheme(custom) {
     try { localStorage.setItem(LS_THEME, JSON.stringify(custom)); } catch (e) {}
