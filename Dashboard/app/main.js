@@ -23,7 +23,11 @@ const PAGE = path.join(APP_DIR, '..', 'package', 'Dusk Dashboard.dc.html');
 const CALENDAR_FILE = path.join(APP_DIR, '..', '..', 'calendar_state.json');
 const ICON = path.join(APP_DIR, 'icons', 'dusk.png');
 const POLL_STATE_MS = 300;
-const POLL_SERVICE_MS = 2500;
+// 2500 spawned a systemctl PROCESS per agent ~24x a minute, forever. The
+// bridge answers the identical question behind a 5s TTL cache; match it. The
+// orb's own post-action refresh (setTimeout(pollServices, 500)) still covers
+// the one case where latency is actually noticed.
+const POLL_SERVICE_MS = 5000;
 const VALID_ACTIONS = new Set(['start', 'stop', 'restart']);
 
 // ── agent registry ──────────────────────────────────────────────────────────
@@ -48,6 +52,164 @@ try {
 }
 
 const serviceState = {};   // agentId -> 'active' | 'inactive' | 'failed' | 'unknown'
+
+// ── host stats ──────────────────────────────────────────────────────────────
+// Real CPU/RAM for the SYSTEM modules. These tiles used to be a Math.random()
+// walk rendered as "N / 32 GB" against a hardcoded 32, which read exactly like
+// telemetry and was not - it is why a healthy box appeared to be sitting at
+// 16GB used. Everything below is measured; anything that cannot be measured is
+// omitted rather than invented.
+//
+// os.freemem() is deliberately NOT used on Linux: it reports MemFree, which
+// excludes reclaimable page cache, so a perfectly healthy box reads as nearly
+// full. That is the same wrong conclusion the fake tile invited, rebuilt in a
+// more convincing form. MemAvailable is the number that answers "how much can
+// a program actually get".
+function readMeminfo() {
+  const out = {};
+  try {
+    const txt = fs.readFileSync('/proc/meminfo', 'utf8');
+    for (const line of txt.split('\n')) {
+      const m = line.match(/^(\w+):\s+(\d+) kB$/);
+      if (m) out[m[1]] = Number(m[2]) * 1024;
+    }
+  } catch (e) { /* not Linux, or unreadable */ }
+  return out;
+}
+
+function memInfo() {
+  const mi = readMeminfo();
+  if (mi.MemTotal && mi.MemAvailable != null) {
+    return { total: mi.MemTotal, used: mi.MemTotal - mi.MemAvailable,
+             swapTotal: mi.SwapTotal || 0,
+             swapUsed: Math.max(0, (mi.SwapTotal || 0) - (mi.SwapFree || 0)) };
+  }
+  const total = os.totalmem();
+  return { total, used: total - os.freemem(), swapTotal: 0, swapUsed: 0 };
+}
+
+// os.cpus() reports CUMULATIVE ticks since boot, so a single reading says
+// nothing about load - a percentage only exists between two samples.
+let lastCpu = null;
+function cpuPercent() {
+  let total = 0, idle = 0;
+  for (const c of os.cpus()) {
+    for (const k of Object.keys(c.times)) total += c.times[k];
+    idle += c.times.idle;
+  }
+  let pct = null;                       // null = no baseline yet, not "0% busy"
+  if (lastCpu && total > lastCpu.total) {
+    pct = (1 - (idle - lastCpu.idle) / (total - lastCpu.total)) * 100;
+    pct = Math.max(0, Math.min(100, pct));
+  }
+  lastCpu = { total, idle };
+  return pct;
+}
+
+// Package temperature, when the kernel exposes one. Returned as null rather
+// than a plausible-looking default when it does not - the whole point of this
+// change is that nothing on the board is invented.
+function cpuTemp() {
+  try {
+    const base = '/sys/class/thermal';
+    for (const dir of fs.readdirSync(base)) {
+      if (!dir.startsWith('thermal_zone')) continue;
+      let type = '';
+      try { type = fs.readFileSync(path.join(base, dir, 'type'), 'utf8').trim(); } catch (e) { continue; }
+      if (!/x86_pkg_temp|cpu[-_]?thermal|coretemp|acpitz/i.test(type)) continue;
+      const milli = Number(fs.readFileSync(path.join(base, dir, 'temp'), 'utf8').trim());
+      const c = milli / 1000;
+      if (c > 10 && c < 125) return c;      // reject obviously bogus zones
+    }
+  } catch (e) { /* no thermal zones exposed */ }
+  return null;
+}
+
+// ── journal follower (CONSOLE module) ───────────────────────────────────────
+// The CONSOLE used to append a random line from a six-entry array every 9s.
+// This makes it the actual journal - which matters because a Restart=always
+// unit turns a config error into a silent 5s respawn loop: `systemctl start`
+// reports success, the shell says nothing, and the journal is the only place
+// the reason ever appears. Putting it on the board is the point of the module.
+//
+// ONE long-lived `--follow` child, deliberately not a repeating `journalctl -n`
+// poll: this app already spawns a systemctl process per agent on a timer, and
+// a second spawning loop is the thing worth avoiding. Following is also
+// instant instead of up to a poll-interval late.
+const JOURNAL_UNITS = ['cortana', 'cortana-bridge', 'cortana-dash', 'cortana-spotifyd'];
+let journalChild = null, journalBackoff = 1000;
+const journalRing = [];            // bounded; a live log is exactly where an
+const JOURNAL_RING = 200;          // append-only array would grow forever
+
+function pushJournal(line) {
+  journalRing.push(line);
+  if (journalRing.length > JOURNAL_RING) journalRing.splice(0, journalRing.length - JOURNAL_RING);
+  for (const w of [mainWin])
+    if (w && !w.isDestroyed()) w.webContents.send('journal:line', line);
+}
+
+function startJournal() {
+  if (process.platform !== 'linux') return;      // no journal off Linux; page falls back to its own events
+  const { spawn } = require('child_process');
+  const args = ['--user', '-n', '30', '-f', '-o', 'json',
+                '--output-fields=MESSAGE,PRIORITY,_SYSTEMD_USER_UNIT'];
+  for (const u of JOURNAL_UNITS) args.push('-u', u);
+  let child;
+  try { child = spawn('journalctl', args, { stdio: ['ignore', 'pipe', 'ignore'] }); }
+  catch (e) { console.error('[dusk] journalctl unavailable:', e.message); return; }
+  journalChild = child;
+
+  let buf = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    buf += chunk;
+    const lines = buf.split('\n');
+    buf = lines.pop();                        // keep the partial line
+    if (buf.length > 65536) buf = '';         // runaway guard: never grow unbounded
+    for (const raw of lines) {
+      if (!raw.trim()) continue;
+      try {
+        const e = JSON.parse(raw);
+        const msg = Array.isArray(e.MESSAGE) ? e.MESSAGE.join(' ') : String(e.MESSAGE || '');
+        if (!msg) continue;
+        pushJournal({
+          ts: Date.now(),
+          unit: String(e._SYSTEMD_USER_UNIT || '').replace(/\.service$/, ''),
+          msg: msg.slice(0, 300),
+          // PRIORITY is syslog severity: 0 emerg .. 7 debug. <=4 is warning or worse.
+          warn: Number(e.PRIORITY) <= 4
+        });
+      } catch (e) { /* a malformed line must not kill the follower */ }
+    }
+  });
+  // Restart with backoff. journalctl exiting (log rotation, a kill) must not
+  // silently leave the console frozen for the rest of the session.
+  child.on('exit', () => {
+    journalChild = null;
+    if (quitting) return;
+    setTimeout(startJournal, journalBackoff);
+    journalBackoff = Math.min(journalBackoff * 2, 60000);
+  });
+  child.on('error', () => {});
+  setTimeout(() => { if (journalChild === child) journalBackoff = 1000; }, 30000);  // stable run resets backoff
+}
+
+function stopJournal() {
+  if (journalChild) { try { journalChild.kill(); } catch (e) {} journalChild = null; }
+}
+
+function hostStats() {
+  const m = memInfo();
+  return {
+    host: os.hostname(),
+    cores: os.cpus().length,
+    cpu: cpuPercent(),
+    tempC: cpuTemp(),
+    memUsed: m.used, memTotal: m.total,
+    swapUsed: m.swapUsed, swapTotal: m.swapTotal,
+    loadAvg: os.loadavg()[0]
+  };
+}
 
 // ── theme ───────────────────────────────────────────────────────────────────
 // The palette lives in the dashboard page's localStorage, which nothing outside
@@ -360,6 +522,8 @@ if (!app.requestSingleInstanceLock()) {
     createTray();
     placeForDisplays();
     pollServices();
+    cpuPercent();          // prime the tick baseline; first real read needs two samples
+    startJournal();
     setInterval(pollServices, POLL_SERVICE_MS);
     setInterval(broadcast, POLL_STATE_MS);
 
@@ -397,7 +561,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', () => { quitting = true; stopJournal(); });
   app.on('window-all-closed', () => { /* keep alive for the bubble/tray */ });
 
   // ── IPC ───────────────────────────────────────────────────────────────────
@@ -442,6 +606,12 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
+
+  // Real CPU/RAM/thermal for the SYSTEM modules. Cheap enough to answer on
+  // demand; the page polls it only while a cpu/ram module is on the board.
+  ipcMain.handle('host:stats', () => hostStats());
+  // Backlog for a console mounted after the follower started.
+  ipcMain.handle('journal:recent', () => journalRing.slice(-60));
 
   ipcMain.handle('git:status', () => {
     const REPO = path.join(os.homedir(), 'cortana');

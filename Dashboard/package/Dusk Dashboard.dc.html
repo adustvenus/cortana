@@ -213,7 +213,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           <div style="{{ m.cardStyle }}">
             <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:rgb(var(--accent3-rgb))"><span>CPU</span><span style="color:rgb(var(--text-rgb))">{{ cpuTxt }}</span></div>
             <div style="margin-top:.6rem;height:6px;border-radius:3px;background:rgba(var(--hairline-rgb),.14)"><div style="{{ cpuBar }}"></div></div>
-            <div style="margin-top:.45rem;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.45)">8 CORES · 52°C</div>
+            <div style="margin-top:.45rem;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.45)">{{ cpuSubTxt }}</div>
           </div>
         </sc-if>
 
@@ -222,7 +222,7 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           <div style="{{ m.cardStyle }}">
             <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:rgb(var(--accent3-rgb))"><span>MEMORY</span><span style="color:rgb(var(--text-rgb))">{{ memTxt }}</span></div>
             <div style="margin-top:.6rem;height:6px;border-radius:3px;background:rgba(var(--hairline-rgb),.14)"><div style="{{ memBar }}"></div></div>
-            <div style="margin-top:.45rem;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.45)">SWAP 0.4 GB</div>
+            <div style="margin-top:.45rem;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:rgba(var(--text-rgb),.45)">{{ memSubTxt }}</div>
           </div>
         </sc-if>
 
@@ -710,6 +710,14 @@ function repairLayout(mods) {
   return placed;
 }
 const MAX_MODULES = 40;                   // ENGINE
+// Module types that render the wall clock, i.e. the only ones needing a 1Hz
+// re-render. Everything else on the board updates from its own poller.
+const CLOCK_TYPES = new Set(['clock', 'date', 'datetime']);
+// CONSOLE ring size. Bounded on purpose - see the note where logs are appended.
+const LOG_KEEP = 200;
+const LOG_SHOW = 8;      // rows rendered in the CONSOLE card
+// Types that display host metrics, so the stats poll can stay off otherwise.
+const SYS_TYPES = new Set(['cpu', 'ram']);
 const LS_KEY = 'dusk.layout.v3';          // ENGINE — never rename
 const LS_BG = 'dusk.bg.v1';               // ENGINE
 const SPRING = 'cubic-bezier(.3,1.4,.5,1)';
@@ -890,8 +898,7 @@ class Component extends DCLogic {
     } catch (e) {}
     return {
       modules, boot, bgCustom, bgImg, themeAuto, themeCustom, colorsOpen: false, edit: false, now: new Date(), drag: null, linking: null, toast: null, armRemove: null,
-      playing: true, progress: 112, focus: 1471,
-      cpu: 34, mem: 57,
+      hostStats: null,     // real CPU/RAM/swap/thermal from the shell; null until first poll
       tickers: [
         { s: 'NASDAQ', v: 21482.11, c: 0.84, dec: 1 },
         { s: 'S&P',    v: 6214.5,   c: 0.42, dec: 1 },
@@ -938,11 +945,7 @@ class Component extends DCLogic {
       })(),
       weatherInput: '',
       weatherData: null,   // {place, temp, desc, hi, lo, wind, uv} from last good poll
-      logs: [
-        { ts: '18:41:12', msg: 'weather.sync → OK · next poll 15m', warn: false },
-        { ts: '18:41:58', msg: 'yfinance.tick → 5 symbols updated', warn: false },
-        { ts: '18:42:07', msg: 'reminder queued: "Call HVAC 3:30 PM"', warn: true }
-      ],
+      logs: [],            // real events only; empty until something happens
       aiAgents: [],        // live registry snapshot pushed by the Dusk app bridge
       aiMenu: null,        // module id whose power menu is open
       aiSent: '',          // transient feedback line after a control action
@@ -958,14 +961,12 @@ class Component extends DCLogic {
   componentDidMount() {
     // apply theme: defaults ← auto-extracted ← user-pinned
     this.applyTheme();
+    // Ticked unconditionally and drove a FULL renderVals() + reconcile every
+    // second even on a board with no clock on it. The other pollers all guard
+    // on their module being present; this one now does too.
     this._clock = setInterval(() => {
-      this.setState(s => ({
-        now: new Date(),
-        progress: s.playing ? Math.min(266, s.progress + 1) : s.progress,
-        focus: s.focus + 1,
-        cpu: Math.max(8, Math.min(92, s.cpu + (Math.random() * 8 - 4))),
-        mem: Math.max(30, Math.min(85, s.mem + (Math.random() * 3 - 1.5)))
-      }));
+      if (!this.state.modules.some(m => CLOCK_TYPES.has(m.type))) return;
+      this.setState({ now: new Date() });
     }, 1000);
     this._tick = setInterval(() => {
       this.setState(s => ({
@@ -975,22 +976,43 @@ class Component extends DCLogic {
         })
       }));
     }, 5000);
-    const MSGS = [
-      'net.watch → latency 12ms, stable',
-      'yfinance.tick → 5 symbols updated',
-      'calendar.poll → no new events',
-      'backup.check → NAS reachable',
-      'weather.sync → OK · next poll 15m',
-      'iris.idle → awaiting instruction'
-    ];
-    this._log = setInterval(() => {
-      this.setState(s => {
-        const d = new Date();
-        const p = n => String(n).padStart(2, '0');
-        const line = { ts: p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()), msg: MSGS[Math.floor(Math.random() * MSGS.length)], warn: Math.random() < 0.18 };
-        return { logs: [...s.logs, line].slice(-3) };
+    // ── CONSOLE: real events ──
+    // This used to append a random line from a fixed six-entry array every 9s,
+    // with an 18% coin flip deciding whether it looked like a warning. What it
+    // imitated - 'weather.sync', 'calendar.poll' - is work this page genuinely
+    // does, so it now reports that work instead of pretending to.
+    //
+    // Bounded ring: a live log is exactly where an append-only array grows
+    // without limit. Renders the tail, keeps enough to scroll.
+    this._logLine = (msg, warn) => {
+      if (!msg) return;
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      const line = { ts: p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()),
+                     msg: String(msg).slice(0, 300), warn: !!warn };
+      this.setState(s => ({ logs: [...s.logs, line].slice(-LOG_KEEP) }));
+    };
+
+    // The systemd journal for Cortana's units, when the shell can reach it.
+    // This is the half that earns the module: a Restart=always unit failing its
+    // config respawns silently every 5s, and the journal is the only place that
+    // ever says why.
+    if (window.duskBridge && window.duskBridge.journal
+        && typeof window.duskBridge.journal.subscribe === 'function') {
+      this._journalOff = window.duskBridge.journal.subscribe((lines) => {
+        if (!Array.isArray(lines) || !lines.length) return;
+        this.setState(s => {
+          const add = lines.map(l => {
+            const d = new Date(Number(l && l.ts) || Date.now());
+            const p = n => String(n).padStart(2, '0');
+            return { ts: p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()),
+                     msg: ((l && l.unit) ? l.unit + ' → ' : '') + String((l && l.msg) || '').slice(0, 300),
+                     warn: !!(l && l.warn) };
+          });
+          return { logs: [...s.logs, ...add].slice(-LOG_KEEP) };
+        });
       });
-    }, 9000);
+    }
     this._key = (e) => {
       if ((e.key === 'e' || e.key === 'E') && !e.repeat && (e.metaKey || e.ctrlKey || e.target === document.body)) {
         e.preventDefault();
@@ -1014,13 +1036,35 @@ class Component extends DCLogic {
     pollGit();
     this._gitPoll = setInterval(pollGit, 30000);
 
+    // ── Host stats (CPU / RAM modules): real numbers from the Electron shell ──
+    // These tiles used to be a Math.random() walk printed as "N / 32 GB" against
+    // a hardcoded 32 - it read as telemetry and was not, which is exactly how a
+    // healthy box came to look like it was sitting at 16GB used. 3s because CPU
+    // percent is a delta between consecutive samples, so the gap IS the
+    // averaging window; longer reads smoother, shorter reads noisier.
+    const pollHost = async () => {
+      if (!this.state.modules.some(m => SYS_TYPES.has(m.type))) return;
+      if (!window.duskBridge || typeof window.duskBridge.hostStats !== 'function') return;
+      try {
+        const d = await window.duskBridge.hostStats();
+        if (d && typeof d === 'object') this.setState({ hostStats: d });
+      } catch (e) {}
+    };
+    pollHost();
+    this._hostPoll = setInterval(pollHost, 3000);
+
     // ── Calendar (Agenda module): read events Cortana writes to disk ──
     const pollCal = async () => {
       if (!this.state.modules.some(m => m.type === 'agenda')) return;
       if (!window.duskBridge || typeof window.duskBridge.calendar !== 'function') return;
       try {
         const d = await window.duskBridge.calendar();
-        if (d && typeof d === 'object') this.setState({ calData: d });
+        if (d && typeof d === 'object') {
+          const was = this.state.calData && this.state.calData.error;
+          if (d.error && d.error !== was) this._logLine('calendar.poll → ' + d.error, true);
+          else if (!d.error && was) this._logLine('calendar.poll → recovered');
+          this.setState({ calData: d });
+        }
       } catch (e) {}
     };
     pollCal();
@@ -1034,7 +1078,13 @@ class Component extends DCLogic {
       if (!window.duskBridge || !window.duskBridge.spotify) return;
       try {
         const st = await window.duskBridge.spotify.state();
-        if (st && typeof st === 'object') this.setState({ spotify: st });
+        if (st && typeof st === 'object') {
+          const was = this.state.spotify || {};
+          if (st.rateLimited && !was.rateLimited)
+            this._logLine('spotify → rate limited, backing off ' + (st.retryIn || 30) + 's', true);
+          else if (!st.rateLimited && was.rateLimited) this._logLine('spotify → rate limit cleared');
+          this.setState({ spotify: st });
+        }
       } catch (e) {}
     };
     pollSpotify();
@@ -1098,7 +1148,12 @@ class Component extends DCLogic {
           wind: Math.round(cur.wind_speed_10m),
           uv: Math.round((day.uv_index_max || [])[0])
         } });
-      } catch (e) { /* keep last good */ }
+        this._logLine('weather.sync → ' + name.toUpperCase() + ' ' +
+                      Math.round(cur.temperature_2m) + '° · next poll 15m');
+      } catch (e) {
+        // Was an 18% coin flip deciding whether a line looked like a warning.
+        this._logLine('weather.sync → failed (' + (e && e.message || 'error') + '), keeping last reading', true);
+      }
     };
     this._pollWeather = pollWeather;
     pollWeather();
@@ -1353,8 +1408,12 @@ class Component extends DCLogic {
             if (ops && Array.isArray(ops.ops) && ops.ops.length) this._applyTaskOps(ops.ops);
           }
         } catch (e) {}
+        if (!this.state.mobileData) this._logLine('bridge → reachable on port ' + (d && d.port || '?'));
         this.setState({ mobileData: d, mlQr: qr }, () => this._drawMlQr());
-      } catch (e) { this.setState({ mobileData: null, mlQr: null }, () => this._drawMlQr()); }
+      } catch (e) {
+        if (this.state.mobileData) this._logLine('bridge → unreachable', true);
+        this.setState({ mobileData: null, mlQr: null }, () => this._drawMlQr());
+      }
     };
     pollMobile();
     this._mobilePoll = setInterval(pollMobile, 5000);
@@ -1430,7 +1489,11 @@ class Component extends DCLogic {
     // Waveform: bell-envelope mirrored bars, travelling outward (hud.py port).
     // One rAF loop draws every mounted cortana-module canvas; amp eases toward
     // the per-state target so transitions feel alive rather than switched.
-    this._aiPhase = 0; this._aiAmp = 0;
+    this._aiPhase = 0; this._aiAmp = 0; this._aiFrame = 0;
+    // Frames between paints while idle is at rest. Phase and amplitude still
+    // advance EVERY frame below, so this changes only how often the same
+    // motion is rasterised - the wave travels at exactly the same speed.
+    const IDLE_STRIDE = 4;
     const WPROF = { idle: [0.5, 0.10, '150,165,195'], listening: [1.5, 0.55, '110,210,175'],
                     thinking: [1.0, 0.40, '150,170,255'], working: [1.0, 0.45, '150,170,255'],
                     speaking: [2.6, 0.95, '170,200,255'], offline: [0, 0, '110,110,125'] };
@@ -1452,6 +1515,20 @@ class Component extends DCLogic {
         return;
       }
       this._aiCleared = false;
+
+      // The power saver above only ever fires for 'offline' - it is the one
+      // profile whose target is 0. 'idle' sits at 0.10 and so painted every
+      // frame forever: ~75 bars x 2 strokes x 60fps on a board that is
+      // fullscreen 24/7, against a stated module budget of roughly zero idle
+      // CPU. It cannot simply be parked, because the phase keeps advancing and
+      // the bars visibly travel - freezing them would kill the "she's alive"
+      // shimmer. So paint resting idle at a quarter rate instead. Only applies
+      // once the amplitude has SETTLED, so easing into and out of idle stays
+      // smooth at the full rate.
+      this._aiFrame = (this._aiFrame + 1) % 1000000;
+      if (st === 'idle' && Math.abs(target - this._aiAmp) < 0.004
+          && (this._aiFrame % IDLE_STRIDE)) return;
+
       for (const cv of els) {
         const w = cv.clientWidth, h = cv.clientHeight;
         if (!w || !h) continue;
@@ -1479,13 +1556,14 @@ class Component extends DCLogic {
   }
 
   componentWillUnmount() {
-    clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._log); clearInterval(this._gitPoll);
+    clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._gitPoll);
     clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearTimeout(this._spotifyPoll);
-    clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll);
+    clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll); clearInterval(this._hostPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
     clearTimeout(this._themePushT);
     cancelAnimationFrame(this._aiRaf);
     if (this._aiOff) try { this._aiOff(); } catch (e) {}
+    if (this._journalOff) try { this._journalOff(); } catch (e) {}
     window.removeEventListener('keydown', this._key);
     if (this._onAnyScroll) window.removeEventListener('scroll', this._onAnyScroll, { capture: true });
     this.unbindDrag();
@@ -2070,7 +2148,11 @@ class Component extends DCLogic {
         filesNetRef: (el) => {
           const els = this._filesNetEls || (this._filesNetEls = {});
           if (el) { els[m.id] = { el, w: m.w }; this._drawFilesNet && this._drawFilesNet(); }
-          else delete els[m.id];
+          // Drop the node cache with the element. It used to be left behind on
+          // unmount while its sibling els[] was cleaned up, so every removed
+          // FILES module kept a full tree of {x,y,r,path,name,dir,depth}
+          // records alive for the life of the page.
+          else { delete els[m.id]; delete this._filesNetNodes[m.id]; }
         },
         filesNetClick: (e) => {
           const hit = this._filesNetHit && this._filesNetHit(m.id, e);
@@ -2283,10 +2365,32 @@ class Component extends DCLogic {
         chgTxt: (t.c >= 0 ? '▲' : '▼') + Math.abs(t.c).toFixed(2) + '%',
         chgStyle: { color: t.c >= 0 ? '#9be8b8' : 'rgb(var(--accent2-rgb))' }
       })),
-      cpuTxt: Math.round(s.cpu) + '%',
-      memTxt: (s.mem / 100 * 32).toFixed(1) + ' / 32 GB',
-      cpuBar: { width: Math.round(s.cpu) + '%', height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,rgb(var(--accent-rgb)),rgb(var(--accent2-rgb)))', transition: 'width 1s ease' },
-      memBar: { width: Math.round(s.mem) + '%', height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,rgb(var(--accent3-rgb)),rgb(var(--accent2-rgb)))', transition: 'width 1s ease' },
+      // Real host metrics. '—' until the first sample rather than a plausible
+      // number: an unmeasured value must never look like a measured one.
+      ...(() => {
+        const h = s.hostStats;
+        const gb = b => (b / 1073741824).toFixed(1);
+        const cpuPct = h && typeof h.cpu === 'number' ? h.cpu : null;
+        const memPct = h && h.memTotal ? (h.memUsed / h.memTotal) * 100 : null;
+        const bar = (pct, from, to) => ({
+          width: (pct == null ? 0 : Math.round(pct)) + '%', height: '100%', borderRadius: 3,
+          background: 'linear-gradient(90deg,rgb(var(--' + from + '-rgb)),rgb(var(--' + to + '-rgb)))',
+          transition: 'width 1s ease' });
+        return {
+          cpuTxt: cpuPct == null ? '—' : Math.round(cpuPct) + '%',
+          memTxt: h && h.memTotal ? gb(h.memUsed) + ' / ' + gb(h.memTotal) + ' GB' : '—',
+          cpuBar: bar(cpuPct, 'accent', 'accent2'),
+          memBar: bar(memPct, 'accent3', 'accent2'),
+          // Sublines were '8 CORES · 52°C' and 'SWAP 0.4 GB', both literals.
+          // Each part is dropped when the kernel does not expose it.
+          cpuSubTxt: h ? [h.cores ? h.cores + ' CORES' : null,
+                          h.tempC != null ? Math.round(h.tempC) + '°C' : null,
+                          h.host ? String(h.host).toUpperCase() : null
+                         ].filter(Boolean).join(' · ') : '—',
+          memSubTxt: h ? (h.swapTotal ? 'SWAP ' + gb(h.swapUsed) + ' / ' + gb(h.swapTotal) + ' GB'
+                                      : 'NO SWAP') : '—'
+        };
+      })(),
       // ── MUSIC (Spotify) ──
       ...(() => {
         const sp = s.spotify;
@@ -2660,11 +2764,11 @@ class Component extends DCLogic {
       chartBars: chartHeights.map((h, i) => ({
         style: { flex: 1, height: h + '%', borderRadius: '5px 5px 2px 2px', background: `linear-gradient(180deg,${chartCols[i]},transparent)` }
       })),
-      focusTxt: '00:' + p2(Math.floor(s.focus / 60) % 60) + ':' + p2(s.focus % 60),
-      logItems: s.logs.map((l, i) => ({
+      // The ring holds LOG_KEEP; the card shows only what fits.
+      logItems: s.logs.slice(-LOG_SHOW).map((l, i, arr) => ({
         ts: l.ts, msg: l.msg,
         tsStyle: { color: l.warn ? 'rgb(var(--accent2-rgb))' : 'rgb(var(--accent-rgb))' },
-        caretStyle: i === s.logs.length - 1 ? { color: 'rgb(var(--accent3-rgb))', animation: 'caret 1.1s step-end infinite' } : { display: 'none' }
+        caretStyle: i === arr.length - 1 ? { color: 'rgb(var(--accent3-rgb))', animation: 'caret 1.1s step-end infinite' } : { display: 'none' }
       })),
       gitBranch: (() => { const g = s.gitData; return g ? g.branch : '—'; })(),
       gitStatusTxt: (() => { const g = s.gitData; if (!g) return 'loading…'; return g.status.clean ? '✓ working tree clean' : g.status.files + ' file' + (g.status.files !== 1 ? 's' : '') + ' changed'; })(),

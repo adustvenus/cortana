@@ -49,6 +49,24 @@ contextBridge.exposeInMainWorld('duskBridge', {
     }
   },
   gitStatus() { return ipcRenderer.invoke('git:status'); },
+  /** Real CPU / RAM / swap / thermal for the SYSTEM modules, plus the hostname
+   *  they describe. Host-bound: it measures the machine Cortana runs on. */
+  hostStats() { return ipcRenderer.invoke('host:stats'); },
+  /** systemd journal for Cortana's units, streamed. Subscribing delivers the
+   *  recent backlog first, then each new line. Returns an unsubscribe function.
+   *  Resolves to an empty backlog and never fires off Linux, so the CONSOLE
+   *  falls back to the page's own events. */
+  journal: {
+    subscribe(cb) {
+      if (typeof cb !== 'function') return () => {};
+      const handler = (_e, line) => { try { cb([line]); } catch (err) {} };
+      ipcRenderer.on('journal:line', handler);
+      ipcRenderer.invoke('journal:recent')
+        .then(list => { try { cb(Array.isArray(list) ? list : []); } catch (err) {} })
+        .catch(() => {});
+      return () => ipcRenderer.removeListener('journal:line', handler);
+    }
+  },
   /** Today's calendar events (read-only): {events:[{time,title,allDay,past}], error}. */
   calendar() { return ipcRenderer.invoke('calendar:today'); },
   /** Mic devices for the AI module's dropdown: list() -> {devices:[{index,name}],
