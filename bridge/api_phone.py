@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import tempfile
+import threading
 
 from aiohttp import web
 
@@ -98,6 +99,32 @@ async def task_op(request):
                               "dashboardOpen": state.board_is_fresh()})
 
 
+def _turn_thread(fn, *args):
+    """Run a blocking turn on a DAEMON thread, exposed as an asyncio future.
+
+    Not asyncio.to_thread: its executor is joined during shutdown, so a turn
+    still running - an orchestrator loop can last minutes - blocked
+    "systemctl restart cortana-bridge" until it finished. A rescued turn has to
+    outlive the REQUEST; it must not outlive a deliberate restart.
+    """
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+
+    def settle(setter, value):
+        if not fut.done():
+            setter(value)
+
+    def work():
+        try:
+            result = fn(*args)
+            loop.call_soon_threadsafe(settle, fut.set_result, result)
+        except BaseException as e:                      # noqa: BLE001 - relayed
+            loop.call_soon_threadsafe(settle, fut.set_exception, e)
+
+    threading.Thread(target=work, daemon=True, name="phone-turn").start()
+    return fut
+
+
 def _unlink(path):
     try:
         os.unlink(path)
@@ -149,7 +176,7 @@ async def converse(request):
     # nowhere to go. Now the turn always finishes, and if the phone has gone the
     # reply is announced instead - which the hello replay then delivers when the
     # app comes back.
-    turn = asyncio.ensure_future(asyncio.to_thread(brain.run_turn, wav_path, text))
+    turn = _turn_thread(brain.run_turn, wav_path, text)
     # The wav has to outlive the REQUEST, not just the await. On a disconnect
     # the shielded turn keeps running and has usually not reached STT yet, so
     # deleting the file in a finally: pulled it out from under the turn - it

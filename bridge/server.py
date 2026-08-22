@@ -74,7 +74,11 @@ def make_app():
 
 def main():
     log(f"v{BRIDGE_VERSION} listening on {BIND}:{PORT} as '{HOST_NAME}'")
-    web.run_app(make_app(), host=BIND, port=PORT, print=None)
+    # Bound the graceful phase: a restart should be quick even if a phone
+    # request is mid-flight. The turn itself runs on a daemon thread, so
+    # nothing here waits on Cortana finishing a long job.
+    web.run_app(make_app(), host=BIND, port=PORT, print=None,
+                shutdown_timeout=5)
 
 
 if __name__ == "__main__":
