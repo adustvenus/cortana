@@ -7,6 +7,7 @@ Text mode (debug / hotkey-less fallback):
   python main.py --text
 """
 import argparse
+import os
 import queue
 import re
 import sys
@@ -209,6 +210,16 @@ def voice_loop():
                 state["busy"] = False
                 if not speech.speaking():
                     hud_state.set_state("idle")
+                # mic._save() writes with delete=False, and nothing on this path
+                # removed it - one WAV per utterance accumulated in the temp dir
+                # for the life of the box. The phone path already cleans up
+                # after itself (bridge/api_phone.py). Done here rather than in
+                # process(), which has several early returns, so an unreadable
+                # capture or a wake-word miss frees its file too.
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
     threading.Thread(target=processor, daemon=True, name="processor").start()
 
