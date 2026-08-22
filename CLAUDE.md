@@ -23,11 +23,35 @@ happens:
 
 ## Verification that is unavailable here
 
-- **No `node`, no Electron on the Windows box.** JS under `Dashboard/app/`
-  cannot be parsed there; `node --check` does not exist. Fall back to reading
-  `git diff` and confirming the insertion count matches intent - that catches
-  a botched splice, though not a syntax error. A clean
-  `systemctl --user restart cortana-dash` on the Linux box is the real check.
+- **No `node`, no Electron on the Windows box.** You cannot RUN the Electron
+  shell there. You can still parse it: Chrome and Edge are both installed, and
+  `new Function(src)` in a headless page parses without executing, so CommonJS
+  `require` being undefined does not matter. That catches a botched splice and
+  a syntax error both. A clean `systemctl --user restart cortana-dash` on the
+  Linux box remains the only check of actual behaviour.
+- **Page JS is fully runnable here, and that is worth using.** Anything under
+  `Dashboard/package/` is browser code. Headless Chrome runs it, screenshots
+  the real board, and dumps results out of the DOM:
+
+  ```bash
+  chrome.exe --headless=new --disable-gpu --no-sandbox \
+    --virtual-time-budget=20000 --dump-dom "file:///.../harness.html" > dom.txt
+  chrome.exe --headless=new --window-size=1280,820 \
+    --screenshot=out.png "file:///.../Dusk%20Dashboard.dc.html"
+  ```
+
+  Two traps, both of which cost a round: a page copied outside `package/`
+  needs its relative resource refs rewritten to absolute or the DC runtime
+  never boots and you screenshot a raw `{{ template }}`; and test images must
+  be **data: URIs**, because a `file://` image taints the canvas and
+  `getImageData` throws. Python 3.12 + PIL are present too, which makes a
+  reference implementation practical - `Dashboard/PALETTE.md` is the worked
+  example.
+- **Kotlin cannot be compiled here** - no gradle, no Android SDK. Structural
+  checks (bracket balance, do the referenced members exist, is the XML
+  well-formed) catch a bad splice; the real compiler is the `mobile-apk`
+  workflow, which builds a signed APK on every push to main. Bump BOTH
+  `versionCode` and `versionName` or it skips the release.
 - **`curl` on the Linux box is the snap build** (`/snap/bin/curl`), which has
   a private `/tmp`. `curl -o "$(mktemp -d)/f"` fails with exit 23 while the
   transfer itself succeeds. Never let curl open its own output file in a
