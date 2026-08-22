@@ -51,6 +51,14 @@ let authServer = null;
 // SHARED with bridge/spotify_link.py, so a 429 seen by either side silences
 // both for exactly as long as Spotify's Retry-After asks.
 const IDLE_RECHECK_MS = 60000;   // trust "nothing playing" this long
+// Node's fetch has no default timeout at all, so a stalled socket would hang a
+// poll indefinitely. Spotify normally answers well inside a second.
+const FETCH_TIMEOUT_MS = 8000;
+// Consecutive transport failures tolerated before the module stops showing the
+// last good reading and reports the error instead - roughly 30s at the playing
+// poll interval.
+const NET_GRACE = 3;
+let netFails = 0;                // consecutive transport failures
 let lastGood = null;             // last real reading, served while cooling off
 let idleUntil = 0;               // skip the cross-device fallback until then
 
@@ -74,6 +82,17 @@ function note429(r) {
   setBackoff(wait, '429 from Spotify');
   return wait;
 }
+// undici wraps every transport failure as the same "fetch failed" and puts the
+// real reason on e.cause, so reporting e.message alone makes a DNS failure, a
+// reset socket and a refused connection indistinguishable - and unfixable.
+function netCause(e) {
+  if (e && e.name === 'TimeoutError') return 'timed out after ' + FETCH_TIMEOUT_MS + 'ms';
+  const c = e && e.cause;
+  const detail = c && (c.code || c.message);
+  const msg = String((e && e.message) || 'network error');
+  return detail ? msg + ' (' + detail + ')' : msg;
+}
+
 function cooling(wait) {
   return { ...(lastGood || { configured: true, connected: true }),
            rateLimited: true, retryIn: Math.round(wait) };
@@ -85,7 +104,8 @@ async function exchangeCode(code) {
     client_id: clientId(), code_verifier: pkceVerifier
   });
   const r = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) throw new Error('token exchange failed: ' + r.status);
   const j = await r.json();
   // Persist the granted scope so we can tell a scope-shortfall from an
@@ -100,7 +120,8 @@ async function refreshToken() {
   const body = new URLSearchParams({
     grant_type: 'refresh_token', refresh_token: t.refresh_token, client_id: clientId() });
   const r = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) return null;
   const j = await r.json();
   // Carry the granted scope forward. A refresh response usually omits it, and
@@ -215,7 +236,9 @@ async function state() {
     // in the API's view - which happens even while playing on some devices.
     // The cross-device fallback below doubles our request count, so it is only
     // asked periodically (see idleUntil).
-    let r = await fetch('https://api.spotify.com/v1/me/player', { headers: H });
+    let r = await fetch('https://api.spotify.com/v1/me/player',
+                        { headers: H, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    netFails = 0;   // the transport works; only HTTP-level problems remain
     if (r.status === 429) return cooling(note429(r));
     if (r.ok && r.status !== 204) {
       idleUntil = 0;
@@ -230,7 +253,8 @@ async function state() {
     if (Date.now() < idleUntil) {
       return { configured: true, connected: true, active: false, playing: false, grantedScope };
     }
-    const r2 = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: H });
+    const r2 = await fetch('https://api.spotify.com/v1/me/player/currently-playing',
+                           { headers: H, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (r2.status === 429) return cooling(note429(r2));
     if (r2.status === 204) {
       idleUntil = Date.now() + IDLE_RECHECK_MS;
@@ -251,7 +275,16 @@ async function state() {
     idleUntil = 0;
     lastGood = parsePlayback(j2);
     return lastGood;
-  } catch (e) { return { configured: true, connected: true, error: String(e.message), grantedScope }; }
+  } catch (e) {
+    // A blip must not wipe a good reading. The module polls every 10s while
+    // playing, so one failed request would blank the track and flash ERR until
+    // the next success - which is what "constant fetch failed while music is
+    // playing" actually was. MODULES.md section 5: keep the last good value on
+    // failure. Report it only once it is plainly not a blip.
+    netFails++;
+    if (lastGood && netFails <= NET_GRACE) return { ...lastGood, netWarn: netCause(e) };
+    return { configured: true, connected: true, error: netCause(e), grantedScope };
+  }
 }
 
 // Id of the local spotifyd endpoint, or null when it is not running. Cached:
@@ -261,7 +294,8 @@ async function localDevice(at) {
   if (deviceId && Date.now() < deviceUntil) return deviceId;
   try {
     const r = await fetch('https://api.spotify.com/v1/me/player/devices',
-                          { headers: { Authorization: 'Bearer ' + at } });
+                          { headers: { Authorization: 'Bearer ' + at },
+                            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!r.ok) return null;
     const j = await r.json();
     const want = CORTANA_DEVICE.toLowerCase();
@@ -287,7 +321,8 @@ async function control(action) {
                       'device_id=' + encodeURIComponent(id) : m[1];
   try {
     const r = await fetch('https://api.spotify.com/v1' + target,
-                          { method: m[0], headers: { Authorization: 'Bearer ' + at } });
+                          { method: m[0], headers: { Authorization: 'Bearer ' + at },
+                            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (r.status === 429) {
       const wait = note429(r);
       return { ok: false, error: 'Spotify rate limit - retry in ' + Math.round(wait) + 's' };
