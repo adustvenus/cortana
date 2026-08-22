@@ -44,9 +44,11 @@ WORK="$(mktemp -d)" || { echo "Cannot create a temp directory." >&2; exit 1; }
 trap 'rm -rf "$WORK"' EXIT
 ERRF="$WORK/curl.err"
 
-# curl error 23 ("client returned ERROR on write") means it could not write
-# the output file, which is almost always a full or unwritable filesystem -
-# and curl reports it as a network-ish error, so check up front and say so.
+# These pre-flight checks exist because curl reports "I could not write the
+# output file" as error 23 - "client returned ERROR on write of N bytes" -
+# which reads like a network fault and names neither the file nor the reason.
+# They prove only that the SHELL can write here. A confined curl may still be
+# unable to; that is fetch()'s problem, handled below.
 if ! : > "$WORK/.probe" 2>/dev/null; then
   echo "Cannot write to $WORK - check permissions on the temp filesystem." >&2
   exit 1
@@ -60,23 +62,44 @@ if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 20480 ]; then
   exit 1
 fi
 
-# curl -f prints only "curl: (22) ..." on an HTTP error, which says nothing
-# about WHICH request failed or why. Report the url and the status code.
+# The body is redirected to a file the SHELL opens, rather than handed to curl
+# as -o. That matters when curl is the snap build (/snap/bin/curl): a snap runs
+# in its own mount namespace with a PRIVATE /tmp, so the directory mktemp -d
+# just made is not there as far as curl is concerned. curl opens an -o file
+# lazily, on the first write callback, so a transfer that is working fine dies
+# on its first chunk with
+#   curl: (23) client returned ERROR on write of 221 bytes
+# and says nothing about the path. Redirecting means the unconfined shell does
+# the open() and curl only ever writes to a descriptor it inherited, which
+# neither the private /tmp nor the AppArmor profile mediates.
+#
+# -f (fail on HTTP >= 400) replaces -w '%{http_code}', which is unusable now:
+# its output would land in the redirected body. The status code is recovered
+# from curl's own message instead.
 fetch() {   # fetch <url> <dest>
   local url="$1" dest="$2" code
-  code="$(curl -sSL -w '%{http_code}' -o "$dest" "$url" 2>"$ERRF")" || {
-    echo "  x Network error fetching:" >&2
+  if curl -fsSL "$url" > "$dest" 2>"$ERRF"; then
+    [ -s "$dest" ] && return 0
+    echo "  x Empty response body from:" >&2
     echo "      $url" >&2
-    [ -s "$ERRF" ] && sed 's/^/      /' "$ERRF" >&2
     return 1
-  }
-  if [ "$code" != "200" ]; then
+  fi
+  code="$(sed -n 's/.*returned error: \([0-9][0-9][0-9]\).*/\1/p' "$ERRF" | head -1)"
+  if [ -n "$code" ]; then
     echo "  x HTTP $code fetching:" >&2
     echo "      $url" >&2
     [ "$code" = "403" ] && echo "      (GitHub API rate limit? 60/hour unauthenticated.)" >&2
     [ "$code" = "404" ] && echo "      (No such asset for this release/architecture.)" >&2
-    return 1
+  else
+    echo "  x Network error fetching:" >&2
+    echo "      $url" >&2
+    [ -s "$ERRF" ] && sed 's/^/      /' "$ERRF" >&2
+    case "$(command -v curl)" in
+      /snap/*) echo "      NOTE: curl here is the snap build, which runs confined." >&2
+               echo "      If this persists: sudo apt install -y curl" >&2 ;;
+    esac
   fi
+  return 1
 }
 
 echo "[1/4] Finding the latest release..."
