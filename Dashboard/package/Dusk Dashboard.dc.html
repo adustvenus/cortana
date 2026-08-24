@@ -2479,7 +2479,7 @@ class Component extends DCLogic {
           transition: 'width 1s ease' });
         return {
           cpuTxt: cpuPct == null ? '—' : Math.round(cpuPct) + '%',
-          memTxt: h && h.memTotal ? gb(h.memUsed) + ' / ' + gb(h.memTotal) + ' GB' : '—',
+          memTxt: memPct == null ? '—' : Math.round(memPct) + '%',
           cpuBar: bar(cpuPct, 'accent', 'accent2'),
           memBar: bar(memPct, 'accent3', 'accent2'),
           // Sublines were '8 CORES · 52°C' and 'SWAP 0.4 GB', both literals.
@@ -2488,8 +2488,9 @@ class Component extends DCLogic {
                           h.tempC != null ? Math.round(h.tempC) + '°C' : null,
                           h.host ? String(h.host).toUpperCase() : null
                          ].filter(Boolean).join(' · ') : '—',
-          memSubTxt: h ? (h.swapTotal ? 'SWAP ' + gb(h.swapUsed) + ' / ' + gb(h.swapTotal) + ' GB'
-                                      : 'NO SWAP') : '—'
+          memSubTxt: !h ? '—'
+            : (h.memTotal ? gb(h.memUsed) + ' / ' + gb(h.memTotal) + ' GB' : '')
+              + (h.swapTotal ? ' · SWAP ' + gb(h.swapUsed) : ' · NO SWAP')
         };
       })(),
       // ── MUSIC (Spotify) ──
