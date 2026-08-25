@@ -2304,9 +2304,10 @@ class Component extends DCLogic {
         // Edit chrome is deliberately STATIC - the same neutral treatment as the
         // "+ ADD" pills. Themed chrome meant the controls restyled themselves
         // with the board and could land on top of whatever they sat over.
-        // Double size: the three surface glyphs have to be told apart at a
-        // glance, and at 1.7rem they were not.
-        surfaceBtnStyle: { ...CHROME_BTN, width: '3.4rem', height: '3.4rem', fontSize: '1.7rem' },
+        // Same footprint as the ✕ beside it, but the glyph runs 50% larger
+        // than the shared chrome size: the three surface marks differ only in
+        // their fill, so they need the extra size to be told apart at a glance.
+        surfaceBtnStyle: { ...CHROME_BTN, fontSize: '1.28rem' },
         // The glyph names what you will GET, not what you have: on a dark
         // module it offers light. Showing the current state made the button
         // read as a label.
