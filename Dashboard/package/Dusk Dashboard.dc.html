@@ -736,13 +736,16 @@ const LS_KEY = 'dusk.layout.v3';          // ENGINE — never rename
 const LS_BG = 'dusk.bg.v1';               // ENGINE
 const SPRING = 'cubic-bezier(.3,1.4,.5,1)';
 const SURFACES = ['light', 'dark', 'clear'];
-// The button shows what the NEXT press gives you, not the state you are in -
-// a control that displays its own current value reads as a label. Filled is
-// dark, hollow is light, dotted is clear/transparent.
-const SURFACE_GLYPH = { light: '○', dark: '●', clear: '⊘' };
-// Clear is ⊘, not ◌: at 22px a dotted circle is indistinguishable from the
-// hollow one next to it in the cycle, which are exactly the two you must be
-// able to tell apart. The slash reads as "no surface at all".
+// The button shows the surface the module IS on. Showing the destination
+// instead was worse in practice: with three stops you cannot infer the current
+// state from the next one, so the module's own appearance and its button
+// disagreed at a glance.
+//
+// Sun and moon rather than hollow and filled circles - light and dark differing
+// only by fill made them a matching pair to decode rather than two things you
+// recognise. Clear keeps ⊘: a slashed circle already reads as "no surface",
+// and it is the one mark that was working.
+const SURFACE_GLYPH = { light: '☀', dark: '☾', clear: '⊘' };
 const LS_THEME = 'dusk.theme.v1';         // ENGINE — user-pinned colors
 // Must list EVERY token palette.js emits: applyTheme() merges
 // defaults <- auto-extracted <- user-pinned, so a token missing here would keep
@@ -2041,7 +2044,8 @@ class Component extends DCLogic {
       const armed = s.armRemove === m.id;
       // -1 for an unrecognised stored surface lands on 'light', which is also
       // what surfaceStyle falls back to.
-      const nextSurface = SURFACES[(SURFACES.indexOf(m.surface || 'light') + 1) % SURFACES.length];
+      const curSurface = SURFACES.includes(m.surface) ? m.surface : 'light';
+      const nextSurface = SURFACES[(SURFACES.indexOf(curSurface) + 1) % SURFACES.length];
       // Same colour as the module's own border (--hairline), just dashed, so
       // edit mode outlines the frame that is already there instead of drawing
       // an unrelated accent around it.
@@ -2311,8 +2315,8 @@ class Component extends DCLogic {
         // The glyph names what you will GET, not what you have: on a dark
         // module it offers light. Showing the current state made the button
         // read as a label.
-        surfaceBtnTxt: SURFACE_GLYPH[nextSurface],
-        surfaceBtnTitle: 'Switch to ' + nextSurface + ' surface',
+        surfaceBtnTxt: SURFACE_GLYPH[curSurface],
+        surfaceBtnTitle: 'Surface: ' + curSurface + ' — click for ' + nextSurface,
         // Always red, whatever the palette. Delete is the one control that must
         // never blend in.
         removeBtnStyle: {
