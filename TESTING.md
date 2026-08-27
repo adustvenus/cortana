@@ -137,10 +137,12 @@ secrets, so check the file count is non-zero first.
 ## Part 3 — the phone
 
 This is the part most likely to need a second pass, and the part I could verify
-least. CI builds the APK; check it went green before starting.
+least. **The APK is already built and released** - CI went green and published
+`mobile-v2.5.0`, so it is waiting for you.
 
-1. **Wait for CI**, then on the phone: Settings → *Check for update* → install
-   **v2.5.0**. Or push it: `bash mobile/push-update.sh <port>`.
+1. On the phone: Settings → *Check for update* → install **v2.5.0**. If your
+   OEM blocks that, push it over wireless adb: `bash mobile/push-update.sh <port>`.
+   (The workstation needs `git pull` first so `mobile/dist` has the new build.)
 2. **Grant, in the phone's own system settings** (none of these can be granted
    from inside the app):
    - Notification access (for the notification mirror)
@@ -166,9 +168,11 @@ least. CI builds the APK; check it went green before starting.
 
 These are not suspicions; they are things no test on the dev box could touch.
 
-- **All Kotlin.** Never compiled here. CI is the compiler. The foreground
+- **Kotlin RUNTIME behaviour.** It compiles - CI built and released v2.5.0
+  green, so this is no longer a "does it even build" risk. But the foreground
   service, notification channels, RemoteInput reply, geofencing, the
-  NotificationListenerService and SMS are all first-run-on-hardware.
+  NotificationListenerService and SMS have still never *run*. Compiling is not
+  working.
 - **Doze.** Whether the WebSocket actually survives deep doze on your phone,
   with your OEM's battery manager, is unknowable from here.
 - **The `cmd` WS channel** (workstation → phone) is a new protocol addition.
