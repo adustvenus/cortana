@@ -313,6 +313,29 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           </div>
         </sc-if>
 
+        <!-- ═══ UPCOMING ═══ -->
+        <sc-if value="{{ m.t_upcoming }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">UPCOMING</span>
+              <span style="flex:1"></span>
+              <span style="{{ upNextStyle }}">{{ upNextTxt }}</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.35rem;margin-top:.4rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 90%,transparent)">
+              <sc-for list="{{ upItems }}" as="it" hint-placeholder-count="3">
+                <div style="display:flex;gap:.6rem;align-items:baseline;min-width:0;flex-shrink:0">
+                  <span style="{{ it.dotStyle }}">{{ it.dot }}</span>
+                  <span style="{{ it.timeStyle }}">{{ it.time }}</span>
+                  <span style="{{ it.titleStyle }}">{{ it.title }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ upEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.45);line-height:1.5">{{ upEmptyTxt }}</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
         <!-- ═══ IMAGE ═══ -->
         <sc-if value="{{ m.t_image }}" hint-placeholder-val="{{ false }}">
           <div style="{{ m.cardStyleImage }}">
@@ -850,6 +873,7 @@ const DEFS = {
   music:   { w: 7,  h: 4, label: 'MUSIC' },
   tasks:   { w: 6,  h: 4, label: 'TASKS' },
   agenda:  { w: 6,  h: 4, label: 'AGENDA' },
+  upcoming:{ w: 6,  h: 4, label: 'UPCOMING' },
   image:   { w: 6,  h: 3, label: 'IMAGE' },
   chart:   { w: 6,  h: 3, label: 'PORTFOLIO' },
   console: { w: 5,  h: 2, label: 'CONSOLE' },
@@ -1021,6 +1045,8 @@ class Component extends DCLogic {
       gitData: null,       // last git:status response from main process
       gitAge: '—',         // HH:MM of last successful git poll
       calData: null,       // {events, error} from Cortana's calendar loop
+      upData: null,        // upcoming reminders/timers; null = never loaded yet
+      upDown: false,       // bridge unreachable - keep the last list, say so
       spotify: null,       // Spotify playback state from the bridge
       spotifyBusy: false,  // debounce a control action mid-flight
       // (module/task ids come from uid() - collision-proof across reloads)
@@ -1527,6 +1553,30 @@ class Component extends DCLogic {
     this._pushBoard = pushBoard;          // task changes push immediately
     this._mobileBoardPush = setInterval(pushBoard, 20000);
 
+    // ── Upcoming (scheduler): reminders/timers/alarms via the bridge ──
+    // Over loopback rather than IPC because the schedule lives in state.db and
+    // the Electron shell has no reader for it - and this same endpoint already
+    // feeds the phone. Placed AFTER MB is declared, not next to the other
+    // pollers: MB is a const in this scope, so calling this any earlier would
+    // hit the temporal dead zone. 15s - a schedule changes far more slowly
+    // than the mic list or host stats.
+    const pollUpcoming = async () => {
+      if (!this.state.modules.some(m => m.type === 'upcoming')) return;
+      try {
+        const r = await fetch(MB + '/local/schedule');
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        if (d && Array.isArray(d.items)) this.setState({ upData: d.items, upDown: false });
+      } catch (e) {
+        // Keep the last good list and flag the link instead of blanking the
+        // tile: an empty UPCOMING reads as "nothing scheduled", which is a very
+        // different claim from "I cannot reach the bridge".
+        this.setState({ upDown: true });
+      }
+    };
+    pollUpcoming();
+    this._upPoll = setInterval(pollUpcoming, 15000);
+
     // Glass scrollbars: reveal a themed thumb only while scrolling. One
     // delegated capture-phase listener covers every scrollable element,
     // including ones mounted later.
@@ -1628,6 +1678,7 @@ class Component extends DCLogic {
     clearInterval(this._clock); clearInterval(this._tick); clearInterval(this._gitPoll);
     clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearTimeout(this._spotifyPoll);
     clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll); clearInterval(this._hostPoll);
+    clearInterval(this._upPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
     clearTimeout(this._themePushT);
     cancelAnimationFrame(this._aiRaf);
@@ -2105,7 +2156,8 @@ class Component extends DCLogic {
         })(),
         t_weather: m.type === 'weather', t_cpu: m.type === 'cpu', t_ram: m.type === 'ram',
         t_music: m.type === 'music', t_tasks: m.type === 'tasks',
-        t_agenda: m.type === 'agenda', t_image: m.type === 'image', t_chart: m.type === 'chart',
+        t_agenda: m.type === 'agenda', t_upcoming: m.type === 'upcoming',
+        t_image: m.type === 'image', t_chart: m.type === 'chart',
         t_console: m.type === 'console', t_cortana: m.type === 'cortana',
         t_youtube: m.type === 'youtube',
         // The iframe is created imperatively (see _syncYoutube) - a raw
@@ -2815,6 +2867,49 @@ class Component extends DCLogic {
                       () => this._pollWeather && this._pollWeather());
       },
 
+      // ── UPCOMING (scheduler: reminders, timers, alarms) ──
+      upItems: (() => {
+        const items = Array.isArray(s.upData) ? s.upData : [];
+        const now = Date.now() / 1000;
+        return items.map(it => {
+          const due = Number(it.at) || 0;
+          const mins = (due - now) / 60;
+          // Relative for anything inside the hour, wall clock beyond it - "in
+          // 12m" is what you want for a timer, "07:00" for tomorrow's alarm.
+          let when;
+          if (mins < 1) when = 'now';
+          else if (mins < 60) when = 'in ' + Math.round(mins) + 'm';
+          else {
+            const d = new Date(due * 1000);
+            when = String(d.getHours()).padStart(2, '0') + ':'
+                 + String(d.getMinutes()).padStart(2, '0');
+          }
+          const hot = it.urgency === 'critical' || it.urgency === 'urgent';
+          return {
+            dot: it.repeats ? '↻' : '•',
+            time: when,
+            title: it.title,
+            dotStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.7rem',
+                        width: '.8rem', flexShrink: 0,
+                        color: hot ? 'rgb(var(--accent2-rgb))'
+                                   : 'rgba(var(--text-rgb),.35)' },
+            timeStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.8rem',
+                         color: 'rgb(var(--accent-rgb))',
+                         width: '3.4rem', flexShrink: 0 },
+            titleStyle: { fontSize: '.95rem', whiteSpace: 'nowrap', overflow: 'hidden',
+                          textOverflow: 'ellipsis', color: 'rgb(var(--text-rgb))' }
+          };
+        });
+      })(),
+      upEmpty: !(Array.isArray(s.upData) && s.upData.length),
+      upEmptyTxt: s.upDown ? 'bridge unreachable'
+                : (s.upData ? 'nothing scheduled' : 'loading…'),
+      // A dim marker, not an alarm: the list itself is the content, and a stale
+      // list that silently looks live is the failure worth showing.
+      upNextTxt: s.upDown ? 'OFFLINE' : '',
+      upNextStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+                     letterSpacing: '.14em', color: 'rgba(var(--text-rgb),.4)' },
+
       // ── AGENDA (Google Calendar via Cortana; same visual format as before) ──
       agendaItems: (() => {
         const evs = (s.calData && Array.isArray(s.calData.events)) ? s.calData.events : [];
@@ -2882,7 +2977,7 @@ class Component extends DCLogic {
       gitAge: s.gitAge || '—',
       // clock + date stay renderable for saved layouts, but the tray offers
       // the combined DATE-TIME module in their place.
-      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files'].map(t => ({
+      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'upcoming', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),

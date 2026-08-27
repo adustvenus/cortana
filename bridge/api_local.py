@@ -115,6 +115,27 @@ async def tasks_ops(request):
     return web.json_response({"ops": state.drain_task_ops()}, headers=auth.CORS)
 
 
+async def upcoming(request):
+    """Next few scheduled items for the dashboard's UPCOMING tile.
+
+    A dedicated route rather than another field on /local/status: that one is
+    polled every 5s by the MOBILE LINK module and carries the whole device
+    list, and the schedule changes far too rarely to ride along with it.
+    """
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        import schedule
+        items = schedule.upcoming(6)
+    except Exception as e:
+        # Never 500 a dashboard poller - the tile shows its last good value and
+        # the reason lands in the journal.
+        return web.json_response({"items": [], "error": str(e)[:200]},
+                                 headers=auth.CORS)
+    return web.json_response({"items": items}, headers=auth.CORS)
+
+
 async def preflight(request):
     return web.Response(status=204, headers=auth.CORS)
 
@@ -123,6 +144,7 @@ routes = [
     web.get("/get", get_page),
     web.get("/get/apk", get_apk),
     web.get("/local/status", status),
+    web.get("/local/schedule", upcoming),
     web.get("/local/qr", qr),
     web.post("/local/pair/new", pair_new),
     web.post("/local/revoke", revoke),

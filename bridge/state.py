@@ -169,6 +169,18 @@ def reachable_ip():
     return util.cached("reach_ip", 60, read)
 
 
+def _upcoming():
+    """Next few scheduled items. Lazy import and failure-tolerant like every
+    other reader here: state.db can be mid-migration or absent on a fresh box,
+    and that must degrade this one field, never the whole feed."""
+    try:
+        import schedule
+        return schedule.upcoming(6)
+    except Exception as e:
+        log("schedule read failed", e)
+        return []
+
+
 def build():
     """The full snapshot pushed to phones and served by /api/state."""
     return {
@@ -184,6 +196,7 @@ def build():
         "calendar": util.cached("cal", 15, calendar),
         "git": git_state(),
         "spotify": util.cached("spotify", 20, spotify_link.state),   # 20s: two pollers share one Spotify quota
+        "schedule": util.cached("sched", 15, _upcoming),
         "board": _board["data"],
         "boardTs": _board["ts"],
         "theme": _theme["data"],
