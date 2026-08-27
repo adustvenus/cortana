@@ -45,13 +45,29 @@ object LinkClient {
         fun onAnnounce(text: String)
         fun onLink(up: Boolean)
         fun onAuthRejected() {}
+
+        /** The whole announcement frame. Screens only ever want the text, so
+         *  the default forwards to onAnnounce and nothing on screen changed;
+         *  LinkService overrides it because the urgency decides which
+         *  notification channel - and therefore whether the phone buzzes at
+         *  3am - the line lands on. */
+        fun onAnnounceFull(text: String, urgency: String, id: Int) = onAnnounce(text)
     }
+
+    /** Marker for a holder that is NOT a screen: the foreground service.
+     *  uiHolders uses it to tell "somebody is looking at the app" from "the app
+     *  is closed and only the service is listening", which is the difference
+     *  between showing an announcement as a toast and posting it to the
+     *  notification shade. */
+    interface Background
 
     private val main = Handler(Looper.getMainLooper())
     private var ws: WebSocket? = null
     private var wantRun = false
     private var backoffSec = 1L
-    private var listener: Listener? = null
+    // True between newWebSocket() and the first callback: without it, start()
+    // being called twice in a row opens two sockets.
+    private var dialing = false
     var lastState: JSONObject? = null
         private set
     var linkUp = false
@@ -85,15 +101,46 @@ object LinkClient {
     private fun authed(ctx: Context, b: Request.Builder) =
         b.header("Authorization", "Bearer ${Prefs.token(ctx)}")
 
-    // ── WebSocket lifecycle (foreground only - activities call start/stop) ──
-    // Screens holding the link open. Android starts the incoming activity
-    // BEFORE stopping the outgoing one, so MainActivity.onStop would otherwise
-    // tear down the socket the AI screen had just brought up.
-    private var holders = 0
+    // ── WebSocket lifecycle ─────────────────────────────────────────────────
+    // Everything holding the link open: the screens (start/stop from onStart/
+    // onStop) and, since 2.5.0, LinkService. Android starts the incoming
+    // activity BEFORE stopping the outgoing one, so MainActivity.onStop would
+    // otherwise tear down the socket the AI screen had just brought up - and
+    // with the service in the list, backgrounding the app stops closing it at
+    // all.
+    //
+    // This used to be a single `listener` plus a holders COUNT, which meant the
+    // second holder silently replaced the first one's callbacks. That was
+    // invisible while only one screen at a time could be attached; the service
+    // has to keep receiving announcements while MainActivity is attached too,
+    // so it is a list now.
+    //
+    // Every mutation here happens on the main thread. start/stop are called
+    // from onStart/onStop and onStartCommand, the socket callbacks post, and
+    // that is the whole of the concurrency story.
+    private val listeners = ArrayList<Listener>()
 
+    /** Holders that are actual screens. Zero means nobody is looking, which is
+     *  exactly when an announcement has to become a notification. */
+    val uiHolders: Int get() = listeners.count { it !is Background }
+
+    /** Set by LinkService: inbound {type:"cmd"} frames (SMS and friends),
+     *  delivered on the main thread.
+     *
+     *  Null is NOT "drop the frame". This is one slot and three components can
+     *  reach it - the service sets it on attach and clears it on destroy,
+     *  MainActivity fills it in when there is no service - which left a window
+     *  (stop the service from its own notification while the board is open)
+     *  where the socket was up, the switch said the capability was on, and
+     *  every command was silently discarded. The frame goes to Comms either
+     *  way now; the hook is only about WHICH context handles it, and the
+     *  capability switches inside Comms are the thing that actually decides
+     *  whether anything happens. */
+    var onCmd: ((JSONObject) -> Unit)? = null
+
+    /** Call from the main thread. */
     fun start(ctx: Context, l: Listener) {
-        holders++
-        listener = l
+        if (!listeners.contains(l)) listeners.add(l)
         wantRun = true
         backoffSec = 1
         connect(ctx.applicationContext)
@@ -101,24 +148,48 @@ object LinkClient {
         l.onLink(linkUp)
     }
 
-    fun stop() {
-        holders -= 1
-        if (holders > 0) return          // another screen still needs it
-        holders = 0
+    /** Call from the main thread. The socket closes only when the LAST holder
+     *  lets go, so the service keeps it up while every screen is stopped. */
+    fun stop(l: Listener) {
+        listeners.remove(l)
+        if (listeners.isNotEmpty()) return
         wantRun = false
-        listener = null
         ws?.close(1000, "background")
         ws = null
+        dialing = false
+    }
+
+    /** Reconnect now if the socket is down. The doze alarm and the network
+     *  callback both land here: Handler.postDelayed - which is all the backoff
+     *  retry has - does not run in deep doze, so without an outside nudge a
+     *  socket dropped at 2am stays dropped until the phone is unlocked. */
+    fun poke(ctx: Context) {
+        val app = ctx.applicationContext
+        main.post {
+            if (!wantRun) return@post
+            backoffSec = 1
+            connect(app)
+        }
     }
 
     private fun connect(ctx: Context) {
         if (!wantRun || !Prefs.paired(ctx)) return
+        // Added with the service: start() used to dial unconditionally, so
+        // every onStart leaked another live socket behind the field. Harmless
+        // enough with one screen; with a service that restarts it is a pile-up.
+        if (dialing || ws != null) return
+        dialing = true
         val tryHost = activeHost(ctx)
         val req = authed(ctx, Request.Builder().url(
             "ws://$tryHost:${Prefs.port(ctx)}/api/ws")).build()
         ws = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                backoffSec = 1
+                // linkUp and backoffSec are read and written by start/stop and
+                // by the other callbacks, all of which run on the main thread.
+                // Setting them here, on OkHttp's reader thread, was the one
+                // exception - and it raced onClosed from the socket this one
+                // replaced.
+                main.post { dialing = false; backoffSec = 1; setLink(true) }
                 // This address works - make it the primary so REST calls and
                 // the next launch skip the dead one entirely.
                 if (tryHost.isNotEmpty() && tryHost != Prefs.host(ctx)) {
@@ -136,7 +207,6 @@ object LinkClient {
                         // because the app happened to be closed.
                         .put("lastAnnounce", Prefs.lastAnnounce(ctx)).toString())
                 } catch (e: Exception) { /* presence still works without it */ }
-                setLink(true)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -155,34 +225,81 @@ object LinkClient {
                             if (list.isNotEmpty() && list != Prefs.altHosts(ctx))
                                 Prefs.setAltHosts(ctx, list)
                         }
-                        main.post { listener?.onState(j) }
+                        main.post { listeners.toList().forEach { l -> l.onState(j) } }
                     }
                     "announce" -> {
                         val aid = j.optInt("id", 0)
                         if (aid > 0) Prefs.setLastAnnounce(ctx, aid)
-                        main.post { listener?.onAnnounce(j.optString("text")) }
+                        val text = j.optString("text")
+                        // A bridge that predates the schedule work sends no
+                        // urgency at all, and "normal" is the right reading of
+                        // a plain spoken line.
+                        val urg = j.optString("urgency").ifEmpty { "normal" }
+                        main.post {
+                            listeners.toList().forEach { l -> l.onAnnounceFull(text, urg, aid) }
+                        }
+                    }
+                    // The workstation asking this phone to do something (send
+                    // an SMS, read the inbox). Only for capabilities the user
+                    // switched on - Comms refuses the rest by name.
+                    "cmd" -> main.post {
+                        val hook = onCmd
+                        if (hook != null) hook(j) else Comms.handleCmd(ctx, j)
                     }
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                setLink(false)
-                if (response?.code == 401) {
-                    // Token revoked on the dashboard - stop hammering, re-pair.
-                    main.post { listener?.onAuthRejected() }
-                    return
+                val code = response?.code
+                // Everything below mutates shared state, so it runs on the main
+                // thread like every other mutation here. connect() is called
+                // from the main thread, so the field is always assigned by the
+                // time this runnable gets to compare against it.
+                main.post {
+                    // A terminal callback from a socket that is no longer the
+                    // live one is HISTORY. Acting on it flipped linkUp to false
+                    // over a working socket - close(1000) does not finish until
+                    // the peer answers, so a background/foreground bounce lands
+                    // the old socket's callback after the new one is already
+                    // open - and nothing sets linkUp back to true without a
+                    // fresh onOpen. The card and the service's permanent row
+                    // then read DISCONNECTED for as long as the link stays up,
+                    // which is the exact lie this file is supposed to prevent.
+                    // ws == null is the after-stop() case and still counts.
+                    if (ws != null && ws !== webSocket) return@post
+                    ws = null
+                    dialing = false
+                    setLink(false)
+                    if (code == 401) {
+                        // Token revoked on the dashboard - stop hammering, re-pair.
+                        listeners.toList().forEach { l -> l.onAuthRejected() }
+                        return@post
+                    }
+                    if (!wantRun) return@post
+                    // Unreachable on this address (wrong network, workstation
+                    // moved): try the next known one before backing off further.
+                    rotateHost(ctx)
+                    val delay = backoffSec
+                    backoffSec = min(backoffSec * 2, 30)
+                    main.postDelayed({ if (wantRun) connect(ctx) }, delay * 1000)
                 }
-                if (!wantRun) return
-                // Unreachable on this address (wrong network, workstation moved):
-                // try the next known one before backing off further.
-                rotateHost(ctx)
-                val delay = backoffSec
-                backoffSec = min(backoffSec * 2, 30)
-                main.postDelayed({ if (wantRun) connect(ctx) }, delay * 1000)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                setLink(false)
+                main.post {
+                    // Same rule as onFailure: only the current socket - or none
+                    // at all - may move this state.
+                    if (ws != null && ws !== webSocket) return@post
+                    ws = null
+                    dialing = false
+                    setLink(false)
+                    // A clean close is not a failure, so onFailure's retry never
+                    // runs for it. Before the service that did not matter -
+                    // something would reopen the socket the next time a screen
+                    // appeared - but a background holder has no such event, and
+                    // a bridge restart would have left it down until morning.
+                    if (wantRun) main.postDelayed({ if (wantRun) connect(ctx) }, 2000)
+                }
             }
         })
     }
@@ -190,7 +307,7 @@ object LinkClient {
     private fun setLink(up: Boolean) {
         if (linkUp == up) return
         linkUp = up
-        main.post { listener?.onLink(up) }
+        main.post { listeners.toList().forEach { l -> l.onLink(up) } }
     }
 
     // ── REST (all blocking - call from a background thread) ──
@@ -252,6 +369,32 @@ object LinkClient {
             return JSONObject(r.body?.string() ?: "{}")
         }
     }
+
+    private fun postJson(ctx: Context, path: String, body: JSONObject): JSONObject {
+        http.newCall(authed(ctx, Request.Builder()
+            .url("${base(ctx)}$path").post(body.toString().toRequestBody(JSON)))
+            .build()).execute().use { r ->
+            if (r.code == 401) throw AuthException()
+            return try { JSONObject(r.body?.string() ?: "{}") } catch (e: Exception) { JSONObject() }
+        }
+    }
+
+    /** Where this phone thinks its owner is. Blocking; Presence calls it from a
+     *  worker thread and treats every failure as "try again at the next
+     *  event", because an unreachable workstation is the ordinary case for a
+     *  phone that has left the house. */
+    fun postPresence(ctx: Context, body: JSONObject): JSONObject =
+        postJson(ctx, "/api/presence", body)
+
+    /** Mirrored notifications and/or recent SMS. Blocking. */
+    fun postComms(ctx: Context, body: JSONObject): JSONObject =
+        postJson(ctx, "/api/comms/sync", body)
+
+    /** The outcome of a {type:"cmd"} frame. Sent even when the phone REFUSED
+     *  the command: a workstation that hears nothing back cannot tell a
+     *  switched-off capability from a broken phone. Blocking. */
+    fun postCmdResult(ctx: Context, body: JSONObject): JSONObject =
+        postJson(ctx, "/api/cmd/result", body)
 
     fun fetchBytes(url: String): ByteArray? = try {
         http.newCall(Request.Builder().url(url).build()).execute().use { r ->

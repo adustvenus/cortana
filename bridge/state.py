@@ -181,6 +181,38 @@ def _upcoming():
         return []
 
 
+def _sentinel():
+    """Phone SENTINEL card. Same shape as GET /local/sentinel.
+
+    Reads the file cortana publishes rather than running the checks here: one
+    writer per state file, and the bridge could not answer these questions
+    anyway - cortana.service is the process with the /proc, systemctl and
+    token.json view of the machine. None hides the card rather than drawing an
+    empty one, which is what an older workstation looks like from the phone.
+    """
+    try:
+        import sentinel
+        return sentinel.snapshot()
+    except Exception as e:
+        log("sentinel read failed", e)
+        return None
+
+
+def _presence():
+    """Phone PRESENCE card: the MERGED view, not the desk half.
+
+    presence_link is the only thing that knows all three inputs - the desk file
+    cortana writes, what the phone last reported, and whether a socket is open
+    right now - so it does the merge and this just serves it.
+    """
+    try:
+        from bridge import presence_link
+        return presence_link.snapshot()
+    except Exception as e:
+        log("presence read failed", e)
+        return None
+
+
 def build():
     """The full snapshot pushed to phones and served by /api/state."""
     return {
@@ -197,6 +229,8 @@ def build():
         "git": git_state(),
         "spotify": util.cached("spotify", 20, spotify_link.state),   # 20s: two pollers share one Spotify quota
         "schedule": util.cached("sched", 15, _upcoming),
+        "sentinel": util.cached("sentinel", 15, _sentinel),
+        "presence": util.cached("presence", 10, _presence),
         "board": _board["data"],
         "boardTs": _board["ts"],
         "theme": _theme["data"],

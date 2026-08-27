@@ -592,6 +592,96 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
           </div>
         </sc-if>
 
+        <!-- ═══ ROUTINES ═══ -->
+        <sc-if value="{{ m.t_routines }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">ROUTINES</span>
+              <span style="flex:1"></span>
+              <span style="{{ rtHeadStyle }}">{{ rtHeadTxt }}</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.35rem;margin-top:.4rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 90%,transparent)">
+              <sc-for list="{{ rtItems }}" as="rt" hint-placeholder-count="3">
+                <div title="{{ rt.title }}" style="display:flex;gap:.5rem;align-items:baseline;min-width:0;flex-shrink:0">
+                  <span style="{{ rt.dotStyle }}">{{ rt.dot }}</span>
+                  <span style="{{ rt.nameStyle }}">{{ rt.name }}</span>
+                  <span style="{{ rt.trigStyle }}">{{ rt.trig }}</span>
+                  <span style="{{ rt.agoStyle }}">{{ rt.ago }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ rtEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.45);line-height:1.5">{{ rtEmptyTxt }}</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ SENTINEL ═══ -->
+        <sc-if value="{{ m.t_sentinel }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">SENTINEL</span>
+              <span style="flex:1"></span>
+              <span style="{{ snWorstStyle }}">{{ snWorstTxt }}</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.35rem;margin-top:.4rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 90%,transparent)">
+              <sc-for list="{{ snItems }}" as="sn" hint-placeholder-count="3">
+                <div title="{{ sn.title }}" style="display:flex;gap:.5rem;align-items:baseline;min-width:0;flex-shrink:0">
+                  <span style="{{ sn.dotStyle }}">{{ sn.dot }}</span>
+                  <span style="{{ sn.labelStyle }}">{{ sn.label }}</span>
+                  <span style="{{ sn.detailStyle }}">{{ sn.detail }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ snEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.45);line-height:1.5">{{ snEmptyTxt }}</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ PRESENCE ═══ -->
+        <sc-if value="{{ m.t_presence }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">PRESENCE</span>
+              <span style="flex:1"></span>
+              <span style="{{ prHeadStyle }}">{{ prHeadTxt }}</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:.3rem;margin-top:.35rem;min-height:0;overflow:hidden">
+              <sc-for list="{{ prRows }}" as="pr" hint-placeholder-count="3">
+                <div style="display:flex;gap:.6rem;align-items:baseline;min-width:0;flex-shrink:0">
+                  <span style="{{ pr.kStyle }}">{{ pr.k }}</span>
+                  <span style="{{ pr.vStyle }}">{{ pr.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ═══ COMMS ═══ -->
+        <sc-if value="{{ m.t_comms }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ m.cardStyleCol }}">
+            <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">COMMS</span>
+              <span style="flex:1"></span>
+              <span style="{{ cmHeadStyle }}">{{ cmHeadTxt }}</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:.35rem;margin-top:.4rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 90%,transparent)">
+              <sc-for list="{{ cmItems }}" as="cm" hint-placeholder-count="3">
+                <div title="{{ cm.title }}" style="display:flex;gap:.5rem;align-items:baseline;min-width:0;flex-shrink:0">
+                  <span style="{{ cm.dotStyle }}">{{ cm.dot }}</span>
+                  <span style="{{ cm.whoStyle }}">{{ cm.who }}</span>
+                  <span style="{{ cm.textStyle }}">{{ cm.text }}</span>
+                  <span style="{{ cm.agoStyle }}">{{ cm.ago }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ cmEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:rgba(var(--text-rgb),.45);line-height:1.5">{{ cmEmptyTxt }}</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
         <!-- ═══ EDIT CONTROLS ═══ -->
         <sc-if value="{{ editOn }}" hint-placeholder-val="{{ false }}">
           <!-- Edit-mode click shield: covers the module's CONTENT while the
@@ -862,6 +952,24 @@ function hex2rgbStr(hex) {
 // that names YouTube rather than the bad value that caused it.
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 
+// Short "how long ago" for list rows (ROUTINES last-fired, COMMS timestamps).
+// Deliberately lossy: those columns are about 2.6rem wide, so "3d" is the only
+// form that fits and "3 days ago" would ellipsise into "3 d…".
+function agoShort(ts) {
+  const t = Number(ts) || 0;
+  if (!t) return '—';
+  // Seconds or milliseconds. The bridge speaks epoch seconds, but a
+  // phone-sourced notification timestamp arrives in ms, and a row reading
+  // "old" because 1970 was parsed is a worse bug than sniffing the unit.
+  const sec = t > 1e11 ? t / 1000 : t;
+  const d = Date.now() / 1000 - sec;
+  if (d < 60) return 'now';
+  if (d < 3600) return Math.round(d / 60) + 'm';
+  if (d < 86400) return Math.round(d / 3600) + 'h';
+  if (d < 86400 * 30) return Math.round(d / 86400) + 'd';
+  return 'old';
+}
+
 const DEFS = {
   clock:   { w: 4,  h: 2, label: 'CLOCK' },
   date:    { w: 5,  h: 2, label: 'DATE' },
@@ -874,6 +982,14 @@ const DEFS = {
   tasks:   { w: 6,  h: 4, label: 'TASKS' },
   agenda:  { w: 6,  h: 4, label: 'AGENDA' },
   upcoming:{ w: 6,  h: 4, label: 'UPCOMING' },
+  routines:{ w: 6,  h: 4, label: 'ROUTINES' },
+  sentinel:{ w: 6,  h: 4, label: 'SENTINEL' },
+  // 3 rows, not 4: PRESENCE is three label/value pairs and no list, so a
+  // fourth row of height could only ever be empty.
+  presence:{ w: 6,  h: 3, label: 'PRESENCE' },
+  // 7 wide because a message body is the one field on this board that is real
+  // prose; at 6 nearly every row died at the ellipsis.
+  comms:   { w: 7,  h: 4, label: 'COMMS' },
   image:   { w: 6,  h: 3, label: 'IMAGE' },
   chart:   { w: 6,  h: 3, label: 'PORTFOLIO' },
   console: { w: 5,  h: 2, label: 'CONSOLE' },
@@ -1047,6 +1163,19 @@ class Component extends DCLogic {
       calData: null,       // {events, error} from Cortana's calendar loop
       upData: null,        // upcoming reminders/timers; null = never loaded yet
       upDown: false,       // bridge unreachable - keep the last list, say so
+      // The four tiles below copy upData/upDown exactly: null means "never
+      // loaded" (say loading), and a *Down flag means "what is on screen is
+      // the last good value and the link is gone". Folding those two into one
+      // empty list makes an unreachable bridge look like good news.
+      rtData: null,        // routines: [{name,trigger,enabled,lastFired,fires}]
+      rtDown: false,
+      rtErr: '',           // why the list is empty, in the bridge's own words
+      snData: null,        // sentinel: {worst, checks:[{key,label,state,detail}]}
+      snDown: false,
+      prData: null,        // presence: {desk, phone, place}
+      prDown: false,
+      cmData: null,        // comms: {sms:[...], notes:[...]}
+      cmDown: false,
       spotify: null,       // Spotify playback state from the bridge
       spotifyBusy: false,  // debounce a control action mid-flight
       // (module/task ids come from uid() - collision-proof across reloads)
@@ -1577,6 +1706,75 @@ class Component extends DCLogic {
     pollUpcoming();
     this._upPoll = setInterval(pollUpcoming, 15000);
 
+    // ── ROUTINES / SENTINEL / PRESENCE / COMMS ──
+    // All four live down here beside pollUpcoming for the same reason: MB is a
+    // const in this scope and each of these calls itself once immediately, so
+    // hoisting any of them above MB throws during mount.
+    // The rates are deliberately slow - this board is left running all day on
+    // a 5GB laptop. Presence is the quickest at 10s only because it is the one
+    // value a person can stand there and watch change; a routine definition or
+    // a disk check does not move on that timescale.
+    // Every handler keeps the last good value and raises a *Down flag rather
+    // than clearing state. A blank SENTINEL claims "no faults", which is the
+    // exact opposite of what an unreachable bridge actually means.
+    const pollRoutines = async () => {
+      if (!this.state.modules.some(m => m.type === 'routines')) return;
+      try {
+        const r = await fetch(MB + '/local/routines');
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        // A 200 whose body is not the agreed shape is NOT a no-op. Silently
+        // ignoring it left the tile on 'loading...' forever against a bridge
+        // that was up and answering - the one failure nobody ever notices,
+        // because a spinner reads as patience rather than a broken contract.
+        if (!d || !Array.isArray(d.items)) throw new Error('shape');
+        // watch.routines() reports a missing table as items:[] plus a reason.
+        // 'no routines yet' would be a lie on a box mid-migration.
+        this.setState({ rtData: d.items, rtErr: String(d.error || ''), rtDown: false });
+      } catch (e) { this.setState({ rtDown: true }); }
+    };
+    pollRoutines();
+    this._rtPoll = setInterval(pollRoutines, 30000);
+
+    const pollSentinel = async () => {
+      if (!this.state.modules.some(m => m.type === 'sentinel')) return;
+      try {
+        const r = await fetch(MB + '/local/sentinel');
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        if (!d || !Array.isArray(d.checks)) throw new Error('shape');
+        this.setState({ snData: d, snDown: false });
+      } catch (e) { this.setState({ snDown: true }); }
+    };
+    pollSentinel();
+    this._snPoll = setInterval(pollSentinel, 30000);
+
+    const pollPresence = async () => {
+      if (!this.state.modules.some(m => m.type === 'presence')) return;
+      try {
+        const r = await fetch(MB + '/local/presence');
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('shape');
+        this.setState({ prData: d, prDown: false });
+      } catch (e) { this.setState({ prDown: true }); }
+    };
+    pollPresence();
+    this._prPoll = setInterval(pollPresence, 10000);
+
+    const pollComms = async () => {
+      if (!this.state.modules.some(m => m.type === 'comms')) return;
+      try {
+        const r = await fetch(MB + '/local/comms');
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        if (!d || (!Array.isArray(d.sms) && !Array.isArray(d.notes))) throw new Error('shape');
+        this.setState({ cmData: d, cmDown: false });
+      } catch (e) { this.setState({ cmDown: true }); }
+    };
+    pollComms();
+    this._cmPoll = setInterval(pollComms, 20000);
+
     // Glass scrollbars: reveal a themed thumb only while scrolling. One
     // delegated capture-phase listener covers every scrollable element,
     // including ones mounted later.
@@ -1679,6 +1877,8 @@ class Component extends DCLogic {
     clearInterval(this._taskReap); clearInterval(this._weatherPoll); clearInterval(this._calPoll); clearTimeout(this._spotifyPoll);
     clearInterval(this._mobilePoll); clearInterval(this._mobileBoardPush); clearInterval(this._micPoll); clearInterval(this._filesPoll); clearInterval(this._hostPoll);
     clearInterval(this._upPoll);
+    clearInterval(this._rtPoll); clearInterval(this._snPoll);
+    clearInterval(this._prPoll); clearInterval(this._cmPoll);
     clearTimeout(this._toastT); clearTimeout(this._armT); clearTimeout(this._aiSentT); clearTimeout(this._mlArmT);
     clearTimeout(this._themePushT);
     cancelAnimationFrame(this._aiRaf);
@@ -2157,6 +2357,8 @@ class Component extends DCLogic {
         t_weather: m.type === 'weather', t_cpu: m.type === 'cpu', t_ram: m.type === 'ram',
         t_music: m.type === 'music', t_tasks: m.type === 'tasks',
         t_agenda: m.type === 'agenda', t_upcoming: m.type === 'upcoming',
+        t_routines: m.type === 'routines', t_sentinel: m.type === 'sentinel',
+        t_presence: m.type === 'presence', t_comms: m.type === 'comms',
         t_image: m.type === 'image', t_chart: m.type === 'chart',
         t_console: m.type === 'console', t_cortana: m.type === 'cortana',
         t_youtube: m.type === 'youtube',
@@ -2910,6 +3112,240 @@ class Component extends DCLogic {
       upNextStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
                      letterSpacing: '.14em', color: 'rgba(var(--text-rgb),.4)' },
 
+      // ── ROUTINES (what fires without being asked) ──
+      ...(() => {
+        // Filtered, not merely null-checked in the count below: one null in
+        // items threw inside renderVals, and a throw in renderVals does not
+        // blank this tile - it replaces the ENTIRE BOARD with the runtime's
+        // error screen. SENTINEL and COMMS already guard their rows; this one
+        // did not, and the boundary between a poller and a render pass is
+        // exactly where a malformed row has to be stopped.
+        const items = (Array.isArray(s.rtData) ? s.rtData : [])
+          .filter(r => r && typeof r === 'object');
+        const armed = items.filter(r => r.enabled !== false).length;
+        return {
+          rtItems: items.map(rt => {
+            const on = rt.enabled !== false;
+            const fires = Number(rt.fires) || 0;
+            return {
+              // The glyph carries the state as well as the colour does: on the
+              // clear surface a dim grey row over a bright patch of wallpaper
+              // loses the colour cue entirely, and "armed or not" is the whole
+              // question this tile answers.
+              dot: on ? '\u21bb' : '\u258c',
+              name: String(rt.name || '\u2014'),
+              trig: String(rt.trigger || '\u2014'),
+              ago: agoShort(rt.lastFired),
+              // Everything that does not fit the row, for a hover: the tile is
+              // legible at 3x2, but only because the run count lives here.
+              title: String(rt.name || '') + ' \u00b7 ' + (on ? 'armed' : 'disabled')
+                   + ' \u00b7 trigger: ' + String(rt.trigger || 'none')
+                   + ' \u00b7 ' + fires + ' run' + (fires === 1 ? '' : 's')
+                   + ' \u00b7 last ' + agoShort(rt.lastFired),
+              dotStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.7rem',
+                          width: '.8rem', flexShrink: 0,
+                          color: on ? 'rgb(var(--accent-rgb))'
+                                    : 'rgba(var(--text-rgb),.3)' },
+              // minWidth over flexShrink:0 on the trigger: at the 3x2 minimum
+              // both were shrinking in proportion, which left the name as
+              // "morni…" beside a perfectly legible trigger - backwards.
+              // The name now holds 4rem before the trigger gives up any width.
+              nameStyle: { fontSize: '.95rem', flex: 1, minWidth: '4rem', whiteSpace: 'nowrap',
+                           overflow: 'hidden', textOverflow: 'ellipsis',
+                           color: on ? 'rgb(var(--text-rgb))'
+                                     : 'rgba(var(--text-rgb),.45)' },
+              trigStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.66rem',
+                           maxWidth: '5rem', flexShrink: 1, minWidth: 0, whiteSpace: 'nowrap',
+                           overflow: 'hidden', textOverflow: 'ellipsis',
+                           color: 'rgba(var(--text-rgb),.5)' },
+              agoStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.62rem',
+                          width: '2.4rem', flexShrink: 0, textAlign: 'right',
+                          color: 'rgba(var(--text-rgb),.35)' }
+            };
+          }),
+          rtEmpty: !items.length,
+          rtEmptyTxt: s.rtDown ? 'bridge unreachable'
+                    : s.rtErr ? s.rtErr
+                    : (s.rtData ? 'no routines yet' : 'loading\u2026'),
+          rtHeadTxt: s.rtDown ? 'OFFLINE' : (items.length ? armed + ' ARMED' : ''),
+          rtHeadStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+                         letterSpacing: '.14em', color: 'rgba(var(--text-rgb),.4)' }
+        };
+      })(),
+
+      // ── SENTINEL (system checks; the worst row is the entire point) ──
+      ...(() => {
+        const d = s.snData;
+        const checks = (d && Array.isArray(d.checks)) ? d.checks : [];
+        // 'unknown' sits at ok-rank because sentinel.py's own _RANK puts it
+        // there. Anything else - a state this tile has never heard of, a typo,
+        // a level added later - ranks ABOVE ok rather than below it. Sorting an
+        // unrecognised state last is the same failure this sort exists to
+        // prevent: it hides under a wall of green.
+        const rank = st => st === 'bad' ? 0 : st === 'warn' ? 1
+                         : (st === 'ok' || st === 'unknown') ? 3 : 2;
+        const colOf = st => st === 'bad' ? 'rgb(var(--accent2-rgb))'
+                          : st === 'warn' ? 'rgb(var(--accent-rgb))'
+                          : st === 'ok' ? 'rgba(var(--text-rgb),.75)'
+                          : 'rgba(var(--text-rgb),.4)';
+        // Sorted worst-first rather than merely coloured in place. This list
+        // scrolls at small sizes, and a red row that has scrolled out of sight
+        // is worse than having no tile at all - the tile would then be actively
+        // reassuring while something is broken.
+        const rows = checks.map((c, i) => ({ c: c || {}, i }))
+          .sort((a, b) => rank(a.c.state) - rank(b.c.state) || a.i - b.i)
+          .map(({ c }) => {
+            const st = c.state;
+            const bad = st === 'bad';
+            return {
+              dot: '\u258c',
+              label: String(c.label || c.key || '\u2014'),
+              detail: String(c.detail || st || ''),
+              title: String(c.label || c.key || '') + ' \u00b7 ' + String(st || 'unknown')
+                   + (c.detail ? ' \u00b7 ' + String(c.detail) : ''),
+              dotStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.8rem',
+                          width: '.6rem', flexShrink: 0,
+                          color: (st === 'bad' || st === 'warn') ? colOf(st)
+                                                                 : 'rgba(var(--text-rgb),.25)' },
+              labelStyle: { fontSize: '.95rem', flex: 1, minWidth: 0, whiteSpace: 'nowrap',
+                            overflow: 'hidden', textOverflow: 'ellipsis',
+                            fontWeight: bad ? 600 : 400, color: colOf(st) },
+              detailStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.66rem',
+                             maxWidth: '7rem', flexShrink: 0, whiteSpace: 'nowrap',
+                             overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right',
+                             color: bad ? 'rgba(var(--accent2-rgb),.85)'
+                                        : 'rgba(var(--text-rgb),.45)' }
+            };
+          });
+        const w = (d && d.worst) || '';
+        const word = w === 'bad' ? 'FAULT' : w === 'warn' ? 'WARNING'
+                   : w === 'ok' ? 'ALL CLEAR' : '';
+        // sentinel.py read_state() and watch.sentinel() BOTH report staleness
+        // and both say in as many words that acting on it is the reader's job -
+        // and this tile was dropping the field. The consequence is the worst
+        // thing a health module can do: a box where the checker never ran, or
+        // died hours ago, still answers worst:'ok' with its last good checks,
+        // and the header read ALL CLEAR. api_local's own except branch falls
+        // back to worst:'ok' with an `error` and no stale flag, so that counts
+        // too. A stale FAULT keeps its word; a stale 'ok' loses ALL CLEAR
+        // outright, because nobody has actually looked.
+        const stale = !!(d && (d.stale || d.error));
+        return {
+          snItems: rows,
+          snEmpty: !rows.length,
+          snEmptyTxt: s.snDown ? 'bridge unreachable'
+                    : !d ? 'loading\u2026'
+                    : stale ? String(d.error || 'sentinel has not reported')
+                    : 'no checks reported',
+          // A stale FAULT is still a FAULT, so the word survives the link going
+          // down; OFFLINE is prefixed rather than replacing it, because "which
+          // of these two things am I looking at" is answerable either way.
+          snWorstTxt: s.snDown ? (word ? 'OFFLINE \u00b7 ' + word : 'OFFLINE')
+                    : stale ? ((w === 'bad' || w === 'warn') ? 'STALE \u00b7 ' + word : 'STALE')
+                    : word,
+          snWorstStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+                          letterSpacing: '.14em',
+                          color: w === 'bad' ? 'rgb(var(--accent2-rgb))'
+                               : w === 'warn' ? 'rgb(var(--accent-rgb))'
+                               : 'rgba(var(--text-rgb),.4)' }
+        };
+      })(),
+
+      // ── PRESENCE (desk / phone / place) ──
+      prRows: (() => {
+        const d = s.prData || null;
+        const rows = [
+          { k: 'DESK',  v: d && d.desk,  live: d && d.desk === 'present' },
+          { k: 'PHONE', v: d && d.phone, live: d && d.phone === 'open' },
+          { k: 'PLACE', v: d && d.place, live: d && (d.place === 'home' || d.place === 'driving') }
+        ];
+        return rows.map(r => ({
+          k: r.k,
+          // Before the first successful poll every field is an em dash, not
+          // "unknown": "unknown" is a real answer the endpoint can give, and
+          // printing it while nothing has been fetched is a small lie.
+          v: r.v ? String(r.v) : (d ? 'unknown' : '\u2014'),
+          kStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.66rem',
+                    letterSpacing: '.16em', width: '3.6rem', flexShrink: 0,
+                    color: 'rgba(var(--text-rgb),.4)' },
+          vStyle: { fontSize: '1rem', flex: 1, minWidth: 0, whiteSpace: 'nowrap',
+                    overflow: 'hidden', textOverflow: 'ellipsis',
+                    color: !r.v ? 'rgba(var(--text-rgb),.3)'
+                         : r.live ? 'rgb(var(--accent-rgb))'
+                                  : 'rgba(var(--text-rgb),.8)' }
+        }));
+      })(),
+      prHeadTxt: s.prDown ? 'OFFLINE' : '',
+      prHeadStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+                     letterSpacing: '.14em', color: 'rgba(var(--text-rgb),.4)' },
+
+      // ── COMMS (phone SMS + notifications, newest first) ──
+      ...(() => {
+        const d = s.cmData || null;
+        const sms = (d && Array.isArray(d.sms)) ? d.sms : [];
+        const notes = (d && Array.isArray(d.notes)) ? d.notes : [];
+        // One merged stream, not two headed sections. The tile is seven columns
+        // wide; two sections with their own headers leave room for roughly one
+        // row each, and the thing you want is "what just arrived" regardless of
+        // which pipe carried it.
+        // Normalised to seconds HERE, not only inside agoShort. agoShort
+        // sniffs the unit, so a millisecond stamp still prints '2m' - but the
+        // sort compared the raw numbers, and any ms value is ~1000x any seconds
+        // value, so one ms-stamped row pins itself to the top of a list whose
+        // entire promise is 'newest first'. bridge/comms.py normalises at
+        // ingest today, which is precisely why this would have sat here unseen
+        // until a second producer skipped that step.
+        const secs = v => { const t = Number(v) || 0; return t > 1e11 ? t / 1000 : t; };
+        const rows = sms.map(x => ({
+            who: String((x && x.from) || 'unknown'),
+            text: String((x && x.body) || ''),
+            ts: secs(x && x.ts), unread: !!(x && x.unread), kind: 'sms'
+          })).concat(notes.map(x => ({
+            who: String((x && x.app) || 'note'),
+            text: ((x && x.title) ? x.title + ' \u2014 ' : '') + String((x && x.text) || ''),
+            ts: secs(x && x.ts), unread: false, kind: 'note'
+          })));
+        rows.sort((a, b) => b.ts - a.ts);
+        const unread = rows.filter(r => r.unread).length;
+        return {
+          // Capped: a full phone sync can arrive with hundreds of rows, and
+          // this is an ambient tile that shows maybe eight of them. Building
+          // the rest as DOM would cost real memory on a 2GB-free box.
+          cmItems: rows.slice(0, 40).map(r => ({
+            dot: '\u2022',
+            who: r.who,
+            text: r.text,
+            ago: agoShort(r.ts),
+            title: r.who + ' \u00b7 ' + agoShort(r.ts) + '\n' + r.text,
+            dotStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.7rem',
+                        width: '.7rem', flexShrink: 0,
+                        color: r.unread ? 'rgb(var(--accent-rgb))'
+                                        : 'rgba(var(--text-rgb),.18)' },
+            whoStyle: { fontSize: '.9rem', maxWidth: '6.5rem', flexShrink: 0,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        fontWeight: r.unread ? 600 : 400,
+                        color: r.unread ? 'rgb(var(--text-rgb))'
+                                        : 'rgba(var(--text-rgb),.75)' },
+            // Bodies are rendered as text, never as markup: these come off a
+            // phone and an HTML notification body is not this tile's problem.
+            textStyle: { fontSize: '.88rem', flex: 1, minWidth: 0, whiteSpace: 'nowrap',
+                         overflow: 'hidden', textOverflow: 'ellipsis',
+                         color: 'rgba(var(--text-rgb),.5)' },
+            agoStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.62rem',
+                        width: '2.4rem', flexShrink: 0, textAlign: 'right',
+                        color: 'rgba(var(--text-rgb),.35)' }
+          })),
+          cmEmpty: !rows.length,
+          cmEmptyTxt: s.cmDown ? 'bridge unreachable'
+                    : (d ? 'nothing from the phone' : 'loading\u2026'),
+          cmHeadTxt: s.cmDown ? 'OFFLINE' : (unread ? unread + ' NEW' : ''),
+          cmHeadStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
+                         letterSpacing: '.14em',
+                         color: (!s.cmDown && unread) ? 'rgb(var(--accent-rgb))'
+                                                      : 'rgba(var(--text-rgb),.4)' }
+        };
+      })(),
+
       // ── AGENDA (Google Calendar via Cortana; same visual format as before) ──
       agendaItems: (() => {
         const evs = (s.calData && Array.isArray(s.calData.events)) ? s.calData.events : [];
@@ -2977,7 +3413,7 @@ class Component extends DCLogic {
       gitAge: s.gitAge || '—',
       // clock + date stay renderable for saved layouts, but the tray offers
       // the combined DATE-TIME module in their place.
-      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'upcoming', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files'].map(t => ({
+      addables: ['datetime', 'ticker', 'weather', 'cpu', 'ram', 'music', 'tasks', 'agenda', 'upcoming', 'routines', 'sentinel', 'presence', 'comms', 'image', 'chart', 'console', 'cortana', 'git', 'youtube', 'mobile', 'files'].map(t => ({
         label: DEFS[t].label,
         add: () => this.addModule(t)
       })),

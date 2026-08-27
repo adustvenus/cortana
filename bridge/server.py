@@ -7,6 +7,13 @@ disturbs the others.
 Module map:
     settings.py    constants + logging (leaf; imports nothing local)
     util.py        TTL cache + subprocess helpers
+    cmdchan.py     workstation -> phone commands ("cmd" frames + REST replies)
+    comms.py       mirrored SMS/notifications; the confirmed SMS send
+    inbox.py       speech_inbox.json, this process's desk leg
+    presence_link.py  desk + phone + socket, merged into one presence view
+    scheduler.py   the scheduler tick, and the reminder replay on reconnect
+    watch.py       read-only views of routines / sentinel_state.json
+    client.py      loopback client the agents.py comms tools call
     pairing.py     pairing codes, device tokens (hashed at rest)
     auth.py        per-request identity: phone token, or loopback dashboard
     hub.py         connected phones; broadcast + announcements
@@ -32,9 +39,9 @@ import time
 
 from aiohttp import web
 
-from bridge import api_local, api_phone, hub, state, util
+from bridge import api_local, api_phone, hub, scheduler, state, util
 from bridge.settings import (BIND, BRIDGE_VERSION, HOST_NAME, MAX_UPLOAD, PORT,
-                             PUSH_FLOOR, PUSH_INTERVAL, log)
+                             PUSH_FLOOR, PUSH_INTERVAL, SCHEDULER, log)
 
 
 async def _push_loop():
@@ -84,9 +91,28 @@ def make_app():
     async def on_start(app):
         hub.bind_loop(asyncio.get_running_loop())
         app["push"] = asyncio.create_task(_push_loop())
+        # The phone leg of notify belongs to this process and nowhere else - it
+        # is the only one holding the WebSocket - so registering it is what
+        # turns "your flight is in an hour" from an audit row reading
+        # phone:unavailable into a buzz in someone's pocket. That is true
+        # whether or not this process owns the TICK, which is why it is not
+        # behind the switch: BRIDGE_SCHEDULER=0 backs out the tick, not the
+        # phone. register_legs() also claims desk and board (both go to
+        # speech_inbox.json, which this process owns).
+        scheduler.register_legs()
+        if SCHEDULER:
+            # The tick touches sqlite, so it runs on its own thread and nothing
+            # it does happens on this loop.
+            scheduler.start()
+        else:
+            log("scheduler tick disabled by BRIDGE_SCHEDULER=0")
 
     async def on_stop(app):
-        app["push"].cancel()
+        # .get, not [] - on_start raising before it stored the task would make
+        # cleanup raise KeyError on top of the real error and bury it.
+        task = app.get("push")
+        if task is not None:
+            task.cancel()
 
     app.on_startup.append(on_start)
     app.on_cleanup.append(on_stop)

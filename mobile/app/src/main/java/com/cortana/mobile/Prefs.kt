@@ -172,6 +172,117 @@ object Prefs {
         plain(ctx).edit().putString("moduleOrder", order.joinToString(",")).apply()
     }
 
+    // ── background link, presence, comms ────────────────────────────────────
+    // Everything below is a CAPABILITY switch and every one of them defaults to
+    // false. That is not caution for its own sake: this app can read the phone's
+    // notifications, its location and its text messages, and an install that
+    // starts doing any of that without being asked is indistinguishable from
+    // spyware. The Settings screen states what each one sends before you can
+    // turn it on.
+
+    /** Hold the WebSocket open with a foreground service so announcements
+     *  arrive while the app is closed. */
+    fun background(ctx: Context): Boolean = plain(ctx).getBoolean("bgLink", false)
+
+    fun setBackground(ctx: Context, v: Boolean) {
+        plain(ctx).edit().putBoolean("bgLink", v).apply()
+    }
+
+    fun presenceOn(ctx: Context): Boolean = plain(ctx).getBoolean("presenceOn", false)
+
+    fun setPresenceOn(ctx: Context, v: Boolean) {
+        plain(ctx).edit().putBoolean("presenceOn", v).apply()
+    }
+
+    fun commsNotifications(ctx: Context): Boolean = plain(ctx).getBoolean("commsNotif", false)
+
+    fun setCommsNotifications(ctx: Context, v: Boolean) {
+        plain(ctx).edit().putBoolean("commsNotif", v).apply()
+    }
+
+    fun smsRead(ctx: Context): Boolean = plain(ctx).getBoolean("smsRead", false)
+
+    fun setSmsRead(ctx: Context, v: Boolean) {
+        plain(ctx).edit().putBoolean("smsRead", v).apply()
+    }
+
+    fun smsSend(ctx: Context): Boolean = plain(ctx).getBoolean("smsSend", false)
+
+    fun setSmsSend(ctx: Context, v: Boolean) {
+        plain(ctx).edit().putBoolean("smsSend", v).apply()
+    }
+
+    // ── presence working state ──────────────────────────────────────────────
+    // Stored rather than held in memory because PresenceReceiver usually runs
+    // in a freshly started process with no service and no activity behind it -
+    // in-memory state would simply be gone every time it mattered.
+    //
+    // Float, not Double: SharedPreferences has no double, and float32 resolves
+    // a latitude to about a metre, which is far finer than the 300m zone radius
+    // these feed.
+    fun presenceHaveFix(ctx: Context): Boolean = plain(ctx).contains("pLat")
+    fun presenceLat(ctx: Context): Double = plain(ctx).getFloat("pLat", 0f).toDouble()
+    fun presenceLon(ctx: Context): Double = plain(ctx).getFloat("pLon", 0f).toDouble()
+
+    fun setPresenceFix(ctx: Context, lat: Double, lon: Double) {
+        plain(ctx).edit().putFloat("pLat", lat.toFloat())
+            .putFloat("pLon", lon.toFloat()).apply()
+    }
+
+    fun presenceDriving(ctx: Context): Boolean = plain(ctx).getBoolean("pDriving", false)
+
+    fun setPresenceDriving(ctx: Context, v: Boolean) {
+        plain(ctx).edit().putBoolean("pDriving", v).apply()
+    }
+
+    fun presenceSentAt(ctx: Context): Long = plain(ctx).getLong("pSentAt", 0L)
+    fun presenceSig(ctx: Context): String = plain(ctx).getString("pSig", "") ?: ""
+
+    fun setPresenceSent(ctx: Context, sig: String, at: Long) {
+        plain(ctx).edit().putString("pSig", sig).putLong("pSentAt", at).apply()
+    }
+
+    /** Why presence is not reporting, in a sentence, or empty. Shown on the
+     *  card: a switch that says ON over a permission that was revoked in system
+     *  Settings is the kind of quiet lie this repo keeps paying for. */
+    fun presenceError(ctx: Context): String = plain(ctx).getString("pErr", "") ?: ""
+
+    fun setPresenceError(ctx: Context, msg: String) {
+        if (presenceError(ctx) == msg) return
+        plain(ctx).edit().putString("pErr", msg).apply()
+    }
+
+    fun hasHome(ctx: Context): Boolean = plain(ctx).contains("homeLat")
+    fun homeLat(ctx: Context): Double = plain(ctx).getFloat("homeLat", 0f).toDouble()
+    fun homeLon(ctx: Context): Double = plain(ctx).getFloat("homeLon", 0f).toDouble()
+
+    fun setHome(ctx: Context, lat: Double, lon: Double) {
+        plain(ctx).edit().putFloat("homeLat", lat.toFloat())
+            .putFloat("homeLon", lon.toFloat()).apply()
+    }
+
+    fun hasWork(ctx: Context): Boolean = plain(ctx).contains("workLat")
+    fun workLat(ctx: Context): Double = plain(ctx).getFloat("workLat", 0f).toDouble()
+    fun workLon(ctx: Context): Double = plain(ctx).getFloat("workLon", 0f).toDouble()
+
+    fun setWork(ctx: Context, lat: Double, lon: Double) {
+        plain(ctx).edit().putFloat("workLat", lat.toFloat())
+            .putFloat("workLon", lon.toFloat()).apply()
+    }
+
+    /** Forget both saved points and the last fix. Offered next to the presence
+     *  switch, because turning a thing off and leaving its data behind is not
+     *  what anyone means by off. */
+    fun clearPresenceData(ctx: Context) {
+        plain(ctx).edit()
+            .remove("homeLat").remove("homeLon")
+            .remove("workLat").remove("workLon")
+            .remove("pLat").remove("pLon")
+            .remove("pSig").remove("pSentAt").remove("pErr")
+            .remove("pDriving")
+            .apply()
+    }
+
     /** Drop the credential only. Host, name and layout are kept so re-pairing
      *  is a scanned code rather than a full re-setup. */
     fun unlink(ctx: Context) {

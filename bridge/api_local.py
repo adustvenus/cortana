@@ -5,11 +5,13 @@ onboarding page a scanned QR opens.
 the board snapshot. /get is deliberately open but reachable only over the
 tailnet or LAN; see onboarding.py for why that is safe.
 """
+import asyncio
 import json
 
 from aiohttp import web
 
-from bridge import auth, hub, onboarding, pairing, state, updates
+from bridge import (auth, comms, hub, onboarding, pairing, presence_link,
+                    state, updates, watch)
 from bridge.settings import (BRIDGE_VERSION, HOST_NAME, MAX_BOARD_SNAPSHOT, PORT)
 
 
@@ -136,6 +138,89 @@ async def upcoming(request):
     return web.json_response({"items": items}, headers=auth.CORS)
 
 
+async def presence(request):
+    """Merged presence: the desk half cortana writes, the phone half the app
+    posts, and whether a socket is open right now."""
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        data = await asyncio.to_thread(presence_link.snapshot)
+    except Exception as e:
+        return web.json_response({"desk": "unknown", "phone": "closed",
+                                  "place": "unknown", "error": str(e)[:200]},
+                                 headers=auth.CORS)
+    return web.json_response(data, headers=auth.CORS)
+
+
+async def comms_view(request):
+    """Recent mirrored SMS and notifications for the dashboard."""
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        limit = int(request.query.get("limit", "30"))
+    except (TypeError, ValueError):
+        limit = 30
+    try:
+        data = await asyncio.to_thread(comms.local_view, limit)
+    except Exception as e:
+        return web.json_response({"sms": [], "notes": [], "error": str(e)[:200]},
+                                 headers=auth.CORS)
+    return web.json_response(data, headers=auth.CORS)
+
+
+async def sms(request):
+    """Compose or send one text message, for the tool in agents.py.
+
+    Loopback only, and the send is refused unless the EXACT text staged by an
+    earlier call comes back confirmed. Standing rule, same as Gmail: composed
+    here, sent only on an explicit yes.
+    """
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("not an object")
+    except Exception:
+        # A bare list or string parses fine and then AttributeErrors on .get,
+        # which aiohttp turns into a 500 with a traceback in the journal. A
+        # 400 says what is actually wrong.
+        return web.json_response({"error": "bad json"}, status=400,
+                                 headers=auth.CORS)
+    result = await comms.send(body.get("to"), body.get("body"),
+                              confirm=bool(body.get("confirm")))
+    return web.json_response(result, headers=auth.CORS)
+
+
+async def routines(request):
+    """Routine definitions and their fire counts, for the dashboard tile."""
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        data = await asyncio.to_thread(watch.routines)
+    except Exception as e:
+        return web.json_response({"items": [], "error": str(e)[:200]},
+                                 headers=auth.CORS)
+    return web.json_response(data, headers=auth.CORS)
+
+
+async def sentinel(request):
+    """Health checks, passed through as written plus how old they are."""
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        data = await asyncio.to_thread(watch.sentinel)
+    except Exception as e:
+        return web.json_response({"worst": "ok", "checks": [],
+                                  "error": str(e)[:200]}, headers=auth.CORS)
+    return web.json_response(data, headers=auth.CORS)
+
+
 async def preflight(request):
     return web.Response(status=204, headers=auth.CORS)
 
@@ -145,6 +230,11 @@ routes = [
     web.get("/get/apk", get_apk),
     web.get("/local/status", status),
     web.get("/local/schedule", upcoming),
+    web.get("/local/presence", presence),
+    web.get("/local/comms", comms_view),
+    web.get("/local/routines", routines),
+    web.get("/local/sentinel", sentinel),
+    web.post("/local/sms", sms),
     web.get("/local/qr", qr),
     web.post("/local/pair/new", pair_new),
     web.post("/local/revoke", revoke),

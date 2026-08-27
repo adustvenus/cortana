@@ -103,6 +103,19 @@ def sockets():
     return list(_sockets)
 
 
+def target_socket():
+    """The ONE socket a command should go to, or None.
+
+    Deliberately not a broadcast. A "state" frame is idempotent, so every phone
+    gets it; a "cmd" frame asks a phone to DO something, and "send this SMS" run
+    on three paired devices sends three text messages. The most recently
+    connected socket is the best guess at the handset the user is holding -
+    _sockets is a dict, so insertion order is connection order.
+    """
+    live = list(_sockets)
+    return live[-1] if live else None
+
+
 async def send(ws, msg):
     """Send, dropping the socket on any failure. Never raises."""
     try:
@@ -131,7 +144,43 @@ def pending_after(last_id):
     return [a for a in list(_announces) if a["id"] > last]
 
 
-def announce(text, **_kwargs):
+# Urgency rides along in the frame so the phone can pick a notification
+# channel - a critical alarm has to make noise through Do Not Disturb, a task
+# completion must not. Sanitised rather than trusted: this same function is
+# monkeypatched over voice.speech.announce, whose second positional argument is
+# max_hold (an int), so an unaudited value would end up in the frame.
+URGENCIES = ("ambient", "normal", "urgent", "critical")
+
+
+def record(text, urgency="normal", keep=True):
+    """Mint an id and build the announcement WITHOUT sending it.
+
+    Split out of announce() for the reconnect replay, which sends to exactly one
+    socket - the phone that just came back - and must not re-announce a
+    six-hour-old reminder to every other device in the house.
+
+    keep=False leaves it out of the replay ring, and the replay is the only
+    caller that wants that. _announces is SHARED: a per-device replay appended
+    to it would be handed to the NEXT phone that reconnects and asks for
+    everything after its own id, which is the same duplicate this mechanism
+    exists to prevent, arriving by a different route.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    if urgency not in URGENCIES:
+        urgency = "normal"
+    with _seq_lock:                    # called from worker threads
+        seq = next(_announce_seq)
+        _persist_seq(seq + 1)
+    item = {"type": "announce", "id": seq, "urgency": urgency,
+            "ts": time.time(), "text": text[:500]}
+    if keep:
+        _announces.append(item)
+    return item
+
+
+def announce(text, urgency="normal", **_kwargs):
     """Thread-safe. Installed over voice.speech.say/announce inside the bridge
     process: the bridge has no speaker, so every line Cortana would have spoken
     goes to the connected phones instead. Accepts and ignores speech's keyword
@@ -140,17 +189,12 @@ def announce(text, **_kwargs):
     Recorded before it is sent, so it survives having no listener. How it is
     shown - banner, toast, or inline - is the app's decision: only the phone
     knows whether it is foregrounded and which screen is open."""
-    text = (text or "").strip()
-    if not text:
+    item = record(text, urgency)
+    if item is None:
         return
-    with _seq_lock:                    # called from worker threads
-        seq = next(_announce_seq)
-        _persist_seq(seq + 1)
-    item = {"type": "announce", "id": seq,
-            "ts": time.time(), "text": text[:500]}
-    _announces.append(item)
     # Delivery has been guessed at for several rounds. Make it visible.
-    log(f"announce id={item['id']} -> {len(_sockets)} socket(s): {text[:60]}")
+    log(f"announce id={item['id']} {item['urgency']} -> "
+        f"{len(_sockets)} socket(s): {item['text'][:60]}")
     if _loop is None:
         return          # no server loop yet; it is still recorded for replay
     msg = json.dumps(item)

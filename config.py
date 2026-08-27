@@ -146,6 +146,115 @@ PRESENCE_STALE = float(os.getenv("PRESENCE_STALE", "120"))   # older than this =
 PRESENT_IDLE = float(os.getenv("PRESENT_IDLE", "300"))       # X11 idle under this = at the desk
 AWAY_IDLE = float(os.getenv("AWAY_IDLE", "1800"))            # over this = asleep
 
+# --- Workstation control (tools/desktop.py) ---
+# Synthetic keystrokes go to whatever window happens to have focus - a terminal,
+# a chat box, a sudo prompt - with no undo and no confirmation. Off unless
+# someone deliberately turns it on.
+DESKTOP_TYPE_ENABLED = os.getenv("DESKTOP_TYPE_ENABLED", "0") not in ("0", "false", "False", "")
+DESKTOP_TYPE_MAX = int(os.getenv("DESKTOP_TYPE_MAX", "2000"))   # chars typed blind, per call
+# Clipboard contents land in the transcript and then in the model's context on
+# every following turn. Cap it so one copied logfile is not the whole prompt.
+DESKTOP_CLIP_MAX = int(os.getenv("DESKTOP_CLIP_MAX", "4000"))
+# Desktop calls are interactive-latency work. Anything still running after this
+# has hung on an X server that is not answering, with the voice loop behind it.
+DESKTOP_TIMEOUT = float(os.getenv("DESKTOP_TIMEOUT", "5"))
+
+# --- Media (tools/media.py) ---
+# Nothing of its own: it reuses the dashboard's Spotify grant and the SHARED
+# cool-off file, because three processes now poll one Spotify quota.
+
+# --- Offline wake word (wakeword.py) ---
+# openwakeword | porcupine | "" (off). EMPTY IS THE SHIPPED DEFAULT and means no
+# behaviour change at all: wake mode still transcribes first, exactly as before.
+# Nothing is imported or loaded until this is set.
+WAKEWORD_ENGINE = os.getenv("WAKEWORD_ENGINE", "")
+# Relative paths resolve against ROOT. The .onnx is TRAINED on the Windows box
+# with a GPU and committed; the Linux box only ever runs inference on it.
+WAKEWORD_MODEL = os.getenv("WAKEWORD_MODEL", "voice/models/cortana.onnx")
+# Score at which a frame counts as the wake word. Raise it if the television
+# sets her off, lower it if she is missed from across the room.
+WAKEWORD_THRESHOLD = float(os.getenv("WAKEWORD_THRESHOLD", "0.5"))
+# Seconds of deafness after a hit. One spoken "Cortana" spans several frames and
+# would otherwise queue several turns off a single word.
+WAKEWORD_COOLDOWN = float(os.getenv("WAKEWORD_COOLDOWN", "2.0"))
+PICOVOICE_ACCESS_KEY = os.getenv("PICOVOICE_ACCESS_KEY", "")   # porcupine only
+# Porcupine has no built-in "cortana" and its .ppn files are per platform, so a
+# Windows-trained keyword will not load on the Linux box.
+WAKEWORD_BUILTIN = os.getenv("WAKEWORD_BUILTIN", "computer")
+
+# How many past verdicts get quoted into the open-mode "was that for me"
+# classifier. This text is billed on EVERY overheard utterance, so it is a cost
+# dial: 0 restores the old zero-shot prompt.
+ADDRESS_EXAMPLES = int(os.getenv("ADDRESS_EXAMPLES", "8"))
+
+# faster-whisper instead of the Whisper API. Off, and it should STAY off on the
+# runtime box: base.en at int8 holds about a gigabyte resident out of the two
+# that are free, to save an API call costing well under a cent a minute. RAM is
+# the binding constraint there, not money. Set per-machine in .env.local.
+STT_USE_LOCAL = os.getenv("STT_USE_LOCAL", "0") not in ("0", "", "false", "False")
+
+# --- Knowledge layer (tools/notes.py) ---
+# Where to look for local documents. Widening this does NOT widen what gets
+# indexed past the safety rules: notes.excluded() refuses anything
+# credential-shaped or machine-generated regardless of what is listed here.
+NOTES_ROOTS = [WORKSPACE, Path.home() / "Documents", Path.home() / "Downloads"]
+# Per-file ceiling, then a cap on how much of an accepted file is stored. A
+# 40 MB log tells the index nothing its first 300 KB did not, and tokenising it
+# stalls a pass on a 5 GB box.
+NOTES_MAX_FILE_BYTES = int(os.getenv("NOTES_MAX_FILE_BYTES", "300000"))
+NOTES_MAX_CHARS = int(os.getenv("NOTES_MAX_CHARS", "40000"))
+# Per-pass budgets. Three of them because they fail differently: FILES caps stat
+# syscalls, READS caps disk and CPU, SECONDS caps a pass that has wandered onto
+# a network mount. A pass resumes where the last one stopped, so this bounds
+# every tick without ever leaving part of the tree unindexed.
+NOTES_PASS_FILES = int(os.getenv("NOTES_PASS_FILES", "400"))
+NOTES_PASS_READS = int(os.getenv("NOTES_PASS_READS", "25"))
+NOTES_PASS_SECONDS = float(os.getenv("NOTES_PASS_SECONDS", "5"))
+# 5 minutes between passes, deliberately slow: documents do not change fast
+# enough to justify more, and recall() re-syncs the conversation log itself.
+NOTES_TICK = float(os.getenv("NOTES_TICK", "300"))
+
+# --- Routines ---
+# The routines engine rides the scheduler tick rather than running its own
+# thread, but SCHED_TICK is 5s for the scheduler's benefit, and re-reading three
+# state files twelve times a minute forever is exactly the idle burn a previous
+# version had to be walked back for. This is how often the edge evaluator is
+# actually allowed to run.
+ROUTINE_TICK = float(os.getenv("ROUTINE_TICK", "30"))
+# US ZIP for the morning brief's weather clause, using the same two keyless
+# endpoints the dashboard already calls. Empty means no weather clause AND no
+# network call at all.
+BRIEF_ZIP = os.getenv("BRIEF_ZIP", "")
+
+# --- Sentinel (system / network / account watch) ---
+# Cadence of the whole loop. 60s, not 5s: every check has its own longer cadence
+# underneath, and idle burn on a laptop is a real cost.
+SENTINEL_INTERVAL = float(os.getenv("SENTINEL_INTERVAL", "60"))
+# Absolute free-RAM headroom, NOT a percentage: an allocation fails at an
+# absolute number of free bytes regardless of how big the box is. 5 GB total,
+# ~2 GB free with Electron + Python + aiohttp up, so 600/300 leaves real warning
+# before the OOM killer runs and Restart=always hides the death as a respawn.
+SENTINEL_MEM_WARN_MB = float(os.getenv("SENTINEL_MEM_WARN_MB", "600"))
+SENTINEL_MEM_BAD_MB = float(os.getenv("SENTINEL_MEM_BAD_MB", "300"))
+SENTINEL_DISK_WARN_GB = float(os.getenv("SENTINEL_DISK_WARN_GB", "5"))
+SENTINEL_DISK_BAD_GB = float(os.getenv("SENTINEL_DISK_BAD_GB", "1.5"))
+SENTINEL_TEMP_WARN_C = float(os.getenv("SENTINEL_TEMP_WARN_C", "82"))
+SENTINEL_TEMP_BAD_C = float(os.getenv("SENTINEL_TEMP_BAD_C", "92"))
+SENTINEL_SPEND_WARN = float(os.getenv("SENTINEL_SPEND_WARN", "0.8"))  # of BUDGET_MONTHLY_USD
+# Google expires refresh tokens after SEVEN days while the OAuth consent screen
+# sits in "Testing". Warn at six, so there is a day left to act in.
+SENTINEL_GOOGLE_TOKEN_DAYS = float(os.getenv("SENTINEL_GOOGLE_TOKEN_DAYS", "6"))
+SENTINEL_APK_STALE_DAYS = float(os.getenv("SENTINEL_APK_STALE_DAYS", "30"))
+SENTINEL_UNITS = ("cortana", "cortana-dash", "cortana-bridge", "cortana-spotifyd")
+# ONE `systemctl --user is-active` covering all four units, at most this often.
+# The throttle IS the feature: this shape of check is what spawned a process 24
+# times a minute forever and had to be walked back.
+SENTINEL_UNITS_EVERY = float(os.getenv("SENTINEL_UNITS_EVERY", "300"))
+SENTINEL_TAILSCALE_EVERY = float(os.getenv("SENTINEL_TAILSCALE_EVERY", "600"))
+# How long a bad row stays quiet before it is worth saying again. Nagging every
+# minute about a disk that is still full is how a user learns to ignore a voice.
+SENTINEL_REALERT = float(os.getenv("SENTINEL_REALERT", "10800"))
+
 # --- Misc ---
 # main.py exits with this code for a voice/tool shutdown; launcher.py treats it
 # as "stop, do not relaunch". A plain exit 0 means restart (relaunch).

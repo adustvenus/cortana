@@ -101,6 +101,11 @@ object Help {
             Modules can't be added or removed here - the phone mirrors what the
             dashboard board contains. Change the board on the workstation and the
             phone follows.
+
+            UPCOMING, SENTINEL and PRESENCE are the exceptions: they have no
+            dashboard module behind them and come straight from the bridge, so
+            they start at the bottom of the list until you drag them somewhere
+            better.
         """),
 
         "talk" to ("Talking to Cortana" to """
@@ -136,6 +141,89 @@ object Help {
             metered connection - you keep the conversation, you just lose her
             voice. It's also the automatic fallback whenever the voice pipeline
             can't be reached.
+        """),
+
+        "upcoming" to ("Upcoming" to """
+            The next few timers, alarms and reminders from the workstation's
+            schedule table (schedule.py, the `schedules` table in state.db) -
+            the same list the dashboard's tile shows.
+
+            The dot's colour is the item's urgency: red critical, orange urgent,
+            lavender normal, grey ambient. That is also what decides how loudly
+            it arrives on this phone when it fires - see BACKGROUND below.
+
+            Read-only. Scheduling something is a thing you ask her for, and the
+            sphere is right there.
+        """),
+
+        "sentinel" to ("Sentinel" to """
+            The workstation watching itself: disk, services, the things that go
+            wrong quietly. The header shows the WORST of the checks, so an
+            amber header with a green list means one row down there is amber
+            and worth reading.
+
+            Healthy checks show as a dim label and nothing else, on purpose -
+            a wall of green detail is exactly how you fail to notice the one
+            line that changed.
+
+            The card disappears entirely if the bridge does not send sentinel
+            data, which is what an older bridge on the workstation looks like.
+        """),
+
+        "presence" to ("Presence" to """
+            Two different answers side by side. DESK/PHONE/PLACE is what the
+            WORKSTATION believes about you. The bottom line is what THIS phone
+            last decided and how long ago it managed to say so.
+
+            They disagree in exactly the case worth debugging: the phone thinks
+            it is reporting and the workstation has not heard from it in an
+            hour - which means Tailscale, not presence.
+
+            Reporting is off until you turn it on in Settings, where the same
+            screen lists precisely what gets sent. Nothing here is read from the
+            phone unless that switch is on.
+        """),
+
+        "background" to ("Background link" to """
+            Without this, the app only holds a WebSocket while a screen is
+            open. Announcements made while it was closed are REPLAYED when you
+            next open it - fine for a mirror, useless for a reminder.
+
+            Turning it on runs a foreground service with a permanent
+            low-priority notification (Android requires the notification; there
+            is no silent version of this). Announcements then arrive as they
+            happen, on one of three channels chosen by urgency, and you can type
+            a reply straight into the notification - it goes to /api/converse
+            like anything you say on the talk screen.
+
+            DOZE IS THE REAL ENEMY. In deep doze Android suspends the socket and
+            every timer the app could use to notice. Two defences: the
+            battery-optimisation exemption on this screen, and a ~15-minute
+            alarm that survives doze and reconnects if the socket died. Neither
+            is a guarantee on OnePlus/OPPO/Xiaomi, which add their own killers.
+            If overnight announcements go missing, the exemption is the first
+            thing to grant.
+        """),
+
+        "comms" to ("Comms" to """
+            Lets Cortana see what the phone sees, so "what did I miss" and
+            "text her back that I'm running late" work from the desk.
+
+            Three separate switches, all off until you turn them on:
+
+            NOTIFICATIONS mirrors the title and text of notifications other apps
+            post. It needs a system grant that no app is allowed to request -
+            only deep-link to - so the button here opens the right screen and
+            you turn Cortana on in the list. Ongoing rows (media players,
+            downloads) are skipped; so are this app's own.
+
+            READ SMS lets her read recent inbox messages. SEND SMS lets her send
+            one when asked. Both are also what the workstation's sms.read /
+            sms.send commands are checked against: with the switch off the
+            command is REFUSED with a sentence saying so, not silently ignored.
+
+            Nothing is stored on this phone. The mirror is a short in-memory
+            queue that is posted and forgotten.
         """),
 
         "security" to ("Link security" to """

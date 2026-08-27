@@ -7,6 +7,57 @@
          the system installer (pop-up prompt flow). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- ── Background link (Settings -> BACKGROUND, default OFF) ────────────
+         The foreground service that holds the WebSocket open so an
+         announcement arrives while the app is closed instead of being replayed
+         hours later. POST_NOTIFICATIONS is 33+ and gates EVERYTHING the
+         service shows, including its own permanent row.
+         RECEIVE_BOOT_COMPLETED: a foreground service does not survive a reboot
+         on its own, so without it the first restart silently turns the feature
+         off while the switch still says on. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- ACCESS_NETWORK_STATE is not optional decoration: registerDefault-
+         NetworkCallback is @RequiresPermission on it, and without it the
+         service's "a network just appeared, reconnect NOW" hook throws a
+         SecurityException into a catch and is dead forever with nothing in any
+         log. Wi-Fi to LTE would then wait out a 30-second backoff instead. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Deep doze suspends the socket and every timer that could notice. The
+         Play Store forbids most apps from requesting this; the app is
+         sideloaded onto one phone, so that policy does not apply - and the
+         prompt is opt-in, with a 15-minute alarm backstop for anyone who
+         refuses it. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- ── Presence (Settings -> PRESENCE, default OFF) ─────────────────────
+         COARSE only, deliberately: the question is "is he home", not "which
+         room", and coordinates leave rounded to ~110m. Background location is
+         what makes the answer true while the phone is in a pocket - without it
+         reporting stops the moment the app is closed, which is every moment
+         that matters. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- Driving = the car's hands-free unit connected, which is the cheapest
+         driving signal a phone has. From API 31 BLUETOOTH_CONNECT is required
+         to RECEIVE the ACL_CONNECTED broadcast at all; BLUETOOTH covers the
+         same thing on older releases and is capped there. -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- ── Comms hub (Settings -> COMMS, every switch default OFF) ──────────
+         Notification access is NOT declared here: it is a system grant given
+         in Settings that no app may request, only deep-link to. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- RECEIVE_SMS is deliberately NOT declared. Nothing in this app receives
+         an SMS - the inbox is read from the provider on demand - and asking
+         for a dangerous permission the code never uses buys a scarier install
+         screen and a Play Protect warning in exchange for no function. -->
+
     <!-- usesCleartextTraffic: the bridge speaks plain HTTP because the
          transport IS encrypted - the phone reaches it only over Tailscale
          (WireGuard). Do not expose the bridge port to the open internet. -->
@@ -39,6 +90,59 @@
             android:name=".TalkActivity"
             android:exported="false"
             android:launchMode="singleTop" />
+
+        <!-- The background link. specialUse rather than dataSync: dataSync
+             acquires a hard runtime cap from Android 15 that this service would
+             hit every day, and none of the other types describes "holds one
+             long-lived socket to the machine that owns this app". The
+             subtype property is what API 34 asks for in exchange. -->
+        <service
+            android:name=".LinkService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Holds the WebSocket to the paired workstation so its announcements reach this phone while the app is closed, and so a reply typed into a notification can be answered." />
+        </service>
+
+        <!-- Notification mirroring. exported + this permission is exactly what
+             the platform requires of a listener; the user still has to switch
+             it on in system Settings, and the app's own COMMS switch gates it
+             again on top. -->
+        <service
+            android:name=".NotificationMirror"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- exported: the system's implicit broadcasts are not delivered to
+             non-exported receivers. Both handlers re-check the preference. -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- DISABLED until the presence switch turns it on. A guard inside
+             onReceive would have been simpler and would still have cost a
+             process start on every Bluetooth connect for every user who never
+             turned presence on. -->
+        <receiver
+            android:name=".PresenceReceiver"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
 
         <!-- PackageInstaller session results (silent self-update path) -->
         <receiver android:name=".InstallReceiver" android:exported="false" />

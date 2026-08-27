@@ -160,6 +160,117 @@ TOOL_DEFS = {
     "cancel_pending": _schema("cancel_pending", "Discard the staged large self-update after the user said no.", {}, []),
     "revert_change": _schema("revert_change", "Roll back the last applied self-update to the previous good state.", {}, []),
     "restart": _schema("restart", "Cleanly restart Cortana so code changes take effect. Use when the user says to restart, or after applying a self-update.", {}, []),
+    "desktop": _schema("desktop",
+                       "Operate this workstation's desktop. ONE tool, many actions - pick with "
+                       "'action'. list_windows; focus_window / close_window (target = part of a "
+                       "window title, or an id from list_windows - an ambiguous title is refused, "
+                       "not guessed); launch (target = a command name or a .desktop id); open "
+                       "(target = a file path or URL); clipboard_get; clipboard_set (text); "
+                       "volume (no level reads it back; level is 0-100 or a relative step like "
+                       "+10; or mute on|off|toggle - this is the ROOM volume, Spotify's own level "
+                       "while you talk is ducking and looks after itself); notify (title + text, "
+                       "a desktop toast - only when the user asked to SEE something); "
+                       "lock_screen; type_text (keystrokes into whatever window has focus, off by "
+                       "default). Several actions need X11 helpers that may not be installed - "
+                       "you get a plain sentence naming the missing package. Relay it and move "
+                       "on; do not try to work around it with shell.",
+                       {"action": {"type": "string"}, "target": {"type": "string"},
+                        "text": {"type": "string"}, "title": {"type": "string"},
+                        "level": {"type": "string"}, "mute": {"type": "string"},
+                        "urgency": {"type": "string"}},
+                       ["action"]),
+    "media": _schema("media",
+                     "Control what is playing: music on Spotify, or whatever else is making "
+                     "noise on this machine. action is one of play, pause, next, previous, "
+                     "status, play_query, volume. Use play_query with 'query' to start something "
+                     "specific ('play Nightcall' -> action='play_query', query='Nightcall'); "
+                     "plain 'play' only resumes what was already on. 'pause' pauses whatever is "
+                     "actually playing, not just Spotify. 'volume' takes 'percent' 0-100, or "
+                     "query 'up', 'down', 'mute', 'unmute'. Returns one short spoken sentence.",
+                     {"action": {"type": "string"}, "query": {"type": "string"},
+                      "percent": {"type": "integer"}}, ["action"]),
+    "note": _schema("note",
+                    "Save something the user dictates verbatim: a note, a journal entry, a "
+                    "decision, anything whose exact wording is worth keeping. Use this for "
+                    "anything with substance - `remember` is only for one-line standing "
+                    "preferences that belong in every prompt. Everything saved here is "
+                    "searchable later with `recall`. kind is note|journal|idea|log.",
+                    {"text": {"type": "string"}, "title": {"type": "string"},
+                     "tags": {"type": "string"}, "kind": {"type": "string"}},
+                    ["text"]),
+    "recall": _schema("recall",
+                      "Search everything written down: saved notes, EVERY past conversation you "
+                      "have had with the user, and their local documents. Reach for this before "
+                      "saying you don't remember - 'what did I say about X', 'find that thing "
+                      "about Y', anything older than the last few turns. Plain words, no search "
+                      "operators; the answer comes back as prose ready to read out.",
+                      {"query": {"type": "string"}, "limit": {"type": "integer"}},
+                      ["query"]),
+    "routine": _schema("routine",
+                       "Create or edit a standing rule: WHEN something happens, DO something. "
+                       "trigger is calendar, health or presence - or leave trigger out and pass "
+                       "an rrule (RFC 5545) for a time of day, which becomes an ordinary "
+                       "scheduled item pointing back at the routine. cond is the predicate: "
+                       "presence takes from/to states, health takes metric/op/value against the "
+                       "system sentinel, calendar takes when=starts_in with minutes. Routines "
+                       "are EDGE-triggered: they fire once when the condition becomes true, not "
+                       "repeatedly while it holds, and min_gap seconds must pass before the same "
+                       "one speaks again. action defaults to say - put the words in 'text', "
+                       "which may contain {event}, {minutes}, {from} or {to}; use 'brief' for "
+                       "the morning briefing, 'delegate' with agent+task for background work, or "
+                       "'turn' with a prompt when it needs fresh thinking AT THE TIME. Re-using "
+                       "a name EDITS that routine. Say the resolved rule back to the user so a "
+                       "misread is caught out loud.",
+                       {"name": {"type": "string"}, "trigger": {"type": "string"},
+                        "cond": {"type": "object"}, "action": {"type": "string"},
+                        "text": {"type": "string"}, "prompt": {"type": "string"},
+                        "agent": {"type": "string"}, "task": {"type": "string"},
+                        "rrule": {"type": "string"}, "when": {"type": "string"},
+                        "urgency": {"type": "string"}, "min_gap": {"type": "integer"}},
+                       ["name"]),
+    "routine_set": _schema("routine_set",
+                           "List, enable, disable or delete routines. Call it with NO arguments "
+                           "to see what exists before changing anything - the names it returns "
+                           "are what you pass back in. enabled=false silences one without losing "
+                           "it; delete=true removes it along with any time-of-day trigger it "
+                           "armed.",
+                           {"name": {"type": "string"}, "enabled": {"type": "boolean"},
+                            "delete": {"type": "boolean"}}, []),
+    "system_check": _schema("system_check",
+                            "How the machine and her accounts are actually doing right now: "
+                            "memory, disk, temperature, services, network, this repo, spend, "
+                            "Google auth and the phone app build. Use it when asked how things "
+                            "are or whether anything is wrong, and BEFORE blaming a tool for "
+                            "failing - an expired Google token or a full disk explains most of "
+                            "it. Every check is cached at its own cadence, so calling this is "
+                            "cheap. full=true returns every row; the default returns only what "
+                            "is wrong.",
+                            {"full": {"type": "boolean"}}, []),
+    "comms_read": _schema("comms_read",
+                          "Recent text messages and phone notifications mirrored from the "
+                          "user's phone. kind is sms|notifications|all. Use it when asked who "
+                          "texted, what came in, or whether anything needs answering. It reads a "
+                          "local copy, so it works even when the phone is unreachable.",
+                          {"kind": {"type": "string"}, "limit": {"type": "integer"}}, []),
+    "sms_send": _schema("sms_send",
+                        "Send a text message from the user's phone. TWO CALLS, ALWAYS. Call it "
+                        "first WITHOUT confirm: nothing is sent and it returns the message read "
+                        "back to you. Say that line to the user, and only call it again with "
+                        "confirm=true after they explicitly say yes. The recipient and body must "
+                        "be word-for-word identical between the two calls or the send is "
+                        "refused. Same standing rule as Gmail - never send anything the user has "
+                        "not just agreed to. If it comes back saying the phone did not answer, "
+                        "do NOT call it again: the message may have gone out and only the "
+                        "confirmation was lost. Tell the user that instead.",
+                        {"to": {"type": "string"}, "body": {"type": "string"},
+                         "confirm": {"type": "boolean"}}, ["to", "body"]),
+    "wake_correct": _schema("wake_correct",
+                            "Correct your last open-mode judgement about whether an overheard "
+                            "utterance was meant for you. Use it when the user says you answered "
+                            "something that was not for you (addressed false), or that you "
+                            "ignored them when they were talking to you (addressed true). This "
+                            "teaches the classifier this room; do not use it for anything else.",
+                            {"addressed": {"type": "boolean"}}, ["addressed"]),
     "shutdown": _schema("shutdown", "Cleanly shut Cortana down and stay off (the launcher will NOT relaunch). Use only when the user clearly asks to shut down, power off, or go offline.", {}, []),
 }
 
@@ -209,8 +320,17 @@ AGENTS = {
     },
 }
 
+# The lead's surface is large now, and that is a deliberate trade: every one of
+# these is a distinct VERB the user says out loud, and handing any of them to a
+# subagent would put a round trip between "pause the music" and the music
+# pausing. The cost is a bigger cached prefix, which is billed at 0.1x on read -
+# not a bigger bill. What keeps it workable is that each new capability is ONE
+# coarse tool with an `action`, rather than one tool per thing it can do.
 LEAD_TOOL_NAMES = ["delegate", "task_status", "cancel_task", "continue_work",
                    "remind", "schedule_list", "schedule_set",
+                   "routine", "routine_set",
+                   "desktop", "media", "note", "recall",
+                   "system_check", "comms_read", "sms_send", "wake_correct",
                    "remember", "shell",
                    "read_file", "write_file", "list_files", "screenshot",
                    "self_update", "confirm_pending", "cancel_pending",
@@ -356,6 +476,46 @@ def dispatch(name, args, run_agent=None, cancel=None, resume=None):
             if name == "cancel_pending":
                 return selfedit.cancel_pending()[1]
             return selfedit.revert_last()[1]
+    if name == "desktop":
+        from tools import desktop as D   # lazy: only shells out to X11/pactl binaries
+        return D.desktop(args)
+    if name == "media":
+        from tools import media as M     # lazy: requests only loads when music is asked for
+        return M.media(args["action"], args.get("query", ""), args.get("percent"))
+    if name in ("note", "recall"):
+        from tools import notes as N     # lazy: opens/creates the index on first use
+        if name == "note":
+            return N.add(args["text"], title=args.get("title", ""),
+                         tags=args.get("tags", ""), kind=args.get("kind", "note"))
+        return N.recall(args["query"], limit=int(args.get("limit") or 3))
+    if name in ("routine", "routine_set"):
+        import routines                  # lazy: pulls in calendar_state, notify and presence
+        if name == "routine":
+            return routines.create(args)
+        return routines.set_state(args.get("name"), enabled=args.get("enabled"),
+                                  delete=bool(args.get("delete")))
+    if name == "system_check":
+        import sentinel                  # lazy: reads /proc, may shell out to systemctl
+        sentinel.poll()                  # cheap - each check is cached at its own cadence
+        if args.get("full"):
+            return "\n".join("%s [%s]: %s" % (c["label"], c["state"], c["detail"])
+                              for c in sentinel.rows()) or "No checks have run yet."
+        return sentinel.speakable()
+    if name in ("comms_read", "sms_send"):
+        # Deliberately the loopback client, not bridge.comms: the store and the
+        # phone socket live in the BRIDGE process, this dispatch runs in
+        # whichever process holds the orchestrator, and only one of them can be
+        # right. bridge.client is stdlib-only, so importing it never drags
+        # aiohttp into the cortana process.
+        from bridge import client
+        if name == "comms_read":
+            return client.comms_summary(args.get("kind", "all"),
+                                        int(args.get("limit") or 8))
+        return client.sms_send(args.get("to", ""), args.get("body", ""),
+                               confirm=bool(args.get("confirm")))
+    if name == "wake_correct":
+        from voice import wake as W      # lazy, per this module's convention
+        return W.correct_last(bool(args["addressed"]))
     if name == "restart":
         raise RestartRequested()
     if name == "shutdown":

@@ -288,6 +288,7 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener, LinkClient.Listene
         // us, so without this there is no live socket on the one page where you
         // are actually talking to her, and completions never arrive here.
         if (Prefs.paired(this)) LinkClient.start(this, this)
+        LinkService.sync(this)
     }
 
     // On the AI screen a completion belongs in the conversation, spoken - not
@@ -304,7 +305,9 @@ class TalkActivity : Activity(), TextToSpeech.OnInitListener, LinkClient.Listene
 
     override fun onStop() {
         super.onStop()
-        LinkClient.stop()
+        // By identity: LinkService is a holder too, and the old argument-less
+        // stop() dropped whichever holder was last rather than this one.
+        LinkClient.stop(this)
         recorder?.stop()?.also { it.delete() }
         recorder = null
         sphere.clearAnimation()

@@ -21,8 +21,11 @@ import memory
 import notify
 import orchestrator
 import presence
+import routines
 import schedule
+import sentinel
 import tasks
+import wakeword
 import hud_state
 from voice import mic, stt, wake, speech
 
@@ -114,6 +117,14 @@ def process(wav_path, cancel=None):
     caller (processor()) so there's no window where a just-dequeued turn is
     running but state['busy'] hasn't flipped yet."""
     hud_state.set_state("thinking")
+    # The offline gate goes in front of the PAID transcription - that is the
+    # entire point of it, since a room full of unrelated speech otherwise buys a
+    # Whisper call per utterance before it can be rejected. Dormant by default
+    # and fails OPEN, so with no model installed this line is a no-op. Only wake
+    # mode: open mode means "just talk", with no wake word to find.
+    if state["mode"] == "wake" and not wakeword.detect_wav(wav_path):
+        hud_state.set_state("idle")
+        return
     text = stt.transcribe(wav_path)
     if not text:
         hud_state.set_state("idle")
@@ -401,10 +412,113 @@ def _presence_loop():
             time.sleep(1)
 
 
+def _routine_turn(prompt):
+    """Run a full orchestrator turn on behalf of a routine.
+
+    Injected into routines.py rather than imported by it, so that module stays
+    testable on a box with no audio and no API key - and so the lock lives in
+    the one place that knows about the voice loop.
+    """
+    with _turn_lock:
+        reply = orchestrator.handle(prompt)
+    # Nobody asked for a reboot at 7am, and the lead has both tools.
+    if orchestrator.restart_requested() or orchestrator.shutdown_requested():
+        orchestrator._restart_flag["do"] = False
+        orchestrator._shutdown_flag["do"] = False
+        print("[routines] refused a restart/shutdown asked for by a routine turn")
+    return reply
+
+
+def _sentinel_loop():
+    """Publish sentinel_state.json and speak anything that just got WORSE.
+
+    The speaking half can only happen here: notify.deliver needs presence, and
+    presence is only knowable in this process. 60s rather than the scheduler's
+    5s because every check throttles itself further underneath.
+    """
+    while state["exit"] is None:
+        try:
+            sentinel.publish()
+            # Edge-triggered: alerts() returns only transitions, so a disk that
+            # is still full says nothing on the next 1,440 ticks.
+            for _key, urgency, line in sentinel.alerts():
+                notify.deliver(line, urgency, src="sentinel")
+        except Exception as e:
+            print("[sentinel] poll failed:", e)
+        for _ in range(max(5, int(sentinel.INTERVAL))):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
+
+
+def _notes_loop():
+    """Keep the knowledge index current: conversation turns, then one bounded
+    slice of the document walk.
+
+    Slow on purpose and bounded on purpose. Documents do not change fast enough
+    to justify a tighter loop, and each pass resumes where the last one stopped
+    rather than re-walking ~/Downloads - the idle burn this box has already been
+    bitten by once.
+    """
+    from tools import notes            # lazy, same reason as the tool imports
+    while state["exit"] is None:
+        try:
+            notes.tick()
+        except Exception as e:
+            print("[notes] tick failed:", e)
+        for _ in range(max(30, int(config.NOTES_TICK))):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
+
+
+def _inbox_loop():
+    """Speak what the BRIDGE routed to the desk while it owned the tick.
+
+    The bridge has no speaker, so over there notify's desk and board legs write
+    speech_inbox.json instead. This is the other half. It only ever READS - the
+    bridge is the single writer - and the high-water mark lives in memory.meta,
+    so nothing is spoken twice and nothing is replayed after a restart.
+
+    The mtime check is what makes polling affordable: nothing is queued on the
+    overwhelming majority of ticks, and a JSON parse every two seconds forever
+    on a laptop is exactly the idle burn that had to be walked back once.
+    """
+    from bridge import inbox           # lazy: pulls config, nothing heavier
+    seen = -1.0
+    while state["exit"] is None:
+        try:
+            stamp = inbox.mtime()
+            if stamp != seen:
+                seen = stamp
+                for item in inbox.drain():
+                    text = item.get("text", "")
+                    if item.get("surface") == "board":
+                        hud_state.think(text[:120])
+                    elif item.get("urgency") in ("urgent", "critical"):
+                        speech.alert(text)
+                    else:
+                        speech.announce(text)
+        except Exception as e:
+            print("[inbox] drain failed:", e)
+        for _ in range(2):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
+
+
 def _fire(row, fire_ts):
     """Run one due occurrence. Runs on the scheduler thread."""
     action, payload = row["action"], row["payload"]
     late = time.time() - fire_ts
+
+    # A schedules row whose payload names a routine IS that routine's clock
+    # trigger - routines.py deliberately owns no recurrence of its own, so there
+    # is ONE place where "7am daily" is expanded, not two.
+    if payload.get("routine"):
+        routines.run(payload["routine"], turn=_routine_turn,
+                     run_agent=orchestrator.run_agent)
+        return
 
     if action == "delegate":
         msg = tasks.start(payload["agent"], payload["task"],
@@ -457,6 +571,12 @@ def _scheduler_loop():
             schedule.tick(_fire, owner="cortana")
         except Exception as e:
             print("[sched] tick error:", e)
+        try:
+            # Same tick, no second daemon. routines.tick rate-limits itself to
+            # config.ROUTINE_TICK internally, so calling it every 5s is cheap.
+            routines.tick(turn=_routine_turn, run_agent=orchestrator.run_agent)
+        except Exception as e:
+            print("[routines] tick error:", e)
         for _ in range(max(1, int(config.SCHED_TICK))):
             if state["exit"] is not None:
                 return
@@ -612,6 +732,10 @@ if __name__ == "__main__":
     threading.Thread(target=_mic_state_loop, daemon=True, name="mic-state").start()
     threading.Thread(target=_presence_loop, daemon=True, name="presence").start()
     threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
+    threading.Thread(target=_sentinel_loop, daemon=True, name="sentinel").start()
+    threading.Thread(target=_notes_loop, daemon=True, name="notes").start()
+    # Drains what the bridge routed here while IT owned the scheduler tick.
+    threading.Thread(target=_inbox_loop, daemon=True, name="inbox").start()
     if args.text:
         text_loop()
     else:

@@ -10,7 +10,7 @@ import socket
 import config as cortana_config          # loads .env; source of ROOT and API keys
                                          # (bridge/__init__.py put it on the path)
 
-BRIDGE_VERSION = "1.4.0"
+BRIDGE_VERSION = "1.5.0"
 
 PORT = int(os.getenv("BRIDGE_PORT", "8765"))
 BIND = os.getenv("BRIDGE_BIND", "0.0.0.0")
@@ -30,6 +30,22 @@ PUSH_INTERVAL = 1.5                      # seconds between state pushes
 # in state.cortana_state(), or the phone reads Cortana as offline mid-turn.
 PUSH_FLOOR = 5.0
 WS_HEARTBEAT = 25                        # seconds
+
+# Phase 2: the scheduler tick runs HERE, not in the cortana process, because
+# cortana is designed to be absent (a spoken "shut down" exits 42 and the
+# launcher leaves her off) while this unit is Restart=always. Running both
+# tickers during the cutover is safe - schedule.claim() is a conditional UPDATE
+# - so this switch exists for backing the change out, not for normal use.
+SCHEDULER = os.getenv("BRIDGE_SCHEDULER", "1") not in ("0", "false", "False")
+
+# Home fix for the coarse home/out call in presence_link.py. Belongs in
+# .env.local, NOT .env: .env is synced across every box by secrets.sh, and this
+# is the one value in the file that is about a place rather than a machine.
+# Unset (the default) means coordinates cannot be classified, and the honest
+# answer for `place` is then whatever the phone itself labelled it.
+HOME_LAT = float(os.getenv("HOME_LAT", "") or 0)
+HOME_LON = float(os.getenv("HOME_LON", "") or 0)
+HOME_RADIUS_M = float(os.getenv("HOME_RADIUS_M", "") or 150)
 
 
 def log(msg, err=None):

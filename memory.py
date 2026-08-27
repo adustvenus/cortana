@@ -84,6 +84,22 @@ def init():
     CREATE TABLE IF NOT EXISTS deliveries(
       ts REAL, src TEXT, ref INT, urgency TEXT,
       surfaces TEXT, presence TEXT, text TEXT);
+
+    -- Mirrored phone comms. bridge/comms.py bounds this on every ingest, by row
+    -- count and by age: the writer is a device that generates notifications all
+    -- day and re-syncs its whole backlog after a reinstall, so the ceiling has
+    -- to be ours and not its. ext_id is the phone's own id where it has one and
+    -- a hash of the content plus the minute where it does not, which is what
+    -- makes a re-sync idempotent instead of doubling every row - and also
+    -- collapses one notification re-posting as it updates. sender='me' marks an
+    -- outgoing message, so a thread reads as a conversation, not two tables.
+    CREATE TABLE IF NOT EXISTS comms(
+      id INTEGER PRIMARY KEY,
+      ts REAL, kind TEXT,              -- sms | note
+      app TEXT, sender TEXT, title TEXT, body TEXT,
+      ext_id TEXT, unread INT);
+    CREATE INDEX IF NOT EXISTS comms_ts ON comms(ts);
+    CREATE UNIQUE INDEX IF NOT EXISTS comms_ext ON comms(kind, ext_id);
     """)
     # Two processes now write this file on a timer. The default rollback journal
     # takes a whole-database exclusive lock per write, which turns the 5s

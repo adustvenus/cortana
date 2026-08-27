@@ -9,8 +9,8 @@ import threading
 
 from aiohttp import web
 
-from bridge import (auth, brain, hub, pairing, spotify_link, state, updates,
-                    util, voice)
+from bridge import (auth, brain, cmdchan, comms, hub, pairing, presence_link,
+                    scheduler, spotify_link, state, updates, util, voice)
 from bridge.settings import BRIDGE_VERSION, HOST_NAME, WS_HEARTBEAT, log
 
 
@@ -64,6 +64,15 @@ async def websocket(request):
                         # Without it a completion that landed with no socket
                         # open was simply lost.
                         for item in hub.pending_after(frame.get("lastAnnounce")):
+                            await hub.send(ws, json.dumps(item))
+                        # ...and anything the deque could not hold. It is an
+                        # in-memory ring and this unit is Restart=always, so a
+                        # phone that was offline ACROSS a restart got nothing
+                        # from the line above. Scheduled items have a durable
+                        # record, so they are rebuilt from it - per device, and
+                        # only once. sqlite in a thread: never on the loop.
+                        for item in await asyncio.to_thread(
+                                scheduler.replay_for, device.get("hash", "")):
                             await hub.send(ws, json.dumps(item))
                 except Exception:
                     pass
@@ -221,10 +230,36 @@ async def tts(request):
     if not text:
         return web.json_response({"error": "no text"}, status=400)
 
+    # bridge/voice.py currently defines no functions at all, so this attribute
+    # does not exist and the handler 500'd on every call. 204 is the documented
+    # degradation - the phone speaks the reply with its own engine - and it is
+    # the honest answer for "this box cannot make audio for you".
+    stream = getattr(voice, "stream_blocking", None)
+    if stream is None:
+        log("no TTS streamer in bridge/voice.py - the phone will speak it itself")
+        return web.Response(status=204)
+
     queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
     put = lambda chunk: loop.call_soon_threadsafe(queue.put_nowait, chunk)
-    worker = loop.run_in_executor(None, voice.stream_blocking, text, put)
+
+    def pump():
+        """The sentinel is posted in a finally:, ALWAYS.
+
+        Without it, a streamer that raised - a revoked ElevenLabs key, no
+        network - left `await queue.get()` below waiting on an item nobody
+        would ever put. The request never completed, the connection never
+        closed, and shutdown_timeout=5 could not reclaim it: one bad key wedged
+        a socket per attempt with nothing in the journal.
+        """
+        try:
+            stream(text, put)
+        except Exception as e:
+            log("tts stream failed", e)
+        finally:
+            put(None)
+
+    worker = loop.run_in_executor(None, pump)
 
     first = await queue.get()
     if first is False or first is None:
@@ -242,6 +277,57 @@ async def tts(request):
     await worker
     await response.write_eof()
     return response
+
+
+async def presence(request):
+    """Where the phone thinks the user is. Coordinates are classified into a
+    coarse place and then dropped - see presence_link.record()."""
+    if not auth.device(request):
+        return auth.deny()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+    kept = await asyncio.to_thread(presence_link.record, body)
+    # Echo back only what was kept, so the app can show what the workstation
+    # actually knows rather than what it sent.
+    return web.json_response({"ok": True, "place": kept["place"]})
+
+
+async def comms_sync(request):
+    """Mirrored notifications and SMS. Idempotent: re-syncing the same backlog
+    stores nothing new."""
+    if not auth.device(request):
+        return auth.deny()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+    result = await asyncio.to_thread(comms.ingest, body)
+    return web.json_response(result, status=200 if result.get("ok") else 503)
+
+
+async def cmd_reply(request):
+    """The phone answering a "cmd" frame.
+
+    404 means the id is unknown - it timed out, it was already answered, or the
+    bridge restarted in between. The phone must treat that as final and NOT
+    retry: for an SMS, a retry is a second text message.
+    """
+    if not auth.device(request):
+        return auth.deny()
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("not an object")
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+    payload = {"ok": bool(body.get("ok")),
+               "result": body.get("result"),
+               "phoneError": str(body.get("error") or "")[:200]}
+    if not cmdchan.resolve(body.get("id"), payload):
+        return web.json_response({"error": "unknown request"}, status=404)
+    return web.json_response({"ok": True})
 
 
 async def spotify(request):
@@ -315,6 +401,9 @@ routes = [
     web.post("/api/converse", converse),
     web.post("/api/tts", tts),
     web.post("/api/spotify", spotify),
+    web.post("/api/presence", presence),
+    web.post("/api/comms/sync", comms_sync),
+    web.post("/api/cmd/reply", cmd_reply),
     web.post("/api/tasks", task_op),
     web.get("/api/apk", apk),
     web.post("/api/apk/refresh", apk_refresh),

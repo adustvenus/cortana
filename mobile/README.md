@@ -1,11 +1,25 @@
 # Cortana Mobile — the phone end of the link
 
 Android app (Kotlin, `mobile/`) that pairs your phone to the workstation
-running Cortana. It is a **view-only mirror** of the Dusk dashboard in one
-scrolling column, plus three deliberate exceptions: **talking to Cortana**,
-**Spotify transport control**, and **reordering the cards** (phone-local).
-No adding or removing modules, no service power buttons, no task editing from
-the phone — those stay on the dashboard.
+running Cortana. Most of it is a **mirror** of the Dusk dashboard in one
+scrolling column; the interactions it allows are **talking to Cortana**,
+**Spotify transport control**, **tasks**, and **reordering the cards**
+(phone-local). No adding or removing modules and no service power buttons —
+those stay on the dashboard.
+
+Since **2.5.0** the phone is also a *participant*, not only a viewer, and
+every part of that is **off until you turn it on** in Settings:
+
+- **BACKGROUND** — a foreground service holds the link open while the app is
+  closed, so an announcement arrives when it is made instead of being replayed
+  hours later. Urgency picks the notification channel, and you can type a
+  reply straight into the notification.
+- **PRESENCE** — coarse home/work/driving, charging and screen state reported
+  to the workstation.
+- **COMMS** — notification mirroring, and reading/sending SMS on request.
+
+Each of those has a section of its own below, including what it cannot
+promise.
 
 ```
 phone (Cortana Mobile)  ──Tailscale (WireGuard)──▶  workstation
@@ -200,6 +214,14 @@ installed phone: see the note below.
   the phone holds no Spotify credentials) with play/pause/next/previous.
   Playing Spotify **on the phone itself** works fine — the bridge reports the
   active device's name, so the dash and phone stay in sync either way.
+- **UPCOMING** — the next few timers, alarms and reminders from the
+  workstation's schedule table, coloured by urgency. Read-only: scheduling is
+  something you ask her for, and the sphere is right there.
+- **SENTINEL** — the workstation's own health checks; the header carries the
+  worst of them. Healthy rows stay dim and detail-free so the one amber row is
+  the thing your eye lands on.
+- **PRESENCE** — what the workstation believes about you, next to what this
+  phone last told it. They disagree in exactly the case worth debugging.
 - **AGENDA / TASKS / GIT / WEATHER** — mirrored read-only. Tasks and the
   weather ZIP come from the board snapshot (they live in the dashboard page's
   localStorage, which nothing else can read).
@@ -207,11 +229,125 @@ installed phone: see the note below.
   independent of the live stream; every card redraws from it.
 - **Reordering** — press and hold any card and drag. The order is saved on the
   phone and from then on overrides the board's layout order; MOBILE LINK stays
-  pinned at the top. Modules still can't be added or removed here.
+  pinned at the top. Modules still can't be added or removed here. UPCOMING,
+  SENTINEL and PRESENCE have no dashboard module behind them, so they start at
+  the bottom of the list until you drag them somewhere better.
 - **Talk screen** (sphere on the top bar, or the **2x2 home-screen widget**):
   tap to record, tap to send. Cortana's real ElevenLabs voice streams back;
   if the voice chain is down you still get the reply as text + phone TTS.
   Typing works too. Tap mid-playback to stop her.
+
+## The background link, and what it cannot promise
+
+`LinkClient` used to be foreground-only: activities called start/stop, so a
+closed app had no socket at all. Anything announced while you were away was
+**replayed** the next time you opened the app — right for a mirror, useless
+for a reminder. "Your build finished" delivered an hour late is a log entry.
+
+Settings → **BACKGROUND** starts `LinkService`, a foreground service that
+becomes another holder of the same socket. It shows a permanent low-priority
+notification (Android requires one; there is no silent version), and an
+announcement now arrives as it is made, on one of three channels:
+
+| bridge urgency | channel | behaviour |
+|---|---|---|
+| `critical`, `urgent` | Urgent | heads-up, sounds |
+| `normal` | Cortana | ordinary notification |
+| `ambient` | Ambient | shown, never sounded |
+
+Three channels rather than one because a channel's importance belongs to the
+**user** once it exists — an app may lower it and never raise it — so there is
+no way to choose "buzz" or "silent" per announcement after the fact. It also
+means ambient notes can be muted without muting alarms.
+
+Each announcement carries a **Reply** box. What you type goes to
+`POST /api/converse`, the same endpoint the talk screen uses, and the answer
+replaces the notification. The reply is handled by the *service*, not a
+broadcast receiver, because a receiver gets about ten seconds and a real voice
+turn takes minutes.
+
+**Doze is real and this is the part that cannot be verified from a dev box.**
+In deep doze Android suspends the socket and every `Handler` timer the app
+might have used to notice. Two defences are in place:
+
+1. Settings offers the **battery-optimisation exemption**. (Play Store policy
+   forbids most apps from asking for it; this one is sideloaded onto one phone
+   by the person who built it, so the policy does not apply — but it stays
+   opt-in.)
+2. An `AlarmManager.setAndAllowWhileIdle` alarm every ~15 minutes — the only
+   timer the platform still honours there — pokes the socket and reconnects it
+   if it died. A `ConnectivityManager` callback does the same the instant a
+   network reappears, so a Wi-Fi/LTE handoff does not wait out a 30-second
+   backoff.
+
+Neither is a guarantee, and OxygenOS/ColorOS/MIUI add their own process
+killers on top of the documented behaviour. **The only proof is a phone left
+overnight and an announcement fired at 4am.** If overnight announcements go
+missing, grant the exemption first; if they still do, the OEM is killing the
+process and no in-app change will fix it.
+
+The service is restarted on boot and after an app update (`BootReceiver`),
+because otherwise the first reboot turns the feature off while the switch
+keeps saying it is on.
+
+## Presence — what actually leaves the phone
+
+**Off by default.** When on, `POST /api/presence` carries:
+
+```json
+{"place":"home|out|driving|unknown", "zone":"home|work|elsewhere|unknown",
+ "lat":47.606, "lon":-122.332, "charging":true, "driving":false, "screenOn":true}
+```
+
+Deliberate frugality, because this runs on a phone and reports to a 5 GB
+laptop:
+
+- **Coarse location only.** The question is "is he home", not "which room".
+  Coordinates leave rounded to three decimals (~110 m). GPS is never requested.
+- **No continuous listener.** Fixes arrive through a `PendingIntent`, so the
+  platform delivers them and this process does not have to be alive waiting.
+- **Events, not polling.** A fix, a charger, a car stereo — plus one heartbeat
+  every half hour so a restarted workstation is not stuck on "unknown". A phone
+  on a charger overnight in one place sends two payloads a night.
+- **home / work** are points *you* save from Settings ("SET HOME HERE"), with a
+  300 m radius — a network fix is only good to a few hundred metres and a tight
+  radius would flap all evening. `zone` is an extra beyond the agreed presence
+  contract; the workstation is free to ignore it.
+- **driving** = a car audio or hands-free Bluetooth device connected. Read from
+  the broadcast's own `EXTRA_CLASS`, so it needs no query against the device.
+- The broadcast receiver is a **disabled manifest component** until the switch
+  is on. A "return if off" guard would still have cost a process start on every
+  Bluetooth connect, for every user who never turned presence on.
+
+Turning the switch off stops all of it; **FORGET SAVED PLACES** also erases
+home, work and the last fix from the phone.
+
+Android insists background location is a *second* request made after the
+foreground one is already granted, so Settings asks separately — and says
+plainly that presence stops the moment you leave the app until you grant it.
+
+## Comms hub
+
+Three switches, all off until you turn them on, and all listed in Settings
+with exactly what each one sends.
+
+- **Notification mirroring** needs a system grant that no app is allowed to
+  request — only deep-link to — so the button opens *Settings → Notification
+  access* and you turn Cortana on in the list. Ongoing rows (media players,
+  downloads, other apps' foreground services) and group summaries are skipped;
+  so are this app's own. Nothing is stored: the mirror is a short in-memory
+  queue, posted to `/api/comms/sync` in 20-second batches and forgotten. A
+  failed POST puts the batch back rather than eating it.
+- **Read SMS** exposes recent inbox messages through the system provider. The
+  app is not the default SMS handler and does not want to be.
+- **Send SMS** lets her send one when asked, split across segments.
+
+The workstation drives the last two with a `{"type":"cmd", "id", "cmd",
+"args"}` frame on the WebSocket (`sms.send`, `sms.read`). The phone — not the
+workstation — is the authority: a command for a capability you have not
+enabled is **refused with a sentence saying so**, POSTed back to
+`/api/cmd/result`, never silently dropped. A workstation that hears nothing
+cannot tell "switched off" from "broken".
 
 ## Finding your way around
 
@@ -221,6 +357,34 @@ module and MIC picker. Tapping it explains what the thing is, where its data
 comes from, and what to do when it looks wrong. The copy assumes a technical
 reader: it names the actual files, services and commands involved rather than
 paraphrasing them.
+
+## Every permission, and why
+
+Nothing here is granted by installing the app. The dangerous ones are asked for
+only when you turn the matching switch on, and every one of them is refusable
+without breaking anything else.
+
+| Permission | Asked when | For |
+|---|---|---|
+| `INTERNET`, `REQUEST_INSTALL_PACKAGES`, `RECORD_AUDIO` | install / first talk | the link, self-update, voice |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | install | the background link's service |
+| `POST_NOTIFICATIONS` (33+) | BACKGROUND on | *everything* the service shows, its own row included |
+| `RECEIVE_BOOT_COMPLETED` | install | restart the service after a reboot or update |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | you tap the button | the doze exemption prompt |
+| `ACCESS_COARSE_LOCATION` | PRESENCE on | home / work / elsewhere |
+| `ACCESS_BACKGROUND_LOCATION` | separately, after the above | so presence survives leaving the app |
+| `BLUETOOTH_CONNECT` (31+), `BLUETOOTH` (<=30) | PRESENCE on | receiving the car-stereo connect broadcast |
+| `READ_SMS`, `RECEIVE_SMS` | READ SMS on | recent inbox messages |
+| `SEND_SMS` | SEND SMS on | sending one when asked |
+
+**Notification access is not in that list** and cannot be: it is a system
+switch in *Settings → Notification access*, and no app may request it, only
+deep-link to it.
+
+`specialUse` is the service's foreground type rather than `dataSync`, because
+`dataSync` acquires a hard daily runtime cap from Android 15 that a
+permanently-held socket would hit every day, and none of the other types
+describes "holds one long-lived socket to the machine that owns this app".
 
 ## Security model
 
@@ -259,6 +423,30 @@ paraphrasing them.
 | Phone asks Cortana to restart/shut down | The bridge maps it to `systemctl --user restart/stop cortana` on the workstation |
 | Voice replies while phone is on silent | MediaPlayer uses the assistant audio stream; media volume applies |
 | hud_state contention (desk turn + phone turn) | Bridge only writes orb state when the desk isn't mid-turn |
+
+## What is checked before a push, and what is not
+
+Kotlin cannot be compiled on the dev box — no gradle, no Android SDK — so CI is
+the first compiler this code meets. `mobile/test_mobile_client.py` (stdlib
+only, runs in the repo's ordinary pytest) narrows the gap by pinning the
+failures that are invisible in a diff:
+
+- every file balances its `(`, `[` and `{` — the classic bad splice, where the
+  damage is two hundred lines below the change;
+- every `Prefs.x` / `Presence.x` / `Comms.x` / `LinkClient.x` reference names a
+  member that object actually declares (~700 references checked);
+- every manifest component has a class behind it, and every `R.drawable.x`
+  exists;
+- every permission the code checks is declared — an undeclared one can only be
+  *refused*, forever, silently, on the phone;
+- every card type has all three of a `signatureFor` branch, a `buildCard`
+  branch and a Help entry (a missing signature branch means the card renders
+  once and then never repaints, which reads as a frozen link);
+- `versionCode` and `versionName` moved together;
+- every capability switch still defaults to off.
+
+**None of that runs a line of Kotlin.** Type errors, resource resolution, doze
+survival and every OEM behaviour remain unverified until the APK is on a phone.
 
 ## Building locally (optional — CI is the primary path)
 

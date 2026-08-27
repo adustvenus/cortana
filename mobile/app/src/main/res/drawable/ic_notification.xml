@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification small icon.
+
+     It cannot be the sphere. Android masks a small icon down to a single
+     colour silhouette, so the three-stop gradient the rest of the app draws
+     would arrive in the status bar as a featureless grey blob. A ring with a
+     filled core survives the mask and still reads as the orb at 24dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,2 C6.477,2 2,6.477 2,12 C2,17.523 6.477,22 12,22 C17.523,22 22,17.523 22,12 C22,6.477 17.523,2 12,2 Z M12,4.6 C16.087,4.6 19.4,7.913 19.4,12 C19.4,16.087 16.087,19.4 12,19.4 C7.913,19.4 4.6,16.087 4.6,12 C4.6,7.913 7.913,4.6 12,4.6 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,7.6 C14.43,7.6 16.4,9.57 16.4,12 C16.4,14.43 14.43,16.4 12,16.4 C9.57,16.4 7.6,14.43 7.6,12 C7.6,9.57 9.57,7.6 12,7.6 Z" />
+</vector>

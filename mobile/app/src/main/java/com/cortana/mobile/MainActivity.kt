@@ -3,9 +3,11 @@ package com.cortana.mobile
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -40,8 +42,15 @@ import kotlin.concurrent.thread
  */
 class MainActivity : Activity(), LinkClient.Listener {
 
-    /** Module types this app can render, in default order. */
-    private val supported = listOf("cortana", "music", "agenda", "tasks", "weather", "git")
+    /** Module types this app can render, in default order.
+     *
+     *  UPCOMING, SENTINEL and PRESENCE have no dashboard module behind them -
+     *  they are fed straight from the bridge snapshot - so boardOrder() will
+     *  never place them and phoneOrder() appends them at the end until the
+     *  cards are dragged somewhere better. That is deliberate: an existing
+     *  phone's saved order must not be reshuffled by an update. */
+    private val supported = listOf("cortana", "music", "upcoming", "agenda", "tasks",
+        "presence", "sentinel", "weather", "git")
 
     private lateinit var recycler: RecyclerView
     private lateinit var swipe: SwipeRefreshLayout
@@ -223,11 +232,43 @@ class MainActivity : Activity(), LinkClient.Listener {
     override fun onStart() {
         super.onStart()
         if (Prefs.paired(this)) LinkClient.start(this, this)
+        // The service is started here rather than the moment the switch is
+        // flipped, because Android 12+ refuses a foreground start from the
+        // background - and a Settings screen that has just been closed is
+        // exactly that. On screen, it always succeeds.
+        LinkService.sync(this)
+        ensureNotificationPermission()
+        // LinkService normally owns this handler. With the background link
+        // switched off there is no service, and the board being open would be
+        // the one moment the phone could act on a command yet silently would
+        // not - a coupling nobody would guess at. The application context is
+        // captured deliberately: a lambda holding this Activity outlives it.
+        if (LinkClient.onCmd == null) {
+            val app = applicationContext
+            LinkClient.onCmd = { frame -> Comms.handleCmd(app, frame) }
+        }
     }
 
     override fun onStop() {
         super.onStop()
-        LinkClient.stop()
+        // By identity now: the service is a holder too, and the old
+        // argument-less stop() would have dropped whichever holder happened to
+        // be last, taking the socket down under the service.
+        LinkClient.stop(this)
+    }
+
+    /** From API 33 nothing at all is shown without this grant - not even the
+     *  service's own permanent row - so the background link would come up and
+     *  then silently deliver nothing. Asked once, on screen, and refusing it
+     *  breaks nothing else in the app. */
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (!Prefs.background(this)) return
+        try {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED)
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 9)
+        } catch (e: Exception) { /* an OEM with no such permission screen */ }
     }
 
     // ── list + drag-to-reorder ──────────────────────────────────────────────
@@ -483,6 +524,17 @@ class MainActivity : Activity(), LinkClient.Listener {
         // Pending state is local, so it is part of these cards' signatures.
         "tasks" -> (state.optJSONObject("board")?.optJSONArray("tasks")?.toString() ?: "none") +
                    "|" + pendingToggles.keys + "|" + pendingRemoves.keys + "|" + pendingAdds.size
+        // The minute bucket is load-bearing: this card draws RELATIVE times
+        // ("in 12m") and the underlying JSON does not change as they tick down,
+        // so without it the countdown would freeze until the schedule itself
+        // changed. One rebuild a minute is cheap; a lying clock is not.
+        "upcoming" -> (state.optJSONArray("schedule")?.toString() ?: "none") +
+                      "|" + (System.currentTimeMillis() / 60000)
+        "sentinel" -> state.optJSONObject("sentinel")?.toString() ?: "none"
+        // Half of this card is state only the phone knows, so the board
+        // snapshot alone is not a fingerprint of what is drawn.
+        "presence" -> (state.optJSONObject("presence")?.toString() ?: "none") +
+                      "|" + Presence.cardSignature(this)
         "git" -> state.optJSONObject("git")?.toString() ?: ""
         "weather" -> (weather?.toString() ?: "") + "|" + pendingZip +
                      "|" + Prefs.weatherZip(this)
@@ -495,6 +547,9 @@ class MainActivity : Activity(), LinkClient.Listener {
         "music" -> musicCard(state)
         "agenda" -> agendaCard(state)
         "tasks" -> tasksCard(state)
+        "upcoming" -> upcomingCard(state)
+        "sentinel" -> sentinelCard(state)
+        "presence" -> presenceCard(state)
         "weather" -> weatherCard()
         "git" -> gitCard(state)
         else -> null
@@ -852,6 +907,163 @@ class MainActivity : Activity(), LinkClient.Listener {
             runOnUiThread { done(ok) }
         }
     }
+
+    // ── schedule / sentinel / presence ──────────────────────────────────────
+    // All three return null when the bridge snapshot has no such key, which
+    // render() reads as "no card" and drops from the list. That is what makes
+    // this app safe to install against an older bridge: the new cards simply
+    // are not there, rather than showing an empty box or crashing on a missing
+    // field.
+
+    /** UPCOMING: the next few timers, alarms and reminders from the
+     *  workstation's schedule table. Read-only on purpose - scheduling is
+     *  something you ASK her for, and the phone already has a way to ask. */
+    private fun upcomingCard(state: JSONObject): LinearLayout? {
+        val items = state.optJSONArray("schedule") ?: return null
+        return Ui.card(this).apply {
+            addView(Ui.cardHeader(context, "UPCOMING", "upcoming",
+                trailing = Ui.value(context,
+                    if (items.length() == 0) "CLEAR" else items.length().toString(),
+                    11f, Ui.DIM, mono = true)))
+            addView(Ui.gap(context, 8))
+            if (items.length() == 0) {
+                addView(Ui.value(context, "nothing scheduled", 13f, Ui.DIM))
+                return@apply
+            }
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val col = urgencyColor(item.optString("urgency", "normal"))
+                addView(Ui.row(context,
+                    Ui.dot(context, col, 7),
+                    Ui.value(context, relativeWhen(item.optDouble("at", 0.0)),
+                        12f, col, mono = true).apply { minWidth = Ui.dp(context, 84) },
+                    Ui.value(context, item.optString("title"), 14f).apply {
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        layoutParams = LinearLayout.LayoutParams(0,
+                            LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    },
+                    Ui.value(context, if (item.optBoolean("repeats")) "REPEATS" else "",
+                        10f, Ui.DIM, mono = true)
+                ).apply { setPadding(0, Ui.dp(context, 4), 0, Ui.dp(context, 4)) })
+            }
+        }
+    }
+
+    private fun urgencyColor(urgency: String): Int = when (urgency) {
+        "critical" -> Theme.RED
+        "urgent" -> Ui.ACCENT
+        "ambient" -> Ui.DIM
+        else -> Ui.LAVENDER
+    }
+
+    /** "in 12m" / "18:40" / "Tue 09:00". Computed on the phone rather than sent
+     *  as text by the workstation, so it keeps counting down while the card
+     *  sits on screen instead of freezing at whatever the last push said. */
+    private fun relativeWhen(at: Double): String {
+        if (at <= 0) return "--"
+        val ms = (at * 1000).toLong()
+        val delta = ms - System.currentTimeMillis()
+        if (delta <= 0) return "now"
+        val mins = delta / 60000
+        if (mins < 90) return "in " + mins + "m"
+        val now = java.util.Calendar.getInstance()
+        val then = java.util.Calendar.getInstance()
+        then.timeInMillis = ms
+        val sameDay = now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR) &&
+            now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)
+        val fmt = java.text.SimpleDateFormat(if (sameDay) "HH:mm" else "EEE HH:mm",
+            java.util.Locale.getDefault())
+        return fmt.format(java.util.Date(ms))
+    }
+
+    /** SENTINEL: the workstation's own health checks. Healthy rows are the
+     *  boring majority, so they get a dot and a dimmed label and nothing else -
+     *  a wall of green detail text is how you fail to notice the one amber
+     *  row, which is the only reason this card exists. */
+    private fun sentinelCard(state: JSONObject): LinearLayout? {
+        val s = state.optJSONObject("sentinel") ?: return null
+        val worst = s.optString("worst", "ok")
+        val checks = s.optJSONArray("checks") ?: JSONArray()
+        return Ui.card(this).apply {
+            val col = healthColor(worst)
+            addView(Ui.cardHeader(context, "SENTINEL - " + worst.uppercase(), "sentinel",
+                labelColor = col, leading = Ui.dot(context, col),
+                trailing = Ui.value(context, checks.length().toString() + " CHECKS",
+                    11f, Ui.DIM, mono = true)))
+            addView(Ui.gap(context, 8))
+            if (checks.length() == 0) {
+                addView(Ui.value(context, "no checks reported yet", 13f, Ui.DIM))
+                return@apply
+            }
+            for (i in 0 until checks.length()) {
+                val c = checks.optJSONObject(i) ?: continue
+                val cs = c.optString("state", "ok")
+                val cc = healthColor(cs)
+                addView(Ui.row(context,
+                    Ui.dot(context, cc, 7),
+                    Ui.value(context, c.optString("label").ifEmpty { c.optString("key") },
+                        13f, if (cs == "ok") Ui.DIM else Ui.TEXT).apply {
+                        layoutParams = LinearLayout.LayoutParams(0,
+                            LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                ).apply { setPadding(0, Ui.dp(context, 3), 0, Ui.dp(context, 3)) })
+                val detail = c.optString("detail")
+                if (cs != "ok" && detail.isNotEmpty())
+                    addView(Ui.value(context, detail, 12f, cc).apply {
+                        setPadding(Ui.dp(context, 17), 0, 0, Ui.dp(context, 4))
+                    })
+            }
+        }
+    }
+
+    private fun healthColor(state: String): Int = when (state) {
+        "bad" -> Theme.RED
+        "warn" -> Ui.ACCENT
+        else -> Ui.GREEN
+    }
+
+    /** PRESENCE: what the workstation believes, and what this phone last told
+     *  it. Both halves are shown because they disagree in exactly the case
+     *  worth debugging - the phone thinks it is reporting and the workstation
+     *  has heard nothing for an hour. */
+    private fun presenceCard(state: JSONObject): LinearLayout? {
+        val p = state.optJSONObject("presence")
+        val on = Prefs.presenceOn(this)
+        if (p == null && !on) return null
+        return Ui.card(this).apply {
+            val desk = p?.optString("desk", "unknown") ?: "unknown"
+            val col = when (desk) {
+                "present" -> Ui.GREEN
+                "away" -> Ui.ACCENT
+                "asleep" -> Ui.LAVENDER
+                else -> Ui.DIM
+            }
+            addView(Ui.cardHeader(context, "PRESENCE", "presence",
+                leading = Ui.dot(context, col),
+                trailing = Ui.value(context, if (on) "REPORTING" else "PHONE OFF",
+                    11f, if (on) Ui.DIM else Ui.ROSE, mono = true)))
+            addView(Ui.gap(context, 8))
+            if (p != null) {
+                addView(kvRow("DESK", desk))
+                addView(kvRow("PHONE", p.optString("phone", "unknown")))
+                addView(kvRow("PLACE", p.optString("place", "unknown")))
+            } else {
+                addView(Ui.value(context,
+                    "The workstation isn't reporting presence yet.", 13f, Ui.DIM))
+            }
+            addView(Ui.gap(context, 8))
+            addView(Ui.value(context,
+                if (on) "this phone: " + Presence.describe(context)
+                else "This phone isn't reporting. Settings - PRESENCE to turn it on.",
+                13f, Ui.DIM))
+        }
+    }
+
+    private fun kvRow(key: String, value: String): LinearLayout = Ui.row(this,
+        Ui.value(this, key, 11f, Ui.DIM, mono = true)
+            .apply { minWidth = Ui.dp(this@MainActivity, 62) },
+        Ui.value(this, value, 14f, Ui.TEXT))
 
     private fun gitCard(state: JSONObject): LinearLayout = Ui.card(this).apply {
         val g = state.optJSONObject("git") ?: JSONObject()
