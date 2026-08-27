@@ -2,6 +2,10 @@ anthropic>=1.0
 openai>=1.40
 requests
 python-dotenv
+# Recurrence (RRULE) expansion for the scheduler. Arrives transitively via
+# yfinance->pandas today; declared explicitly because the scheduler breaks
+# outright without it and that dependency chain is not ours to rely on.
+python-dateutil
 numpy
 sounddevice
 soundfile

@@ -6,8 +6,17 @@ token.json
 
 # --- Runtime state / artifacts ---
 state.db
+# WAL sidecars. journal_mode=WAL is set in memory.init() and is a PERSISTENT
+# property of the db file, so these two appear the moment she runs - and
+# self-edit auto-commits, which would otherwise sweep live db internals into
+# the repo.
+state.db-wal
+state.db-shm
 hud_state.json
 calendar_state.json
+presence_desk.json
+speech_inbox.json
+sentinel_state.json
 mic_state.json
 mic_select.json
 *.tmp

@@ -1,6 +1,8 @@
 """Tool schemas, subagent definitions, tool dispatcher."""
+import datetime
+
 from config import (CACHE_ENABLED, CACHE_TTL, MODEL_LEAD, MODEL_FAST,
-                    MODEL_HEAVY, ROOT, WORKSPACE)
+                    MODEL_HEAVY, ROOT, SCHED_TZ, WORKSPACE)
 import memory
 from tools import files as F
 # vision / trading / video / gmail are imported lazily inside dispatch() so a
@@ -102,6 +104,35 @@ TOOL_DEFS = {
     "remember": _schema("remember", "Save a permanent fact/preference about the user.",
                         {"key": {"type": "string"}, "value": {"type": "string"}},
                         ["key", "value"]),
+    "remind": _schema("remind",
+                      "Schedule something for later: a reminder, timer, alarm, or recurring "
+                      "job. 'when' is a LOCAL ISO-8601 timestamp which YOU compute from the "
+                      "clock in the '## Now' section of your system prompt - 'in 20 minutes' "
+                      "means that clock plus 20 minutes. 'rrule' makes it recurring (RFC 5545, "
+                      "e.g. FREQ=DAILY;BYHOUR=7;BYMINUTE=0) and 'when' is then the first "
+                      "occurrence. kind is timer|alarm|reminder and only changes how long a "
+                      "late one is still worth speaking. Default action speaks 'text'; use "
+                      "action='turn' with 'prompt' when it needs fresh thinking AT THE TIME "
+                      "(a morning briefing), or action='delegate' with agent+task for "
+                      "background work. urgency ambient|normal|urgent|critical - critical "
+                      "reaches every surface, so it is for alarms only. ALWAYS say the "
+                      "resolved time back to the user so a misread is caught out loud.",
+                      {"text": {"type": "string"}, "when": {"type": "string"},
+                       "rrule": {"type": "string"}, "kind": {"type": "string"},
+                       "urgency": {"type": "string"}, "action": {"type": "string"},
+                       "prompt": {"type": "string"}, "agent": {"type": "string"},
+                       "task": {"type": "string"}, "require_ack": {"type": "boolean"}},
+                      ["text", "when"]),
+    "schedule_list": _schema("schedule_list",
+                             "Everything scheduled, with ids and next fire times. Use it "
+                             "before cancelling so you cancel the right one.",
+                             {"include_done": {"type": "boolean"}}, []),
+    "schedule_set": _schema("schedule_set",
+                            "Change one scheduled item by id (from schedule_list). ack=true "
+                            "stops one that is still reminding you; cancel=true drops it and "
+                            "every future occurrence.",
+                            {"id": {"type": "integer"}, "ack": {"type": "boolean"},
+                             "cancel": {"type": "boolean"}}, ["id"]),
     "delegate": _schema("delegate",
                         "Hand a task to a specialist subagent. Agents: research (web), email (gmail), "
                         "trading (markets), video (editing), dev (coding/apps). background=true runs it "
@@ -179,6 +210,7 @@ AGENTS = {
 }
 
 LEAD_TOOL_NAMES = ["delegate", "task_status", "cancel_task", "continue_work",
+                   "remind", "schedule_list", "schedule_set",
                    "remember", "shell",
                    "read_file", "write_file", "list_files", "screenshot",
                    "self_update", "confirm_pending", "cancel_pending",
@@ -225,12 +257,37 @@ def lead_system():
               "- Completed background tasks are announced automatically and appear in "
               "the conversation log as [background task N ...]. Use task_status when "
               "asked how work is going; cancel_task to stop one.\n"
+              "- Time-shaped requests go to `remind`, never to a background task "
+              "that sleeps. Read the clock in '## Now', convert relative times "
+              "yourself, and say the resolved time back ('Seven tomorrow morning "
+              "- set.') so a misread is caught out loud. Anything that needs "
+              "fresh thinking when it fires is action='turn' with a prompt, not "
+              "a canned line written now.\n"
               "- Before using the restart tool, check task_status; if tasks are "
               "running, say what would be lost and get a confirmation first.\n"
               "Act first, report after - do not ask permission for workspace actions. "
               f"{_SPOKEN}")
     return _cached([{"type": "text", "text": stable}]) + [
-        {"type": "text", "text": "## Saved memory\n" + memory.recall_all()}]
+        {"type": "text", "text": "## Saved memory\n" + memory.recall_all()},
+        {"type": "text", "text": _now_block()}]
+
+
+def _now_block():
+    """Current local time, so 'in 20 minutes' can become a real timestamp.
+
+    MUST stay AFTER the _cached() breakpoint, and it is placed last precisely
+    because it is the most volatile string in the whole prompt - it changes
+    every second. One move above the breakpoint would turn every single turn
+    into a full cache WRITE at CACHE_WRITE_MULT (2x input price), which is the
+    exact failure the block ordering in lead_system() exists to prevent.
+    Ordering AMONG post-breakpoint blocks is free, so last costs nothing.
+    """
+    now = datetime.datetime.now().astimezone()
+    return ("## Now\n"
+            f"{now:%A %Y-%m-%d %H:%M:%S} (UTC{now:%z})\n"
+            f"Pass timestamps to scheduling tools in this form: "
+            f"{now.replace(microsecond=0).isoformat(timespec='seconds')}\n"
+            f"Timezone: {SCHED_TZ or 'system local'}")
 
 
 def dispatch(name, args, run_agent=None, cancel=None, resume=None):
@@ -273,6 +330,15 @@ def dispatch(name, args, run_agent=None, cancel=None, resume=None):
         return V.screenshot()
     if name == "remember":
         return memory.remember(args["key"], args["value"])
+    if name in ("remind", "schedule_list", "schedule_set"):
+        import schedule       # lazy: dateutil is only needed for recurrence
+        if name == "remind":
+            return schedule.create(args)
+        if name == "schedule_list":
+            return schedule.summary(bool(args.get("include_done")))
+        return schedule.set_state(int(args["id"]),
+                                  ack=bool(args.get("ack")),
+                                  cancel=bool(args.get("cancel")))
     if name in ("self_update", "confirm_pending", "cancel_pending", "revert_change"):
         import selfedit
         import tasks

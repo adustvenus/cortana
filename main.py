@@ -18,7 +18,10 @@ from pathlib import Path
 import config
 import audio_ducking
 import memory
+import notify
 import orchestrator
+import presence
+import schedule
 import tasks
 import hud_state
 from voice import mic, stt, wake, speech
@@ -34,6 +37,13 @@ state = {"mode": config.MODE, "ptt": False,
 # completion (or its full step limit) while the user is talking about
 # something else. Single processor thread => single slot is always correct.
 current_cancel = threading.Event()
+
+# orchestrator keeps its per-turn state in module globals (_turn, _stalled,
+# _restart_flag). One processor thread made that safe; a scheduler that can also
+# start a turn does not, so every entry into orchestrator.handle() takes this.
+# Contention is normally zero - it exists so a fired routine QUEUES behind a
+# voice turn instead of corrupting its tool_calls count and critique gate.
+_turn_lock = threading.Lock()
 
 # Flag file written before a restart exit; checked on the next startup
 RESTART_FLAG = config.ROOT / ".restarting"
@@ -134,7 +144,8 @@ def process(wav_path, cancel=None):
     # later 'restart' re-runs the warn-once flow instead of firing silently
     # (e.g. 'restart' -> warned -> 'never mind' -> 'restart' should warn again).
     _pending_sys["kind"] = None
-    reply = orchestrator.handle(text, cancel=cancel)
+    with _turn_lock:
+        reply = orchestrator.handle(text, cancel=cancel)
     if reply is None:
         # Preempted by a newer utterance mid-turn - stay silent, the newer
         # request is next in the queue and will speak its own reply.
@@ -161,7 +172,8 @@ def voice_loop():
     def on_press(key):
         if key == keyboard.Key.f9:
             state["ptt"] = True
-            audio_ducking.engage("ptt")
+            presence.note_voice()   # the only presence signal that survives
+            audio_ducking.engage("ptt")   # with no X11 idle probe installed
 
     def on_release(key):
         if key == keyboard.Key.f9:
@@ -192,6 +204,7 @@ def voice_loop():
         whatever she was already doing (see current_cancel)."""
         if state["busy"]:
             current_cancel.set()
+        presence.note_voice()
         utterances.put(p)
 
     def processor():
@@ -363,6 +376,93 @@ def _calendar_loop():
             time.sleep(1)
 
 
+def _presence_loop():
+    """Publish presence_desk.json every 30s.
+
+    Only this process can do it: cortana.service sets DISPLAY and XAUTHORITY,
+    cortana-bridge.service sets neither, so an X11 idle probe from the bridge
+    returns nothing and would read as 'away'.
+    """
+    was = None
+    while state["exit"] is None:
+        try:
+            now_state = presence.publish()["state"]
+            # Coming back to the desk is what releases anything that was held
+            # while the screen was asleep - "you got three things while you were
+            # out" falls out of the transition, with no special-casing.
+            if was in ("away", "asleep") and now_state == "present":
+                notify.release_held()
+            was = now_state
+        except Exception as e:
+            print("[presence] sample failed:", e)
+        for _ in range(30):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
+
+
+def _fire(row, fire_ts):
+    """Run one due occurrence. Runs on the scheduler thread."""
+    action, payload = row["action"], row["payload"]
+    late = time.time() - fire_ts
+
+    if action == "delegate":
+        msg = tasks.start(payload["agent"], payload["task"],
+                          runner=lambda a, t, c: orchestrator.run_agent(a, t, cancel=c))
+        # tasks.start returns a line meant for the lead to relay to the user.
+        # With no user in the loop it has nowhere to go, so a routine firing
+        # into a full slot table would vanish silently. Surface refusals.
+        if msg and msg.lstrip().lower().startswith(("all ", "can't", "cannot")):
+            notify.deliver(msg, "normal", src=f"schedule:{row['id']}", ref=row["id"])
+        return
+
+    if action == "turn":
+        with _turn_lock:
+            reply = orchestrator.handle(payload.get("prompt") or row["title"])
+        # A scheduled turn must never be able to take the box down: the lead has
+        # restart/shutdown tools and no user is present to have asked for it.
+        if orchestrator.restart_requested() or orchestrator.shutdown_requested():
+            orchestrator._restart_flag["do"] = False
+            orchestrator._shutdown_flag["do"] = False
+            print("[sched] refused a restart/shutdown asked for by a scheduled turn")
+        if reply:
+            notify.deliver(reply, row["urgency"], src=f"schedule:{row['id']}",
+                           ref=row["id"])
+        return
+
+    text = payload.get("text") or row["title"]
+    if late > 120:
+        text = f"This was due at {schedule.to_local(fire_ts):%H:%M}. {text}"
+    notify.deliver(text, row["urgency"], src=f"schedule:{row['id']}", ref=row["id"])
+
+
+def _scheduler_loop():
+    """Phase 1: the tick lives here, in the cortana process, so the whole engine
+    ships without touching a single self-edit-protected file.
+
+    Phase 2 moves it into the bridge, which is Restart=always and therefore
+    survives a deliberate `shut down` (exit 42) - a 7am alarm should outlive
+    "stop listening to me". Running both during that cutover is safe: claim()
+    is a conditional UPDATE and sqlite serialises writers, so exactly one
+    ticker can ever win an occurrence.
+    """
+    try:
+        recovered = schedule.recover()
+        if recovered:
+            print(f"[sched] recovered {recovered} item(s) stranded mid-fire")
+    except Exception as e:
+        print("[sched] recover failed:", e)
+    while state["exit"] is None:
+        try:
+            schedule.tick(_fire, owner="cortana")
+        except Exception as e:
+            print("[sched] tick error:", e)
+        for _ in range(max(1, int(config.SCHED_TICK))):
+            if state["exit"] is not None:
+                return
+            time.sleep(1)
+
+
 def _google_auth():
     """Force a fresh Google consent covering all scopes (Gmail + Calendar)."""
     from tools import google_auth
@@ -500,8 +600,18 @@ if __name__ == "__main__":
     speech.init(voice=not args.text,
                 quiet_gate=lambda: not state["busy"] and not state["capturing"]
                                    and not state["ptt"])
+    # Delivery legs this process can actually serve. The phone leg belongs to
+    # the bridge (it owns the WebSocket), so it is deliberately NOT registered
+    # here - notify records the miss in `deliveries` rather than pretending.
+    notify.register(
+        desk=lambda text, urgency: (speech.alert(text)
+                                    if urgency in ("urgent", "critical")
+                                    else speech.announce(text)),
+        board=lambda text, urgency: hud_state.think(text[:120]))
     threading.Thread(target=_calendar_loop, daemon=True, name="calendar").start()
     threading.Thread(target=_mic_state_loop, daemon=True, name="mic-state").start()
+    threading.Thread(target=_presence_loop, daemon=True, name="presence").start()
+    threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
     if args.text:
         text_loop()
     else:

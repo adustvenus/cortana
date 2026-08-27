@@ -18,8 +18,11 @@ jobs:
       # Only what the unit tests actually import. Installing the full
       # requirements.txt would pull PyQt5/sounddevice/numpy for hardware no
       # runner has, and none of it is needed to compile or to run these tests.
+      # python-dateutil is NOT optional here: without it the recurrence tests
+      # skip silently, and the DST test is the one thing in this suite a human
+      # cannot check by reading the code.
       - name: Install test deps
-        run: pip install pytest python-dotenv
+        run: pip install pytest python-dotenv python-dateutil
 
       # Same gate selfedit.py applies before accepting a self-edit, run against
       # every push so a broken commit can't reach the Pi in the first place.

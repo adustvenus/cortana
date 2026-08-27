@@ -100,6 +100,52 @@ PRICES = {
     "claude-haiku-4-5":  (1.0, 5.0),
 }
 
+# --- Scheduler / proactive spine ---
+def _system_tz():
+    """IANA zone name for recurrence math.
+
+    NOT time.tzname or strftime('%Z') - those give an ABBREVIATION ('PDT'),
+    which zoneinfo.ZoneInfo refuses to load and which is ambiguous across
+    continents anyway. Read what the system actually configured instead.
+    """
+    tz = os.getenv("TZ", "").strip()
+    if tz:
+        return tz
+    try:
+        name = Path("/etc/timezone").read_text().strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    try:                      # /etc/localtime is a symlink into .../zoneinfo/<Zone>
+        return Path("/etc/localtime").resolve().as_posix().split("zoneinfo/", 1)[1]
+    except Exception:
+        pass
+    # Deliberately "" and NOT "UTC". The Windows dev box has neither file, and
+    # naming UTC here would be a lie the code cannot detect: a naive "in 20
+    # minutes" would be read as a UTC wall time and silently shift by the whole
+    # local offset. Empty means "no IANA name available" and lets schedule._zone
+    # fall back to the system's real offset instead.
+    return ""
+
+
+SCHED_TZ = os.getenv("SCHED_TZ", "") or _system_tz()
+# Tick cadence. 5s, not 1s: the politest delivery path already holds up to 60s
+# for a quiet moment, so a finer tick buys nothing and wakes the CPU 86,400
+# extra times a day on a laptop.
+SCHED_TICK = float(os.getenv("SCHED_TICK", "5"))
+# How long a fired-late item is still worth speaking, per kind. A pasta timer
+# four hours late is worse than useless; an overslept alarm is still news.
+SCHED_CATCHUP = {"timer": 900, "alarm": 3600, "reminder": 86400, "routine": 900}
+# A row stuck in 'firing' longer than this lost its owner mid-fire (crash,
+# restart) and is swept back to pending. Duplicate beats lost for a reminder.
+SCHED_CLAIM_STALE = float(os.getenv("SCHED_CLAIM_STALE", "60"))
+
+# --- Presence ---
+PRESENCE_STALE = float(os.getenv("PRESENCE_STALE", "120"))   # older than this = unknown
+PRESENT_IDLE = float(os.getenv("PRESENT_IDLE", "300"))       # X11 idle under this = at the desk
+AWAY_IDLE = float(os.getenv("AWAY_IDLE", "1800"))            # over this = asleep
+
 # --- Misc ---
 # main.py exits with this code for a voice/tool shutdown; launcher.py treats it
 # as "stop, do not relaunch". A plain exit 0 means restart (relaunch).
