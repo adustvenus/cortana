@@ -59,11 +59,33 @@ done
 note "DISPLAY" "${DISPLAY:-(unset - X11 actions will refuse)}"
 
 # ── 2. python deps ─────────────────────────────────────────────────────────
-hdr "python deps"
-for m in anthropic openai requests dotenv dateutil numpy sounddevice aiohttp; do
-    if $PY -c "import $m" 2>/dev/null; then pass "import:$m" ""
-    else fail "import:$m" "pip install -r requirements.txt"; fi
-done
+# Checked against requirements.txt itself, not a list copied out of it. A
+# hand-maintained list answers "do the imports I remembered work", which is a
+# different and weaker question than "is this environment what the manifest
+# says it should be" - and it silently stops covering anything added later.
+hdr "python deps (vs requirements.txt)"
+$PY - <<'EOF'
+import re
+from importlib.metadata import version, PackageNotFoundError
+missing = []
+try:
+    lines = open("requirements.txt", encoding="utf-8").read().splitlines()
+except Exception as e:
+    print("  FAIL cannot read requirements.txt: %s" % e)
+    lines = []
+for raw in lines:
+    line = raw.split("#")[0].strip()
+    if not line:
+        continue
+    name = re.split(r"[<>=!~\[]", line)[0].strip()
+    try:
+        print("  ok   %-26s %s" % (name, version(name)))
+    except PackageNotFoundError:
+        print("  FAIL %-26s NOT INSTALLED" % name)
+        missing.append(name)
+if missing:
+    print("       -> ./venv/bin/python -m pip install -r requirements.txt")
+EOF
 
 # ── 3. every new module actually imports ───────────────────────────────────
 hdr "feature modules"
@@ -168,7 +190,12 @@ $PY - <<'EOF'
 import memory
 memory.init()
 checks = [
-    ("sentinel",  lambda: __import__("sentinel").speakable()),
+    # poll() first, exactly as the system_check tool's dispatch does. Calling
+    # speakable() alone in a FRESH process reports "I have not run the system
+    # checks yet" - true of this process, and completely misleading about the
+    # running one, which has been polling for minutes.
+    ("sentinel",  lambda: (__import__("sentinel").poll(),
+                           __import__("sentinel").speakable())[1]),
     ("desktop",   lambda: __import__("tools.desktop", fromlist=["x"]).desktop({"action": "volume"})),
     ("media",     lambda: __import__("tools.media", fromlist=["x"]).media("status")),
     ("notes",     lambda: __import__("tools.notes", fromlist=["x"]).status()),
@@ -185,9 +212,36 @@ for name, fn in checks:
         print("  FAIL %-14s %s: %s" % (name, type(e).__name__, str(e)[:60]))
 EOF
 
-# ── 10. the suite ──────────────────────────────────────────────────────────
+# ── 10. what the sentinel actually says ────────────────────────────────────
+# Printed in full rather than truncated into the endpoint line above: a `worst`
+# of bad names no row, and "something is wrong" without saying what is the least
+# useful thing a health check can report.
+hdr "sentinel rows"
+$PY - <<'EOF'
+try:
+    import sentinel
+    sentinel.poll()
+    rows = sentinel.rows()
+    if not rows:
+        print("  (no rows - the checks have not produced anything yet)")
+    for c in rows:
+        mark = {"ok": "  ok  ", "warn": "  WARN", "bad": "  BAD "}.get(c["state"], "  ?   ")
+        print("%s %-10s %s" % (mark, c["label"], c["detail"]))
+except Exception as e:
+    print("  FAIL sentinel: %s: %s" % (type(e).__name__, e))
+EOF
+
+# ── 11. the suite ──────────────────────────────────────────────────────────
 hdr "unit tests"
-$PY -m pytest -q 2>&1 | tail -4
+# pytest is NOT in requirements.txt - it is a test dependency, and the runtime
+# box does not need it to run Cortana. Say that plainly instead of reporting a
+# bare "No module named pytest", which reads like something is broken.
+if $PY -c "import pytest" 2>/dev/null; then
+    $PY -m pytest -q 2>&1 | tail -4
+else
+    echo "  skipped - pytest not installed (not needed to RUN Cortana)."
+    echo "  To enable the suite here:  $PY -m pip install pytest"
+fi
 
 hdr "summary"
 echo "  shell checks: $OK ok, $BAD failed"
