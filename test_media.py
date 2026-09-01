@@ -609,6 +609,42 @@ def test_a_403_names_the_missing_scope_when_that_is_the_cause(files, net, monkey
     assert "Reconnect Spotify" in said
 
 
+def test_naming_a_track_wakes_an_idle_device_and_retries(files, net, monkeypatch):
+    """The entry point that kept failing after bare play was fixed. Same cause -
+    a registered-but-idle device refuses a play until something makes it active -
+    but play_query has its own path, so the repair belongs in _press where every
+    caller gets it."""
+    write_token(scope=" ".join(media.PLAY_SCOPES))
+    no_binaries(monkeypatch)
+    net.add("/search", Resp(200, body={"tracks": {"items": [
+        {"uri": "spotify:track:1", "name": "Nightcall",
+         "artists": [{"name": "Kavinsky"}]}]}}))
+    net.add("/me/player/devices",
+            Resp(200, body={"devices": [{"id": "DESK", "name": "Cortana"}]}))
+
+    # 403 until a transfer lands, 204 afterwards - exactly how an idle spotifyd
+    # endpoint behaves.
+    woken = {"yes": False}
+
+    def transfer_ep(method, url, kw):
+        woken["yes"] = True
+        return Resp(204)
+
+    def play_ep(method, url, kw):
+        if not woken["yes"]:
+            return Resp(403, body={"error": {
+                "message": "Player command failed: Restriction violated",
+                "reason": "UNKNOWN"}})
+        return Resp(204)
+
+    net.add("/me/player/play", play_ep)
+    net.add("/me/player", transfer_ep)          # PUT /me/player = the transfer
+
+    said = media.media("play_query", "Nightcall")
+    assert woken["yes"], "never tried to wake the idle device"
+    assert "Nightcall" in said and "Playing" in said, said
+
+
 # -- play_query -------------------------------------------------------------
 def test_play_query_plays_the_track_uri_it_found(files, net):
     write_token()

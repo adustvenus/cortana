@@ -439,11 +439,23 @@ def _press(action, at, device=None, body=None):
     if not _played(r) and params and code in (403, 404):
         # We aimed at a device that will not take the press: spotifyd went away
         # (404), or it is registered but idle while the phone is the thing
-        # actually playing (403 restriction violated, which _http_sentence can
-        # only report as a Premium problem). Spend ONE more request untargeted
-        # and let Spotify act on whatever is genuinely active. Only on a
-        # targeted press, so the failure case cannot loop.
+        # actually playing (403 restriction violated). Spend ONE more request
+        # untargeted and let Spotify act on whatever is genuinely active. Only
+        # on a targeted press, so the failure case cannot loop.
         r = _call(method, path, at, params={}, **kw)
+    if not _played(r) and action == "play" and             getattr(r, "status_code", 0) in (403, 404):
+        # Still refused, and this is a play. The remaining explanation is a
+        # registered-but-idle device with no context: it will not accept a play
+        # until something makes it the ACTIVE device. Transfer, then re-press.
+        #
+        # This lives here rather than in _do_play so that play_query gets it
+        # too. Naming a track was the case that kept failing after bare play
+        # was fixed - same cause, different entry point, and putting the repair
+        # in each action is how you end up fixing it three times.
+        did = _device_id(at)
+        if did:
+            if _transfer(at, did, play=False):
+                r = _call(method, path, at, params={"device_id": did}, **kw)
     if not _played(r):
         raise _SpotifyDown(_http_sentence(r))
     return True
