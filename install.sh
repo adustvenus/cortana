@@ -51,6 +51,23 @@ if [ -z "$VENV" ]; then
 fi
 echo "Using virtualenv: $VENV"
 
+# A venv's console scripts (pip, pytest, ...) hardcode an ABSOLUTE interpreter
+# path in their shebang at creation time, while bin/python is a relative symlink
+# chain. So moving the checkout leaves a venv whose python runs perfectly and
+# whose every console script dies with
+#     ./venv/bin/pip: cannot execute: required file not found
+# This is exactly what happened here: the tree moved from ~/AI/cortana to
+# ~/cortana. Re-running venv over the existing directory rewrites bin/ and
+# re-installs pip with a correct shebang; without --clear it leaves
+# site-packages alone, so nothing already installed is lost.
+SHEBANG=$(head -1 "$VENV/bin/pip" 2>/dev/null | sed 's|^#!||')
+if [ -n "$SHEBANG" ] && [ ! -x "$SHEBANG" ]; then
+  echo "  $VENV/bin/pip points at a python that no longer exists:"
+  echo "    $SHEBANG"
+  echo "  (the checkout moved). Rewriting the venv's scripts - packages are kept."
+  python3 -m venv "$VENV"
+fi
+
 # A directory literally named venv<CR> is debris from the CRLF bug (see
 # CLAUDE.md): `python3 -m venv venv\r` created it before .gitattributes landed.
 if ls -d venv*$'\r' >/dev/null 2>&1; then
