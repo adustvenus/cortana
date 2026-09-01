@@ -402,6 +402,20 @@ def _press(action, at, device=None, body=None):
 
 
 # -- everything that is not Spotify -----------------------------------------
+def _transfer(at, did, play=True):
+    """Move playback onto `did` and start it. The only call that wakes an IDLE
+    device.
+
+    PUT /me/player/play asks a device to resume ITS OWN context. A spotifyd
+    endpoint that has never played has no context, so that request returns 204
+    and NOTHING HAPPENS - a silent success. That is the whole reason "play" did
+    nothing at the desk unless the phone had already started something: the
+    press was fine, there was simply nothing for it to resume.
+    """
+    r = _call("PUT", "/me/player", at, json={"device_ids": [did], "play": play})
+    return _played(r)
+
+
 def _mpris(args):
     """(ok, text) from playerctl - the only MPRIS client that would reach a
     browser tab or VLC on this box.
@@ -474,8 +488,31 @@ def _do_play(player="auto"):
     try:
         _guard()
         at = _need_token()
-        _press("play", at)
-        return "Playing."
+        now = _playback(at)
+        if now and now["playing"]:
+            return "Already playing."
+        if now:
+            # Loaded and paused somewhere - resume it where it already is,
+            # rather than dragging it to a device the user did not ask for.
+            _press("play", at, device=now.get("device_id"))
+            return "Playing."
+        # Nothing active anywhere. This is the case that used to do nothing at
+        # all: wake the desk speaker explicitly instead of asking an idle
+        # device to resume a context it does not have.
+        did = _device_id(at)
+        if did and _transfer(at, did):
+            # One confirming read, only on this cold path. A transfer succeeds
+            # even when the account has no context to give the speaker, and
+            # reporting "Playing." into a silent room is the failure this whole
+            # change exists to remove.
+            after = _playback(at)
+            if after and after["playing"]:
+                what = " by ".join(x for x in (after["track"], after["artist"]) if x)
+                return f"Playing {what}." if what else "Playing."
+            return ("I woke the desk speaker, but Spotify has nothing queued to "
+                    "resume. Tell me what to play.")
+        return ("Spotify has nothing playing and I can't see the desk speaker. "
+                "Tell me what to play, or check spotifyd is running.")
     except _SpotifyDown as e:
         ok, said = _mpris(["play"])
         return "Playing." if ok else f"{e} {said}"

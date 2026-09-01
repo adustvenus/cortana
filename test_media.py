@@ -152,7 +152,12 @@ def test_a_429_writes_the_cooloff_in_the_format_the_other_two_read(files, net, m
     would silence nobody. Neither shows up as an error anywhere.
     """
     write_token()
+    # "play" now reads /me/player first, to tell "paused, resume it" from
+    # "idle, wake the speaker". Stubbed 204 so the flow reaches the endpoint
+    # this test is about. Order matters: Net matches by substring and takes the
+    # FIRST hit, so "/me/player" would otherwise shadow "/me/player/devices".
     net.add("/me/player/devices", Resp(429, headers={"Retry-After": "17"}))
+    net.add("/me/player", Resp(204))
     no_binaries(monkeypatch)
     said = media.media("play")
 
@@ -165,7 +170,8 @@ def test_a_429_writes_the_cooloff_in_the_format_the_other_two_read(files, net, m
 
 def test_a_missing_retry_after_still_backs_off(files, net, monkeypatch):
     write_token()
-    net.add("/me/player/devices", Resp(429))
+    net.add("/me/player/devices", Resp(429))   # specific route first, see above
+    net.add("/me/player", Resp(204))
     no_binaries(monkeypatch)
     media.media("play")
     assert 25 <= json.loads(media.BACKOFF_FILE.read_text())["until"] - time.time() <= 31
@@ -301,8 +307,10 @@ def test_a_lost_rotation_race_retries_once_with_the_other_process_token(files, n
 
     net.add("accounts.spotify.com", token_ep)
     net.add("/me/player/devices", Resp(200, body={"devices": []}))
+    net.add("/me/player", Resp(204))
     net.add("/me/player/play", Resp(204))
-    assert media.media("play") == "Playing."
+    # No device and nothing active: the honest answer, not a false "Playing."
+    assert "nothing" in media.media("play").lower()
     assert posts == ["RT", "RT2"], "did not retry with the token the other side wrote"
 
 
@@ -514,6 +522,44 @@ def test_a_stale_remembered_track_is_not_reported_as_current(files, net, monkeyp
         "at": (time.time() - media.LAST_MAX_AGE - 60) * 1000}))
     said = media.media("status")
     assert "Yesterday" not in said and "nothing loaded" in said
+
+
+def test_play_wakes_an_idle_desk_speaker_instead_of_doing_nothing(files, net, monkeypatch):
+    """The reported bug: music would only start if the phone had already
+    started it. PUT /me/player/play asks a device to resume ITS OWN context,
+    and a spotifyd endpoint that has never played has none - so the press
+    returned 204 and nothing happened. Waking it needs PUT /me/player."""
+    write_token()
+    no_binaries(monkeypatch)
+    net.add("/me/player/devices",
+            Resp(200, body={"devices": [{"id": "DESK", "name": "Cortana"}]}))
+    net.add("/me/player", Resp(204))          # nothing active anywhere
+    said = media.media("play")
+    # The transfer is attempted (PUT /me/player with device_ids), and because
+    # the account has no context to hand it, she says so instead of reporting
+    # "Playing." into a silent room.
+    assert any(m == "PUT" and u.endswith("/me/player")
+               for m, u, _ in net.calls), net.calls
+    assert "nothing queued" in said.lower(), said
+
+
+def test_play_resumes_where_it_is_paused_rather_than_hijacking_the_device(files, net, monkeypatch):
+    """Paused on the phone means resume ON THE PHONE. Dragging playback to the
+    desk speaker because that is the device we know about would start the music
+    in the wrong room."""
+    write_token()
+    no_binaries(monkeypatch)
+    net.add("/me/player", Resp(200, body={
+        "is_playing": False,
+        "item": {"name": "Teardrop", "artists": [{"name": "Massive Attack"}]},
+        "device": {"id": "PHONE", "name": "Pixel"}}))
+    net.add("/me/player/play", Resp(204))
+    assert media.media("play") == "Playing."
+    # Resumed in place: it never went looking for the desk speaker, which is
+    # what dragging playback to the wrong room would have looked like.
+    assert not any("/me/player/devices" in u for u in net.paths()), net.paths()
+    assert any(kw.get("params", {}).get("device_id") == "PHONE"
+               for _, _, kw in net.calls), net.calls
 
 
 # -- play_query -------------------------------------------------------------
