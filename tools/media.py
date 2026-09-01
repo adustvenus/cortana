@@ -354,13 +354,61 @@ def _playback(at):
             "device_id": dev.get("id") or None}
 
 
+# Everything the playback endpoints need. Mirrors SCOPES in
+# Dashboard/app/spotify.js, which is what actually asks for them.
+PLAY_SCOPES = ("user-read-playback-state", "user-modify-playback-state",
+               "user-read-currently-playing")
+
+
+def _err_detail(r):
+    """Spotify's own words for a failure: {"error":{"message","reason"}}.
+
+    Worth the parse. A 403 from the player endpoints is USUALLY "Player command
+    failed: Restriction violated", which has nothing to do with Premium - but
+    this function did not exist, so every 403 was reported as a Premium problem
+    and sent the user off checking a subscription that was fine all along.
+    """
+    try:
+        j = r.json()
+        err = (j or {}).get("error") or {}
+        msg = err.get("message") or ""
+        reason = err.get("reason") or ""
+        if msg and reason and reason.lower() not in msg.lower():
+            return f"{msg} ({reason})"
+        return msg or reason
+    except Exception:
+        try:
+            return (getattr(r, "text", "") or "").strip()[:160]
+        except Exception:
+            return ""
+
+
+def _missing_scopes():
+    """Playback scopes the stored grant does NOT carry."""
+    scope = str((_load_token() or {}).get("scope") or "")
+    return [s for s in PLAY_SCOPES if s not in scope]
+
+
 def _http_sentence(r):
     code = getattr(r, "status_code", 0)
     if code == 401:
         return "Spotify rejected my login - it needs reconnecting on the dashboard."
     if code == 403:
-        return ("Spotify refused that - playback control needs Premium, and the "
-                "grant needs the playback scopes.")
+        # Check the grant BEFORE quoting Spotify: a scope shortfall is the one
+        # 403 with an action attached, and it is indistinguishable from the
+        # others by message alone.
+        missing = _missing_scopes()
+        if missing:
+            return ("Spotify refused that, and the connection is missing the "
+                    f"{missing[0]} permission. Reconnect Spotify on the dashboard "
+                    "to re-grant it.")
+        detail = _err_detail(r)
+        if detail:
+            # Verbatim. Guessing at the cause is what produced a whole
+            # investigation into a Premium subscription that was never expired.
+            return f"Spotify refused that: {detail}."
+        return ("Spotify refused that and gave no reason. If the desk speaker "
+                "is idle, naming a track works where a bare play does not.")
     if code == 404:
         return "There's no active Spotify device - is cortana-spotifyd running?"
     return f"Spotify answered {code}."

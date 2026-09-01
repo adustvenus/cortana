@@ -51,7 +51,12 @@ class Net:
 
     def __call__(self, method, url, **kw):
         self.calls.append((method, url, kw))
-        for needle, resp in self.routes:
+        # LONGEST needle wins, not first-registered. Plain first-match made
+        # "/me/player" silently shadow "/me/player/play" and "/me/player/devices",
+        # so a test stubbed a 403 and quietly got a 200 from an earlier route -
+        # it passed while asserting nothing, twice, before anyone noticed.
+        # Registration order is not something a test should have to reason about.
+        for needle, resp in sorted(self.routes, key=lambda r: -len(r[0])):
             if needle in url:
                 return resp(method, url, kw) if callable(resp) else resp
         return Resp(500, text="unrouted " + url)
@@ -560,6 +565,48 @@ def test_play_resumes_where_it_is_paused_rather_than_hijacking_the_device(files,
     assert not any("/me/player/devices" in u for u in net.paths()), net.paths()
     assert any(kw.get("params", {}).get("device_id") == "PHONE"
                for _, _, kw in net.calls), net.calls
+
+
+def test_a_403_quotes_spotify_instead_of_blaming_premium(files, net, monkeypatch):
+    """A 403 from the player endpoints is usually "Restriction violated", which
+    has nothing to do with a subscription. Asserting Premium sent a real user
+    off verifying an account that was fine, so the reason must come from
+    Spotify, not from us."""
+    write_token(scope=" ".join(media.PLAY_SCOPES))
+    no_binaries(monkeypatch)
+    net.add("/me/player/devices",
+            Resp(200, body={"devices": [{"id": "DESK", "name": "Cortana"}]}))
+    # Net matches by substring, FIRST hit wins - "/me/player" shadows
+    # "/me/player/play", so the press route has to come first.
+    net.add("/me/player/play", Resp(403, body={"error": {
+        "status": 403, "message": "Player command failed: Restriction violated",
+        "reason": "UNKNOWN"}}))
+    net.add("/me/player", Resp(200, body={
+        "is_playing": False,
+        "item": {"name": "x", "artists": []},
+        "device": {"id": "DESK", "name": "Cortana"}}))
+    said = media.media("play")
+    assert "Restriction violated" in said
+    assert "Premium" not in said, said
+
+
+def test_a_403_names_the_missing_scope_when_that_is_the_cause(files, net, monkeypatch):
+    """The one 403 with an action attached. It is indistinguishable from the
+    others by message alone, so the grant is checked first."""
+    write_token(scope="user-read-playback-state")      # modify scope absent
+    no_binaries(monkeypatch)
+    net.add("/me/player/devices",
+            Resp(200, body={"devices": [{"id": "DESK", "name": "Cortana"}]}))
+    # Net matches by substring, FIRST hit wins - "/me/player" shadows
+    # "/me/player/play", so the press route has to come first.
+    net.add("/me/player/play", Resp(403, body={"error": {"message": "Forbidden"}}))
+    net.add("/me/player", Resp(200, body={
+        "is_playing": False,
+        "item": {"name": "x", "artists": []},
+        "device": {"id": "DESK", "name": "Cortana"}}))
+    said = media.media("play")
+    assert "user-modify-playback-state" in said
+    assert "Reconnect Spotify" in said
 
 
 # -- play_query -------------------------------------------------------------
