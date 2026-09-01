@@ -1,0 +1,37 @@
+# Line endings are normalised to LF in the repo AND in the working tree.
+#
+# This exists because of a real failure, not as hygiene. Cortana is edited on a
+# Windows box and runs on a Linux one, and Python's write_text() on Windows
+# silently translates \n to \r\n. install.sh was committed with CRLF and, on the
+# Linux box, every line failed:
+#
+#     install.sh: line 4: $'\r': command not found
+#     E: Invalid operation update            (from `apt update\r`)
+#     E: Unable to locate package git        (from `git\r`, last on its line)
+#
+# What made it expensive is that it passed every check on the dev box: `bash -n`
+# under Git Bash tolerates CRLF, so the syntax check said OK while the script
+# could not run at all on the machine it was written for. A guard that passes in
+# the wrong environment is not evidence - see CLAUDE.md.
+#
+# eol=lf (not just text=auto) is deliberate: text=auto alone would still hand a
+# Windows checkout CRLF in the working tree, and the file that gets scp'd,
+# pasted, or read by a subagent is the working-tree one.
+* text=auto eol=lf
+
+# Never touch these - normalisation would corrupt them.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.ico    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.apk    binary
+*.jks    binary
+*.p12    binary
+*.onnx   binary
+*.wav    binary
+*.mp3    binary
+*.zip    binary
+*.jar    binary

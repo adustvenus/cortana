@@ -21,6 +21,44 @@ happens:
 - Label anything you could not run as unverified, in the same breath as the
   claim - not in a footnote.
 
+## Windows writes CRLF, and it will not fail until Linux runs it
+
+**Python's `open()`/`write_text()` in text mode on Windows silently translates
+`\n` into `\r\n`.** So does most of Windows tooling. Anything written or patched
+here with Python and then executed on the Linux box breaks, and breaks in a way
+that reads like ten unrelated bugs:
+
+```
+install.sh: line 4: $'\r': command not found
+set: -: invalid option                  # from `set -e\r`
+E: Invalid operation update             # from `apt update\r`
+E: Unable to locate package git         # `git\r`, the LAST package on the line
+./venv/bin/pip: cannot execute: required file not found
+```
+
+That last one is the tell worth memorising: the *final token on each line* eats
+the `\r`, so the failure lands on whatever happened to be last, which is never
+where the actual fault is.
+
+`.gitattributes` now pins `* text=auto eol=lf`, so git normalises on commit and
+on checkout. That is the durable fix. Two things it does not cover:
+
+- A file written and executed **without** going through git.
+- Your own verification. `bash -n script.sh` under **Git Bash tolerates CRLF**,
+  so it printed "parses OK" on a script that could not run a single line on the
+  target. This is the same failure as the spotifyd write-probe below: a check
+  that passes in the wrong environment is not evidence.
+
+When you write a shell script here, verify the bytes, not the syntax:
+
+```bash
+tr -cd '\r' < script.sh | wc -c     # must print 0
+file script.sh                      # must NOT say "with CRLF line terminators"
+```
+
+And prefer `io.open(path, "w", newline="\n")` over `write_text()` for anything
+Linux will execute.
+
 ## Verification that is unavailable here
 
 - **No `node`, no Electron on the Windows box.** You cannot RUN the Electron

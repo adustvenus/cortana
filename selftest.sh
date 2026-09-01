@@ -14,7 +14,14 @@
 # Deliberately NOT `set -e`: a failing check is data, not a reason to stop.
 
 cd "$(dirname "$0")" || exit 1
-PY="./venv/bin/python"; [ -x "$PY" ] || PY="python3"
+# Same probe as install-services.sh and install.sh: this repo has used three
+# venv names over time, and reporting on the wrong interpreter would say a
+# dependency is missing when it is installed in the one the service uses.
+PY=""
+for d in venv cortana_venv .venv; do
+    [ -x "$d/bin/python" ] && { PY="./$d/bin/python"; break; }
+done
+[ -n "$PY" ] || PY="python3"
 BRIDGE_PORT="${BRIDGE_PORT:-8765}"
 OK=0; BAD=0
 
