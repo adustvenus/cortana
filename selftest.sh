@@ -17,11 +17,20 @@ cd "$(dirname "$0")" || exit 1
 # Same probe as install-services.sh and install.sh: this repo has used three
 # venv names over time, and reporting on the wrong interpreter would say a
 # dependency is missing when it is installed in the one the service uses.
+# RUNS the interpreter rather than testing the executable bit: a venv whose base
+# python was upgraded away still has an executable python that cannot execute,
+# and reporting every import as missing off the back of that would send the next
+# debugging session in entirely the wrong direction.
 PY=""
 for d in venv cortana_venv .venv; do
-    [ -x "$d/bin/python" ] && { PY="./$d/bin/python"; break; }
+    if [ -d "$d" ] && "$d/bin/python" -c "" 2>/dev/null; then PY="./$d/bin/python"; break; fi
 done
-[ -n "$PY" ] || PY="python3"
+if [ -z "$PY" ]; then
+    for d in venv cortana_venv .venv; do
+        [ -d "$d" ] && echo "  WARNING: $d/ exists but its python will not run - venv is broken, run: bash install.sh"
+    done
+    PY="python3"
+fi
 BRIDGE_PORT="${BRIDGE_PORT:-8765}"
 OK=0; BAD=0
 

@@ -22,19 +22,44 @@ sudo apt install -y wmctrl xdotool xclip xprintidle playerctl poppler-utils \
 # the service does not run from. That failure looks exactly like "install.sh
 # succeeded but the new imports are still missing", which is the worst shape a
 # failure can have.
+# The probe RUNS the interpreter rather than testing the executable bit.
+# `[ -x venv/bin/pip ]` was the wrong measurement: a venv whose base python has
+# been upgraded or removed still has an executable pip whose shebang points at a
+# dangling symlink, so -x passes and the very next line dies with the confusing
+#     ./venv/bin/pip: cannot execute: required file not found
+# which is a SHEBANG error, not a missing-file error. Same class of mistake as
+# checking a script with `bash -n` in a shell that tolerates CRLF: a guard has
+# to run in the same context as the thing that fails.
 VENV=""
 for d in venv cortana_venv .venv; do
-  [ -x "$d/bin/pip" ] && { VENV="$d"; break; }
+  if [ -d "$d" ] && "$d/bin/python" -c "" 2>/dev/null; then VENV="$d"; break; fi
 done
+
 if [ -z "$VENV" ]; then
-  echo "No virtualenv found - creating ./venv"
+  # Distinguish "never had one" from "had one and it is broken", because the
+  # second needs the corpse moved out of the way first and is silent otherwise.
+  for d in venv cortana_venv .venv; do
+    if [ -d "$d" ]; then
+      echo "Found $d/ but its python does not run - the base interpreter it was"
+      echo "built against is gone (an OS python upgrade does this). Rebuilding it."
+      mv "$d" "$d.broken.$(date +%s)"
+    fi
+  done
+  echo "Creating ./venv"
   python3 -m venv venv
   VENV="venv"
 fi
 echo "Using virtualenv: $VENV"
 
-"./$VENV/bin/pip" install --upgrade pip
-"./$VENV/bin/pip" install -r requirements.txt
+# A directory literally named venv<CR> is debris from the CRLF bug (see
+# CLAUDE.md): `python3 -m venv venv\r` created it before .gitattributes landed.
+if ls -d venv*$'\r' >/dev/null 2>&1; then
+  echo "NOTE: leftover CRLF directory found. Remove it with:"
+  printf '      rm -rf %q\n' venv$'\r'
+fi
+
+"./$VENV/bin/python" -m pip install --upgrade pip
+"./$VENV/bin/python" -m pip install -r requirements.txt
 
 [ -f .env ] || cp .env.example .env
 
