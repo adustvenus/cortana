@@ -2784,7 +2784,11 @@ class Component extends DCLogic {
           // optimistic play/pause flip so the icon responds instantly
           if (action === 'toggle' && sp) {
             const want = !sp.playing;
-            this.setState({ spotify: { ...sp, playing: want } });
+            // spotifyAt too, or the interpolated bar restarts from the LAST
+            // POLL's timestamp and leaps forward by however long ago that was,
+            // then snaps back when the real reading lands. The optimistic flip
+            // is meant to hide latency, not to invent progress.
+            this.setState({ spotify: { ...sp, playing: want }, spotifyAt: Date.now() });
             window.duskBridge.spotify.control(want ? 'play' : 'pause')
               .then(r => { if (r && !r.ok && r.error) this.showToast(String(r.error).toUpperCase()); })
               .finally(() => { this.setState({ spotifyBusy: false }); this._pollSpotify && setTimeout(this._pollSpotify, 350); });

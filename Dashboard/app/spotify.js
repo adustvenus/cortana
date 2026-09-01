@@ -350,6 +350,48 @@ async function localDevice(at) {
   } catch (e) { return null; }
 }
 
+// Move playback onto `id` and start it. The only call that wakes an IDLE
+// device, and the reason the play button did nothing once the phone's Spotify
+// app was closed: PUT /me/player/play asks a device to resume ITS OWN context,
+// and a spotifyd endpoint that has never played has none. It answered 204, the
+// UI called that success, and the next poll quietly reverted the button.
+//
+// Kept in step with tools/media.py::_transfer and bridge/spotify_link.py by
+// hand - three processes, three HTTP clients, one Spotify account. There is no
+// shared layer to put this in, so the comment is the seam.
+async function transfer(at, id) {
+  try {
+    const r = await fetch('https://api.spotify.com/v1/me/player', {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + at, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_ids: [id], play: true }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (r.status === 429) {
+      const wait = note429(r);
+      return { ok: false, error: 'Spotify rate limit - retry in ' + Math.round(wait) + 's' };
+    }
+    if (!(r.ok || r.status === 204)) return null;   // let the plain press try
+    idleUntil = 0;
+    // A transfer succeeds even when the account has nothing to hand the
+    // speaker, so confirm rather than reporting a success into a silent room.
+    // One extra request, and only on this cold path.
+    const c = await fetch('https://api.spotify.com/v1/me/player',
+                          { headers: { Authorization: 'Bearer ' + at },
+                            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (c.status === 204) {
+      return { ok: false, error: 'nothing queued on Spotify to resume' };
+    }
+    if (c.ok) {
+      const j = await c.json().catch(() => null);
+      if (j && j.is_playing === false) {
+        return { ok: false, error: 'nothing queued on Spotify to resume' };
+      }
+      if (j) { lastGood = parsePlayback(j); rememberTrack(lastGood); }
+    }
+    return { ok: true, status: 204 };
+  } catch (e) { return null; }
+}
+
 async function control(action) {
   const at = await accessToken();
   if (!at) return { ok: false, error: 'not connected' };
@@ -361,6 +403,14 @@ async function control(action) {
   // idea of the active device when it is not, so nothing regresses if the
   // service is stopped or was never installed.
   const id = await localDevice(at);
+  // Nothing is active (the phone app was closed, or everything idled out), so
+  // a plain play press has no context to resume. Wake the speaker instead.
+  // Decided from the last reading rather than a fresh GET - this account is
+  // already close to Spotify's rate limit with three processes polling it.
+  if (action === 'play' && id && !(lastGood && lastGood.active)) {
+    const t = await transfer(at, id);
+    if (t) return t;
+  }
   const target = id ? m[1] + (m[1].includes('?') ? '&' : '?') +
                       'device_id=' + encodeURIComponent(id) : m[1];
   try {
