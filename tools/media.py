@@ -415,6 +415,31 @@ def _mpris(args):
     return True, (p.stdout or "").strip()
 
 
+def _local_state():
+    """"Playing" / "Paused" / "Stopped" from the local MPRIS player, or None.
+
+    This is the whole speed fix. A Spotify press costs 2-3 HTTPS round trips to
+    api.spotify.com (token check, /me/player read, then the press itself), which
+    is one to two seconds before she even opens her mouth. playerctl is a local
+    D-Bus call answering in single-digit milliseconds, so asking it FIRST makes
+    controlling a browser tab instant and costs the Spotify path ~5ms.
+
+    It also fixes a correctness problem, not just latency: with music on the
+    phone via Connect and a video in the browser, "pause" previously always
+    meant Spotify, so it silenced the wrong thing and reported success.
+    """
+    if not shutil.which("playerctl"):
+        return None
+    try:
+        p = subprocess.run(["playerctl", "status"],
+                           capture_output=True, text=True, timeout=2)
+    except Exception:
+        return None
+    if p.returncode != 0:
+        return None                       # no MPRIS player on the bus at all
+    return (p.stdout or "").strip() or None
+
+
 def _pactl(args):
     if not shutil.which("pactl"):
         return False
@@ -427,7 +452,17 @@ def _pactl(args):
 
 
 # -- actions ----------------------------------------------------------------
-def _do_play():
+def _do_play(player="auto"):
+    # A locally PAUSED player is what "play" means when there is one - resuming
+    # the video you just paused, not waking Spotify on the phone.
+    if player == "local" or (player == "auto" and _local_state() == "Paused"):
+        ok, said = _mpris(["play"])
+        if ok:
+            return "Playing."
+        if player == "local":
+            return said
+    if player == "local":
+        return "There's no local player paused that I can resume."
     try:
         _guard()
         at = _need_token()
@@ -438,16 +473,31 @@ def _do_play():
         return "Playing." if ok else f"{e} {said}"
 
 
-def _do_pause():
+def _do_pause(player="auto"):
     """Pause whatever is making the noise.
 
-    Spotify gets the press only when Spotify is what is actually playing -
-    otherwise pausing "the music" while YouTube is the thing talking would
-    silence nothing and cheerfully report success."""
+    Order matters. The local player is asked first because it can answer in
+    milliseconds and because, when a browser tab is the thing talking, it is
+    also the right answer - pausing Spotify instead would silence nothing and
+    cheerfully report success."""
+    if player == "local" or (player == "auto" and _local_state() == "Playing"):
+        ok, said = _mpris(["pause"])
+        if ok:
+            return "Paused."
+        if player == "local":
+            return said
+    if player == "local":
+        return "Nothing is playing locally that I can reach."
+
     spotify_seen = False
     try:
         _guard()
         at = _need_token()
+        if player == "spotify":
+            # Named explicitly, so skip the /me/player read that only existed to
+            # decide Spotify-vs-local. One request instead of two.
+            _press("pause", at)
+            return "Paused."
         now = _playback(at)
         spotify_seen = now is not None
         if now and now["playing"]:
@@ -466,7 +516,17 @@ def _do_pause():
     return "Nothing is playing on Spotify. " + said
 
 
-def _do_skip(action):
+def _do_skip(action, player="auto"):
+    if player == "local" or (player == "auto" and _local_state() == "Playing"):
+        ok, said = _mpris([action if action == "next" else "previous"])
+        if ok:
+            return "Skipped forward." if action == "next" else "Back one track."
+        if player == "local":
+            return said
+    return _do_skip_spotify(action)
+
+
+def _do_skip_spotify(action):
     done = "Skipped forward." if action == "next" else "Back one track."
     try:
         _guard()
@@ -478,8 +538,16 @@ def _do_skip(action):
         return done if ok else str(e)
 
 
-def _do_status():
+def _do_status(player="auto"):
     fmt = ["metadata", "--format", "{{artist}} - {{title}}"]
+    if player == "local" or (player == "auto" and _local_state() == "Playing"):
+        ok, out = _mpris(fmt)
+        if ok and out:
+            return f"{out}, playing here."
+        if player == "local":
+            return "Nothing is playing locally."
+    if player == "local":
+        return "Nothing is playing locally."
     try:
         _guard()
         at = _need_token()
@@ -599,7 +667,7 @@ def _vol_failed():
     return "The volume control didn't take - PulseAudio may not be running."
 
 
-def media(action, query="", percent=None):
+def media(action, query="", percent=None, player="auto"):
     """The whole tool. Always returns a string; never raises.
 
     Same contract as tools/desktop.py, and for the same reason: the return
@@ -608,13 +676,18 @@ def media(action, query="", percent=None):
     docs, a bad argument from the model - would otherwise surface as
     "TOOL ERROR (media): ..." spoken at the user verbatim."""
     try:
-        return _media(action, query, percent)
+        return _media(action, query, percent, player)
     except Exception as e:
         print("[media] unhandled:", type(e).__name__, e)
         return "The media control hit a problem I didn't expect - it's in the log."
 
 
-def _media(action, query="", percent=None):
+def _media(action, query="", percent=None, player="auto"):
+    player = (player or "auto").strip().lower()
+    if player in ("youtube", "browser", "chrome", "firefox", "vlc", "mpris"):
+        player = "local"          # what the user actually says out loud
+    if player not in ("auto", "local", "spotify"):
+        player = "auto"
     key = (action or "").strip().lower().replace(" ", "_").replace("-", "_")
     key = _ALIASES.get(key, key)
     if key not in ACTIONS:
@@ -625,11 +698,11 @@ def _media(action, query="", percent=None):
     if key == "play_query":
         return _do_play_query(query)
     if key == "status":
-        return _do_status()
+        return _do_status(player)
     if key == "pause":
-        return _do_pause()
+        return _do_pause(player)
     if key in ("next", "previous"):
-        return _do_skip(key)
+        return _do_skip(key, player)
     # A bare "play" carrying a query is what the model does when it means
     # play_query; honouring it beats resuming whatever was on before.
     if (query or "").strip():

@@ -403,8 +403,43 @@ def test_pause_falls_through_to_the_local_player_when_spotify_is_idle(files, net
     no_binaries(monkeypatch, present=("playerctl",))
     calls = fake_run(monkeypatch)
     assert media.media("pause") == "Paused."
-    assert calls == [["playerctl", "pause"]]
+    # A `playerctl status` probe now runs first (the local-first fast path), so
+    # assert on WHAT was pressed rather than on the exact call list - the latter
+    # was really testing the implementation, not the behaviour.
+    assert ["playerctl", "pause"] in calls
     assert not any("/me/player/pause" in u for u in net.paths())
+
+
+def test_a_playing_local_player_is_paused_without_touching_spotify(files, net, monkeypatch):
+    """The speed fix, asserted as behaviour: when a browser tab is the thing
+    making noise, the press is one local D-Bus call and Spotify is never
+    contacted at all - no token read, no /me/player, nothing.
+
+    Before this, every pause cost 2-3 HTTPS round trips to api.spotify.com
+    before she could speak, and pressed the wrong player besides."""
+    write_token()
+    no_binaries(monkeypatch, present=("playerctl",))
+    calls = fake_run(monkeypatch, out="Playing")
+    assert media.media("pause") == "Paused."
+    assert ["playerctl", "pause"] in calls
+    assert net.paths() == [], "reached Spotify when the local player was playing"
+
+
+def test_naming_a_player_skips_detection_entirely(files, net, monkeypatch):
+    """'pause youtube' must not consult Spotify, and 'pause spotify' must not
+    consult playerctl - saying which one you mean is the whole point."""
+    write_token()
+    no_binaries(monkeypatch, present=("playerctl",))
+    calls = fake_run(monkeypatch, out="Playing")
+    assert media.media("pause", player="youtube") == "Paused."
+    assert net.paths() == []
+
+    net.add("/me/player/devices", Resp(200, body={"devices": []}))
+    net.add("/me/player/pause", Resp(204))
+    calls2 = fake_run(monkeypatch, out="Playing")
+    assert media.media("pause", player="spotify") == "Paused."
+    assert calls2 == [], "consulted playerctl after being told to use Spotify"
+    assert any("/me/player/pause" in u for u in net.paths())
 
 
 def test_pause_says_so_when_spotify_is_already_paused(files, net, monkeypatch):

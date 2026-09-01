@@ -188,7 +188,16 @@ TOOL_DEFS = {
                      "actually playing, not just Spotify. 'volume' takes 'percent' 0-100, or "
                      "query 'up', 'down', 'mute', 'unmute'. Returns one short spoken sentence.",
                      {"action": {"type": "string"}, "query": {"type": "string"},
-                      "percent": {"type": "integer"}}, ["action"]),
+                      "percent": {"type": "integer"},
+                      "player": {"type": "string"}}, ["action"]),
+    "agenda": _schema("agenda",
+                      "The user's calendar for today, across every Google calendar they "
+                      "have selected - not just the primary one. Use it whenever they ask "
+                      "what is on, what is next, whether they are free, or how the day "
+                      "looks. It is a fast local read, so prefer it over delegating. If it "
+                      "says Google access expired, relay the fix verbatim and do not try "
+                      "to work around it.",
+                      {}, []),
     "note": _schema("note",
                     "Save something the user dictates verbatim: a note, a journal entry, a "
                     "decision, anything whose exact wording is worth keeping. Use this for "
@@ -288,7 +297,7 @@ AGENTS = {
     },
     "email": {
         "model": MODEL_FAST,
-        "tools": ["gmail_search", "gmail_read", "gmail_draft"],
+        "tools": ["gmail_search", "gmail_read", "gmail_draft", "agenda"],
         "system": f"Email specialist. Search/read Gmail, summarize, create drafts. NEVER send - drafts only. {_SPOKEN}",
     },
     "trading": {
@@ -331,6 +340,7 @@ LEAD_TOOL_NAMES = ["delegate", "task_status", "cancel_task", "continue_work",
                    "routine", "routine_set",
                    "desktop", "media", "note", "recall",
                    "system_check", "comms_read", "sms_send", "wake_correct",
+                   "agenda",
                    "remember", "shell",
                    "read_file", "write_file", "list_files", "screenshot",
                    "self_update", "confirm_pending", "cancel_pending",
@@ -481,7 +491,28 @@ def dispatch(name, args, run_agent=None, cancel=None, resume=None):
         return D.desktop(args)
     if name == "media":
         from tools import media as M     # lazy: requests only loads when music is asked for
-        return M.media(args["action"], args.get("query", ""), args.get("percent"))
+        return M.media(args["action"], args.get("query", ""), args.get("percent"),
+                       args.get("player", "auto"))
+    if name == "agenda":
+        # The import is INSIDE the try on purpose. Every tool here owes the
+        # caller a spoken sentence, and a missing google-api-python-client would
+        # otherwise escape as a traceback that gets read aloud verbatim.
+        try:
+            from tools import calendar_tool as C, google_auth  # lazy: no OAuth at import
+            events = C.today_events()
+        except ImportError as e:
+            return f"The Google libraries aren't installed here: {e}"
+        except Exception as e:
+            from tools import google_auth as G
+            if isinstance(e, G.AuthExpired):
+                return str(e)
+            return f"I couldn't read the calendar: {e}"
+        if not events:
+            return "Nothing on the calendar today."
+        return "\n".join(
+            ("%s %s%s" % (ev.get("time") or "all day", ev.get("title", ""),
+                          " (past)" if ev.get("past") else ""))
+            for ev in events)
     if name in ("note", "recall"):
         from tools import notes as N     # lazy: opens/creates the index on first use
         if name == "note":
