@@ -19,6 +19,12 @@ const { BrowserWindow } = require('electron');
 const CONFIG_FILE = path.join(__dirname, 'spotify.json');
 const BACKOFF_FILE = path.join(__dirname, 'spotify_backoff.json');
 const TOKEN_FILE = path.join(__dirname, 'spotify_token.json');
+// What was loaded the last time Spotify told us anything real. Spotify returns
+// 204 once a device stops being "active", which is indistinguishable from
+// "nothing is loaded" - so without remembering, pausing for a few minutes (or
+// restarting this shell) blanked the tile and it never came back until
+// something played again. Persisted so a restart keeps it.
+const LAST_FILE = path.join(__dirname, 'spotify_last.json');
 const REDIRECT_PORT = 8888;
 const REDIRECT_URI = `http://127.0.0.1:${REDIRECT_PORT}/callback`;
 
@@ -60,6 +66,42 @@ const FETCH_TIMEOUT_MS = 8000;
 const NET_GRACE = 3;
 let netFails = 0;                // consecutive transport failures
 let lastGood = null;             // last real reading, served while cooling off
+// Deliberately SEPARATE from lastGood: an idle reading is a real reading and
+// belongs in lastGood, but it must never be allowed to erase the track. That
+// conflation is the whole bug.
+let lastTrack = undefined;       // undefined = not yet read from disk
+// A track from yesterday is noise, not context. Long enough to survive an
+// evening's pause and an overnight restart; short enough not to lie.
+const LAST_TRACK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function loadLastTrack() {
+  if (lastTrack !== undefined) return lastTrack;
+  try {
+    const j = JSON.parse(fs.readFileSync(LAST_FILE, 'utf8'));
+    lastTrack = (j && j.track && Date.now() - (j.at || 0) < LAST_TRACK_MAX_AGE_MS) ? j : null;
+  } catch (e) { lastTrack = null; }
+  return lastTrack;
+}
+
+function rememberTrack(pb) {
+  if (!pb || !pb.track) return;
+  lastTrack = { track: pb.track, artist: pb.artist, art: pb.art,
+                progress: pb.progress, duration: pb.duration, at: Date.now() };
+  try { fs.writeFileSync(LAST_FILE, JSON.stringify(lastTrack)); } catch (e) {}
+}
+
+// An idle answer that still carries what is loaded. `active` stays false - the
+// API really is telling us there is no active device, and lying about that
+// would break the transport logic that depends on it. The TILE decides that a
+// remembered track is worth drawing; this just stops throwing it away.
+function idleReading(grantedScope) {
+  const base = { configured: true, connected: true, active: false,
+                 playing: false, idle: true, grantedScope };
+  const t = loadLastTrack();
+  if (!t) return base;
+  return { ...base, track: t.track, artist: t.artist, art: t.art,
+           progress: t.progress, duration: t.duration, since: t.at };
+}
 let idleUntil = 0;               // skip the cross-device fallback until then
 
 function backoffRemaining() {
@@ -243,6 +285,7 @@ async function state() {
     if (r.ok && r.status !== 204) {
       idleUntil = 0;
       lastGood = parsePlayback(await r.json());
+      rememberTrack(lastGood);
       return lastGood;
     }
     if (r.status !== 204 && !r.ok) {
@@ -251,14 +294,14 @@ async function state() {
       return lastGood;
     }
     if (Date.now() < idleUntil) {
-      return { configured: true, connected: true, active: false, playing: false, grantedScope };
+      return idleReading(grantedScope);
     }
     const r2 = await fetch('https://api.spotify.com/v1/me/player/currently-playing',
                            { headers: H, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (r2.status === 429) return cooling(note429(r2));
     if (r2.status === 204) {
       idleUntil = Date.now() + IDLE_RECHECK_MS;
-      lastGood = { configured: true, connected: true, active: false, playing: false, grantedScope };
+      lastGood = idleReading(grantedScope);
       return lastGood;
     }
     if (!r2.ok) {
@@ -269,11 +312,12 @@ async function state() {
     const j2 = await r2.json();
     if (!j2 || !j2.item) {
       idleUntil = Date.now() + IDLE_RECHECK_MS;
-      lastGood = { configured: true, connected: true, active: false, playing: false, grantedScope };
+      lastGood = idleReading(grantedScope);
       return lastGood;
     }
     idleUntil = 0;
     lastGood = parsePlayback(j2);
+    rememberTrack(lastGood);
     return lastGood;
   } catch (e) {
     // A blip must not wipe a good reading. The module polls every 10s while

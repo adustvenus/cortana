@@ -2759,6 +2759,10 @@ class Component extends DCLogic {
         const configured = sp ? sp.configured !== false : true;
         const connected = !!(sp && sp.connected);
         const active = !!(sp && sp.active);
+        // Spotify reports no ACTIVE device within a minute or two of pausing,
+        // but the track is still loaded and one tap resumes it. Drawing the
+        // prompt there claimed nothing was queued, which was simply false.
+        const haveTrack = !!(sp && sp.track);
         const ms = (n) => { n = Math.max(0, Math.floor((n || 0) / 1000)); return Math.floor(n / 60) + ':' + p2(n % 60); };
         const doControl = (action) => () => {
           if (!bridged) return;
@@ -2777,8 +2781,8 @@ class Component extends DCLogic {
             .finally(() => { this.setState({ spotifyBusy: false }); this._pollSpotify && setTimeout(this._pollSpotify, 350); });
         };
         return {
-          spShowPlayer: bridged && connected && active,
-          spShowPrompt: !(bridged && connected && active),
+          spShowPlayer: bridged && connected && (active || haveTrack),
+          spShowPrompt: !(bridged && connected && (active || haveTrack)),
           // Offer Connect when not logged in, or on an auth error reconnecting
           // could clear (401 expired / 403 scope). A 403 is often the app's
           // Development-Mode allowlist instead - the prompt text says so.
@@ -2786,7 +2790,10 @@ class Component extends DCLogic {
             && (!connected || (sp && (sp.error === 401 || sp.error === 403))),
           spBadge: (sp && sp.rateLimited) ? ('RATE LIMITED · ' + (sp.retryIn || 30) + 'S')
             : !bridged ? 'NO BRIDGE' : !configured ? 'NOT SET UP' : !connected ? 'OFFLINE'
-            : (sp && sp.error) ? ('ERR ' + sp.error) : active ? 'SPOTIFY' : 'IDLE',
+            // PAUSED vs IDLE is the honest distinction: one means a track is
+            // loaded and waiting, the other means there is genuinely nothing.
+            : (sp && sp.error) ? ('ERR ' + sp.error)
+            : active ? 'SPOTIFY' : haveTrack ? 'PAUSED' : 'IDLE',
           spDotColor: (bridged && connected && !(sp && sp.error)) ? '#1db954' : 'rgba(var(--text-rgb),.4)',
           spPromptTxt: !bridged ? 'open in the Dusk app for Spotify'
             : (sp && sp.rateLimited) ? ('Spotify is rate-limiting us (429). Backing off '
