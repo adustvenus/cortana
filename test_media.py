@@ -645,6 +645,43 @@ def test_naming_a_track_wakes_an_idle_device_and_retries(files, net, monkeypatch
     assert "Nightcall" in said and "Playing" in said, said
 
 
+def test_search_never_sends_market_from_token(files, net, monkeypatch):
+    """The actual cause of "Insufficient client scope" when naming a track.
+
+    market=from_token asks Spotify to resolve the account's country, which
+    needs user-read-private - a scope this grant does not carry and does not
+    need to play anything. Search was the ONLY call in the play_query path that
+    touched it, which is why a bare play returned 200 while naming a track
+    403'd, and why it read as a Premium problem for days."""
+    write_token(scope=" ".join(media.PLAY_SCOPES))
+    no_binaries(monkeypatch)
+    net.add("/search", Resp(200, body={"tracks": {"items": [
+        {"uri": "spotify:track:1", "name": "Nightcall",
+         "artists": [{"name": "Kavinsky"}]}]}}))
+    net.add("/me/player/devices", Resp(200, body={"devices": []}))
+    net.add("/me/player/play", Resp(204))
+    media.media("play_query", "Nightcall")
+
+    searches = [kw for m, u, kw in net.calls if "/search" in u]
+    assert searches, "never searched"
+    market = searches[0].get("params", {}).get("market")
+    assert market != "from_token", "from_token is back - it 403s without user-read-private"
+    assert market is None, f"unexpected market {market!r} with SPOTIFY_MARKET unset"
+
+
+def test_an_explicit_market_is_still_honoured(files, net, monkeypatch):
+    monkeypatch.setattr(media, "MARKET", "US")
+    write_token(scope=" ".join(media.PLAY_SCOPES))
+    no_binaries(monkeypatch)
+    net.add("/search", Resp(200, body={"tracks": {"items": [
+        {"uri": "spotify:track:1", "name": "x", "artists": []}]}}))
+    net.add("/me/player/devices", Resp(200, body={"devices": []}))
+    net.add("/me/player/play", Resp(204))
+    media.media("play_query", "x")
+    searches = [kw for m, u, kw in net.calls if "/search" in u]
+    assert searches[0]["params"]["market"] == "US"
+
+
 # -- play_query -------------------------------------------------------------
 def test_play_query_plays_the_track_uri_it_found(files, net):
     write_token()

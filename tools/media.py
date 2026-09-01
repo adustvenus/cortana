@@ -75,6 +75,10 @@ HTTP_TIMEOUT = 8          # Spotify answers well inside a second when it is up
 # the music to whichever device Spotify last thought was active - in practice
 # the phone in your pocket.
 CORTANA_DEVICE = "Cortana"
+# Optional ISO 3166-1 country code for search. Empty is right for a user token:
+# Spotify applies the account's own market automatically. Never set this to
+# "from_token" - that needs user-read-private and 403s without it.
+MARKET = os.getenv("SPOTIFY_MARKET", "").strip()
 DEVICE_TTL = 60.0
 
 SINK = "@DEFAULT_SINK@"
@@ -403,6 +407,13 @@ def _http_sentence(r):
                     f"{missing[0]} permission. Reconnect Spotify on the dashboard "
                     "to re-grant it.")
         detail = _err_detail(r)
+        if detail and "scope" in detail.lower():
+            # Our playback scopes are present (checked above), so this is some
+            # OTHER scope - a request asked for something the grant was never
+            # meant to cover. Say which call, not just which words came back.
+            return (f"Spotify refused that: {detail}. The playback permissions "
+                    "are fine, so something in that request needed a scope we "
+                    "do not ask for.")
         if detail:
             # Verbatim. Guessing at the cause is what produced a whole
             # investigation into a Premium subscription that was never expired.
@@ -765,12 +776,21 @@ def _do_play_query(query):
     try:
         _guard()
         at = _need_token()
-        r = _call("GET", "/search", at,
-                  params={"q": query, "type": "track,album,artist,playlist",
-                          # market matters: without it search happily returns
-                          # tracks this account cannot play, and the press then
-                          # fails for a reason nobody watching can see.
-                          "market": "from_token", "limit": 3})
+        # market=from_token used to be here, and it is why naming a track
+        # failed with "Insufficient client scope" while a bare play worked:
+        # from_token asks Spotify to resolve the account's country, which needs
+        # user-read-private - a scope this grant does not carry and does not
+        # need for playback. Search was the ONLY call in this path that touched
+        # it, which is exactly why the two commands failed differently.
+        #
+        # Dropping it costs nothing. With a USER access token Spotify already
+        # applies that account's market on its own; the parameter was redundant
+        # as well as scope-gated. SPOTIFY_MARKET can pin an ISO country code
+        # ("US") if results ever need forcing, without a re-auth.
+        params = {"q": query, "type": "track,album,artist,playlist", "limit": 3}
+        if MARKET:
+            params["market"] = MARKET
+        r = _call("GET", "/search", at, params=params)
         if not getattr(r, "ok", False):
             raise _SpotifyDown(_http_sentence(r))
         found = _json(r)
