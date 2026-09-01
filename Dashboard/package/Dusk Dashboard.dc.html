@@ -1161,6 +1161,7 @@ class Component extends DCLogic {
       gitData: null,       // last git:status response from main process
       gitAge: '—',         // HH:MM of last successful git poll
       calData: null,       // {events, error} from Cortana's calendar loop
+      spotifyAt: 0,        // when the Spotify reading was taken, for interpolation
       upData: null,        // upcoming reminders/timers; null = never loaded yet
       upDown: false,       // bridge unreachable - keep the last list, say so
       // The four tiles below copy upData/upDown exactly: null means "never
@@ -1189,7 +1190,15 @@ class Component extends DCLogic {
     // second even on a board with no clock on it. The other pollers all guard
     // on their module being present; this one now does too.
     this._clock = setInterval(() => {
-      if (!this.state.modules.some(m => CLOCK_TYPES.has(m.type))) return;
+      // Also kept alive while a track is playing: the progress bar is
+      // interpolated between polls (see spBar), and interpolation needs a
+      // re-render to be visible. Reusing this timer rather than adding a second
+      // one keeps the "no work when nothing needs it" guard intact - with no
+      // clock and no music, this still returns immediately.
+      const sp = this.state.spotify;
+      const musicLive = !!(sp && sp.playing
+                           && this.state.modules.some(m => m.type === 'music'));
+      if (!musicLive && !this.state.modules.some(m => CLOCK_TYPES.has(m.type))) return;
       this.setState({ now: new Date() });
     }, 1000);
     this._tick = setInterval(() => {
@@ -1307,7 +1316,7 @@ class Component extends DCLogic {
           if (st.rateLimited && !was.rateLimited)
             this._logLine('spotify → rate limited, backing off ' + (st.retryIn || 30) + 's', true);
           else if (!st.rateLimited && was.rateLimited) this._logLine('spotify → rate limit cleared');
-          this.setState({ spotify: st });
+          this.setState({ spotify: st, spotifyAt: Date.now() });
         }
       } catch (e) {}
     };
@@ -2763,6 +2772,11 @@ class Component extends DCLogic {
         // but the track is still loaded and one tap resumes it. Drawing the
         // prompt there claimed nothing was queued, which was simply false.
         const haveTrack = !!(sp && sp.track);
+        // Clamped to the track length so a poll that goes missing cannot run
+        // the bar off the end and report 7:41 of a 4:18 song.
+        const spProgress = Math.min((sp && sp.duration) || Infinity,
+          ((sp && sp.progress) || 0)
+          + ((sp && sp.playing && s.spotifyAt) ? Date.now() - s.spotifyAt : 0));
         const ms = (n) => { n = Math.max(0, Math.floor((n || 0) / 1000)); return Math.floor(n / 60) + ':' + p2(n % 60); };
         const doControl = (action) => () => {
           if (!bridged) return;
@@ -2808,9 +2822,14 @@ class Component extends DCLogic {
           spArtist: (sp && sp.artist) || '',
           spPlaying: !!(sp && sp.playing),
           spNotPlaying: !(sp && sp.playing),
-          spBar: { width: (sp && sp.duration ? Math.min(100, sp.progress / sp.duration * 100) : 0) + '%',
+          // Spotify is polled every 10s (faster is what earned a 429 on this
+          // shared account), so the bar used to jump in 10-second steps and
+          // looked stalled - especially while ducked, where the audio is quiet
+          // but the track is very much still running. Advance it locally from
+          // the timestamp of the last reading instead of asking more often.
+          spBar: { width: (sp && sp.duration ? Math.min(100, spProgress / sp.duration * 100) : 0) + '%',
                    height: '100%', borderRadius: 2, background: 'rgb(var(--accent-rgb))', transition: 'width .4s linear' },
-          spElapsed: ms(sp && sp.progress),
+          spElapsed: ms(spProgress),
           spTotal: ms(sp && sp.duration),
           spToggle: doControl('toggle'),
           spPrev: doControl('previous'),

@@ -56,6 +56,14 @@ APP_DIR = Path(__file__).resolve().parent.parent / "Dashboard" / "app"
 CONFIG_FILE = APP_DIR / "spotify.json"
 TOKEN_FILE = APP_DIR / "spotify_token.json"
 BACKOFF_FILE = APP_DIR / "spotify_backoff.json"    # shared with Electron + bridge
+# Written by Dashboard/app/spotify.js. Read-only here - one writer per state
+# file, same rule as every other state file in this repo. It exists because
+# Spotify answers 204 once a device idles out, which is indistinguishable
+# from "nothing loaded" unless somebody remembered.
+LAST_FILE = APP_DIR / "spotify_last.json"
+# A track from yesterday is not an answer to "what's playing". Matches the
+# window Dashboard/app/spotify.js keeps it for.
+LAST_MAX_AGE = 24 * 3600
 
 API = "https://api.spotify.com/v1"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -538,36 +546,94 @@ def _do_skip_spotify(action):
         return done if ok else str(e)
 
 
-def _do_status(player="auto"):
-    fmt = ["metadata", "--format", "{{artist}} - {{title}}"]
-    if player == "local" or (player == "auto" and _local_state() == "Playing"):
-        ok, out = _mpris(fmt)
-        if ok and out:
-            return f"{out}, playing here."
-        if player == "local":
-            return "Nothing is playing locally."
-    if player == "local":
-        return "Nothing is playing locally."
+def _last_track():
+    """What Spotify last had loaded, from the dashboard's record, or None.
+
+    Spotify reports 204 within a minute or two of pausing, so without this
+    "what's playing" answered "nothing" while a paused track sat there - which
+    is the wrong answer even though the API technically said so."""
+    try:
+        j = json.loads(LAST_FILE.read_text())
+    except Exception:
+        return None
+    if not j.get("track") or time.time() - (j.get("at", 0) / 1000.0) > LAST_MAX_AGE:
+        return None
+    return j
+
+
+def _spotify_clause():
+    """One clause about Spotify, whatever state it is in. Never raises."""
     try:
         _guard()
         at = _need_token()
         now = _playback(at)
     except _SpotifyDown as e:
-        ok, out = _mpris(fmt)
-        return f"{out}." if ok and out else str(e)
-    if not now:
-        ok, out = _mpris(fmt)
-        if ok and out:
-            return f"Not Spotify, but {out} is playing."
-        # `out` is empty when playerctl IS installed and answered with nothing
-        # to report. Concatenating it blindly ends the spoken line on a dangling
-        # "Nothing is playing on Spotify. " with no second half.
-        return ("Nothing is playing on Spotify. " + out if out
-                else "Nothing is playing on Spotify.")
-    where = f" on {now['device']}" if now.get("device") else ""
-    what = " by ".join(x for x in (now["track"], now["artist"]) if x) or "something"
-    return (f"{what}, playing{where}." if now["playing"]
-            else f"Paused on {what}{where}.")
+        return str(e).rstrip(".")
+    except Exception:
+        return "I couldn't reach Spotify"
+    if now:
+        what = " by ".join(x for x in (now["track"], now["artist"]) if x) or "something"
+        where = f" on {now['device']}" if now.get("device") else ""
+        return (f"Spotify is playing {what}{where}" if now["playing"]
+                else f"Spotify is paused on {what}{where}")
+    # 204: no active device. A remembered track still answers the question
+    # honestly, and is what the user actually wants to hear.
+    last = _last_track()
+    if last:
+        artist = last.get("artist") or ""
+        what = " by ".join(x for x in (last.get("track", ""), artist) if x)
+        return f"Spotify is paused on {what}"
+    return "Spotify has nothing loaded"
+
+
+def _local_clause():
+    """(clause, can_see) about whatever else on this machine makes noise.
+
+    can_see=False means playerctl is not installed, so silence here is IGNORANCE
+    and not evidence. Reporting "nothing else is playing" off the back of a
+    missing binary would be exactly the kind of confident wrong answer this
+    repo keeps getting bitten by."""
+    if not shutil.which("playerctl"):
+        return "", False
+    state = _local_state()
+    if state is None:
+        return "nothing else is loaded here", True
+    ok, out = _mpris(["metadata", "--format", "{{artist}} - {{title}}"])
+    title = (out or "").strip(" -") if ok else ""
+    if state == "Playing":
+        return (f"{title} is playing here" if title else "something is playing here"), True
+    if state == "Paused":
+        return (f"{title} is paused here" if title else "something is paused here"), True
+    return "nothing else is loaded here", True
+
+
+def _do_status(player="auto"):
+    """Answer for EVERY source, not the first one that says yes.
+
+    The local-first shortcut used for transport presses is wrong for a
+    question: a YouTube tab playing does not mean Spotify is silent, and
+    reporting only one of them was reporting half the room.
+    """
+    if player == "local":
+        clause, can_see = _local_clause()
+        if not can_see:
+            return ("playerctl isn't installed, so Spotify is the only player I "
+                    "can see.")
+        return clause.capitalize() + "."
+    if player == "spotify":
+        return _spotify_clause() + "."
+
+    spotify = _spotify_clause()
+    local, can_see = _local_clause()
+    if can_see:
+        return f"{spotify}, and {local}."
+    # Only own up to the blind spot when the answer would otherwise be a bare
+    # "nothing" - saying it every time a track IS playing is noise.
+    if "nothing loaded" in spotify:
+        return (spotify + ", and playerctl isn't installed so I can't see any "
+                "other player.")
+    return spotify + "."
+
 
 
 def _pick(j):

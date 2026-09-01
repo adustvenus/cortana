@@ -459,16 +459,61 @@ def test_status_speaks_prose_with_no_markdown_or_urls(files, net):
                  "album": {"images": [{"url": "https://i.example/x.jpg"}]}},
         "device": {"name": "Cortana"}}))
     said = media.media("status")
-    assert said == "Teardrop by Massive Attack, playing on Cortana."
+    assert said == "Spotify is playing Teardrop by Massive Attack on Cortana."
     assert "http" not in said and "*" not in said
 
 
 def test_status_with_nothing_playing_admits_it_cannot_see_other_players(files, net, monkeypatch):
+    """Silence from a missing binary is IGNORANCE, not evidence. Saying
+    "nothing else is playing" because playerctl is absent is a confident wrong
+    answer, and it is only owned up to when the answer is otherwise bare."""
     write_token()
     net.add("/me/player", Resp(204))
     no_binaries(monkeypatch)
     said = media.media("status")
-    assert "Nothing is playing on Spotify" in said and "playerctl" in said
+    assert "nothing loaded" in said and "playerctl" in said
+
+
+def test_status_answers_for_BOTH_sources_not_the_first_one(files, net, monkeypatch):
+    """A YouTube tab playing does not mean Spotify is silent. Reporting only
+    whichever answered first was reporting half the room."""
+    write_token()
+    net.add("/me/player", Resp(200, body={
+        "is_playing": False,
+        "item": {"name": "Teardrop", "artists": [{"name": "Massive Attack"}]},
+        "device": {"name": "Cortana"}}))
+    no_binaries(monkeypatch, present=("playerctl",))
+    fake_run(monkeypatch, out="Playing")
+    said = media.media("status")
+    assert "Spotify is paused on Teardrop" in said
+    assert "playing here" in said
+
+
+def test_status_names_a_paused_spotify_track_from_the_remembered_reading(files, net, monkeypatch):
+    """Spotify answers 204 within a minute of pausing, so the API alone says
+    "nothing". The dashboard already persists the last real reading - use it,
+    because a paused track IS the answer to "what's playing"."""
+    import json, time
+    write_token()
+    net.add("/me/player", Resp(204))
+    no_binaries(monkeypatch)
+    media.LAST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    media.LAST_FILE.write_text(json.dumps({
+        "track": "Nightcall", "artist": "Kavinsky", "at": time.time() * 1000}))
+    assert "paused on Nightcall by Kavinsky" in media.media("status")
+
+
+def test_a_stale_remembered_track_is_not_reported_as_current(files, net, monkeypatch):
+    import json, time
+    write_token()
+    net.add("/me/player", Resp(204))
+    no_binaries(monkeypatch)
+    media.LAST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    media.LAST_FILE.write_text(json.dumps({
+        "track": "Yesterday", "artist": "x",
+        "at": (time.time() - media.LAST_MAX_AGE - 60) * 1000}))
+    said = media.media("status")
+    assert "Yesterday" not in said and "nothing loaded" in said
 
 
 # -- play_query -------------------------------------------------------------

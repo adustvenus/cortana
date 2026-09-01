@@ -1,10 +1,14 @@
-"""Audio ducking: lower Spotify's volume while Cortana is being talked to or
-is talking, restore it exactly when both go quiet.
+"""Audio ducking: lower whatever is making noise while Cortana is being talked
+to or is talking, restore it exactly when both go quiet.
 
-Targets the spotifyd sink-input directly via pactl (PulseAudio/PipeWire)
-rather than the Spotify Web API - reacts the instant listening/speaking
-starts, with no network round-trip and no dependency on the Dashboard being
-open or a token being valid.
+Targets sink-inputs directly via pactl (PulseAudio/PipeWire) rather than any
+player's API - it reacts the instant listening/speaking starts, with no network
+round-trip and no dependency on the Dashboard being open or a token being valid.
+That is also why it works for a browser tab, which has no API to ask.
+
+It ducks, it does not pause: the track keeps playing and keeps its position, it
+just gets quiet. Pausing and resuming would lose your place in a video and
+fight whatever you were doing.
 
 engage(reason)/release(reason) are reference-counted by reason string, so
 overlapping triggers (e.g. she's still speaking when PTT is pressed again)
@@ -14,7 +18,11 @@ import re
 import subprocess
 import threading
 
-from config import DUCK_ENABLED, DUCK_SINK_MATCH, DUCK_FACTOR
+from config import (DUCK_ENABLED, DUCK_SINK_MATCH, DUCK_SINK_EXCLUDE,
+                    DUCK_FACTOR)
+
+_INCLUDE = [s.strip().lower() for s in DUCK_SINK_MATCH.split(",") if s.strip()]
+_EXCLUDE = [s.strip().lower() for s in DUCK_SINK_EXCLUDE.split(",") if s.strip()]
 
 _TIMEOUT = 2
 _lock = threading.Lock()
@@ -31,7 +39,15 @@ def _matching_inputs():
     found = []
     for block in out.split("Sink Input #")[1:]:
         sid = block.split("\n", 1)[0].strip()
-        if not sid.isdigit() or DUCK_SINK_MATCH.lower() not in block.lower():
+        if not sid.isdigit():
+            continue
+        low = block.lower()
+        # Empty include list = duck everything. The exclude list is applied
+        # either way, so narrowing the include list can never accidentally
+        # re-enable ducking Cortana's own voice.
+        if _INCLUDE and not any(m in low for m in _INCLUDE):
+            continue
+        if any(x in low for x in _EXCLUDE):
             continue
         m = re.search(r"Volume:.*?(\d+)%", block)
         if m:

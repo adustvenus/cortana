@@ -71,7 +71,15 @@ VAD_THRESHOLD = int(os.getenv("VAD_THRESHOLD", "350"))  # raise if it triggers o
 
 # --- Audio ducking (lower Spotify while she's being talked to / talking) ---
 DUCK_ENABLED = os.getenv("DUCK_ENABLED", "1") not in ("0", "false", "False")
-DUCK_SINK_MATCH = os.getenv("DUCK_SINK_MATCH", "spotifyd")  # pactl application.name substring
+# Which sink-inputs get quietened. EMPTY (the default) means EVERY audio
+# stream on the box, which is what "be quiet while I'm talking to you" actually
+# means - it used to be "spotifyd" alone, so a YouTube tab talked straight over
+# push-to-talk. Set a comma-separated list of substrings to narrow it again.
+DUCK_SINK_MATCH = os.getenv("DUCK_SINK_MATCH", "")
+# Never duck Cortana's own voice. In practice her ffplay stream is started
+# AFTER ducking engages, so it is not in the captured set anyway - but relying
+# on that ordering silently breaks the moment anything pre-warms the player.
+DUCK_SINK_EXCLUDE = os.getenv("DUCK_SINK_EXCLUDE", "ffplay,espeak,speech-dispatcher")
 DUCK_FACTOR = float(os.getenv("DUCK_FACTOR", "0.25"))       # fraction of current volume while ducked
 
 # --- Prompt caching ---
