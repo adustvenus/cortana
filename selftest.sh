@@ -159,6 +159,30 @@ for u in cortana cortana-bridge cortana-dash cortana-spotifyd; do
     fi
 done
 
+# ── 6b. is the running code the code on disk? ──────────────────────────────
+# Python caches an imported module for the life of the process, and most tools
+# here are imported lazily on first use. So a service started before a git pull
+# keeps serving the OLD module while a fresh `python` on the same box gets the
+# new file - the same command works from a shell and fails by voice, with
+# nothing in any log to say why. It cost a full debugging round once.
+hdr "code freshness"
+newest=$(find . -name '*.py' -not -path './venv/*' -not -path './cortana_venv/*'               -not -path '*/__pycache__/*' -printf '%T@ %p
+' 2>/dev/null |
+         sort -rn | head -1)
+newest_ts=${newest%% *}; newest_ts=${newest_ts%%.*}
+note "newest .py" "$(date -d @${newest_ts:-0} 2>/dev/null) ${newest##* }"
+for u in cortana cortana-bridge; do
+    started=$(systemctl --user show "$u" -p ActiveEnterTimestampMonotonic --value 2>/dev/null)
+    epoch=$(systemctl --user show "$u" -p ActiveEnterTimestamp --value 2>/dev/null)
+    if [ -z "$epoch" ]; then note "$u" "(not running)"; continue; fi
+    started_ts=$(date -d "$epoch" +%s 2>/dev/null || echo 0)
+    if [ "${newest_ts:-0}" -gt "${started_ts:-0}" ]; then
+        fail "stale:$u" "started $epoch, BEFORE the newest source edit -> systemctl --user restart $u"
+    else
+        pass "fresh:$u" "started after the last source change"
+    fi
+done
+
 # ── 7. state files ─────────────────────────────────────────────────────────
 hdr "state files"
 now=$(date +%s)
