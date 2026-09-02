@@ -1,8 +1,12 @@
 # Testing the eight new features on the Linux box
 
-Everything below was written on the Windows dev box, where **Kotlin cannot be
-compiled, Electron cannot be run, and no systemd unit exists**. What follows is
-therefore the first time most of this code meets a real machine. Work down in
+**Status: all ten features are verified working on real hardware** (see Part 4).
+This document is kept as the regression pass — run it after any change that
+touches the phone, the bridge or the scheduler, because those three have broken
+each other more than once.
+
+Everything here was written on the Windows dev box, where **Kotlin cannot be
+compiled, Electron cannot be run, and no systemd unit exists**. Work down in
 order — the parts are arranged so that a failure early on explains failures
 later, and so you never chase a symptom whose cause is two sections above.
 
@@ -164,32 +168,43 @@ least. **The APK is already built and released** - CI went green and published
 
 ---
 
-## Part 4 — what I could not verify, stated plainly
+## Part 4 — verified on real hardware, 2026-09-02
 
-These are not suspicions; they are things no test on the dev box could touch.
+Everything below was confirmed working on Cortana-Core-v1 and the paired phone,
+not inferred. The bugs found along the way are in the git log with their causes.
 
-- **Kotlin RUNTIME behaviour.** It compiles - CI built and released v2.5.0
-  green, so this is no longer a "does it even build" risk. But the foreground
-  service, notification channels, RemoteInput reply, geofencing, the
-  NotificationListenerService and SMS have still never *run*. Compiling is not
-  working.
-- **Doze.** Whether the WebSocket actually survives deep doze on your phone,
-  with your OEM's battery manager, is unknowable from here.
-- **The `cmd` WS channel** (workstation → phone) is a new protocol addition.
-  Both halves were written against the same contract but have never spoken to
-  each other.
-- **`notify-send` from a systemd user unit** needs `DBUS_SESSION_BUS_ADDRESS`
-  in the unit environment. `cortana.service` sets `DISPLAY` and `XAUTHORITY`;
-  whether it inherits the session bus is unverified. If toasts are silent, check
-  that before blaming `notify-send`.
-- **`loginctl lock-session`** returns success when the request is *accepted*.
-  Whether a locker is running to honour it is a property of the desktop.
-- **The weather clause** in the morning brief is the one code path never
-  executed anywhere — it needs `BRIEF_ZIP` set in `.env.local`.
-- **Spotify under a real 429.** Three processes now share one quota. The
-  cool-off file logic is tested; the real rate limit is not.
-- **The wake word ships dormant** and is a no-op until you train a model. See
-  below.
+| | |
+|---|---|
+| Reminders, timers, alarms, recurring | working |
+| Routines, morning brief | working |
+| Workstation control (windows, clipboard, volume, toasts) | working |
+| Media — play, play_query, pause, status, ducking | working |
+| Notes and recall (FTS5) | working |
+| Sentinel, with manual refresh and a visible reading age | working |
+| Calendar / agenda | working |
+| Push notifications to a CLOSED app | working |
+| Reply from the notification shade | working |
+| Presence — desk, phone open/recent, place | working |
+| SMS send, with contact names and a spoken confirm | working |
+| SMS read and notification mirroring | working |
+
+What that cost, and what it taught: nine of those needed a fix after first
+contact with hardware, and in almost every case the code was behaving exactly
+as written while a *guess* somewhere else made the failure unreadable — a
+hardcoded "needs Premium" hiding Spotify's real 403, a socket-liveness
+inference invalidated by a foreground service added months later, an alarm
+re-armed on every launch so it never fired. The pattern is in CLAUDE.md.
+
+### Still not verified
+
+- **The wake word.** Ships dormant; see Part 5. Until it is trained, wake mode
+  costs one Whisper call per utterance in the room.
+- **Local Whisper.** Deliberately off — it would claim about half the box's
+  free RAM to save a cheap API call.
+- **Doze over days.** Push works today. Whether the socket survives a long idle
+  weekend under this OEM's battery manager is only answerable by living with it.
+- **`smsError` reaching you as speech.** The plumbing is in and tested, but it
+  only fires when the phone cannot read SMS, which has not happened here.
 
 ## Part 5 — the wake word, when you want it
 
