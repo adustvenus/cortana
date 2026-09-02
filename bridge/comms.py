@@ -243,6 +243,29 @@ def check_confirmed(to, body, now=None):
     return True, ""
 
 
+async def read_now(limit=10):
+    """Ask the phone for its inbox RIGHT NOW, and fold the answer into the store.
+
+    Until this existed, "what was my last text" could only be as good as
+    whatever the phone's 15-minute alarm last happened to push - so a message
+    from ten minutes ago was invisible while one from three days ago was
+    reported as the latest. A stale answer delivered confidently is worse than
+    no answer: nothing about "Mum, 77 hours ago" tells you it is not current.
+
+    The phone has implemented the sms.read command since v2.5.0; there was
+    simply no caller. Returns the number of rows stored, or None when the phone
+    cannot be reached - in which case the caller falls back to the cache, which
+    is still the right thing to say when the phone is off.
+    """
+    reply = await cmdchan.request("sms.read", {"limit": int(limit)})
+    if reply.get("error") or not reply.get("ok"):
+        return None
+    rows = reply.get("result")
+    if not isinstance(rows, list):
+        return None
+    return ingest({"sms": rows}).get("stored", 0)
+
+
 async def send(to, body, confirm=False, now=None):
     """The whole outbound path. Returns a dict carrying either ok or error.
 

@@ -62,7 +62,13 @@ def _ago(ts, now):
 def comms_summary(kind="all", limit=8):
     """Spoken-style recap of what the phone mirrored. Prose, no lists."""
     import time
-    data, err = call("GET", f"/local/comms?limit={int(limit)}", timeout=10)
+    # fresh=1: ask the phone for its inbox before answering. The mirror is
+    # pushed on a 15-minute alarm, so the cache alone reported a three-day-old
+    # message as the latest while one from ten minutes ago was invisible. The
+    # timeout covers a WebSocket round trip to the phone; the bridge falls back
+    # to the cache by itself when the phone cannot be reached.
+    want = "&fresh=1" if kind in ("all", "sms") else ""
+    data, err = call("GET", f"/local/comms?limit={int(limit)}{want}", timeout=20)
     if err:
         return err
     now = time.time()

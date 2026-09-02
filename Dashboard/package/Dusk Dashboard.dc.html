@@ -622,6 +622,8 @@ if (window.duskBridge) document.documentElement.classList.add('dusk-app');
             <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;min-width:0">
               <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.18em;color:rgb(var(--accent3-rgb))">SENTINEL</span>
               <span style="flex:1"></span>
+              <span style="{{ snAgeStyle }}">{{ snAgeTxt }}</span>
+              <span onClick="{{ snRefresh }}" title="Re-check now, ignoring the throttle" style="{{ snRefreshStyle }}">{{ snRefreshTxt }}</span>
               <span style="{{ snWorstStyle }}">{{ snWorstTxt }}</span>
             </div>
             <div style="flex:1;display:flex;flex-direction:column;gap:.35rem;margin-top:.4rem;min-height:0;overflow-y:auto;mask-image:linear-gradient(180deg,#000 90%,transparent)">
@@ -1172,6 +1174,8 @@ class Component extends DCLogic {
       rtDown: false,
       rtErr: '',           // why the list is empty, in the bridge's own words
       snData: null,        // sentinel: {worst, checks:[{key,label,state,detail}]}
+      snAt: 0,             // when the reading landed, so the tile can age it
+      snBusy: false,       // a manual re-probe is in flight
       snDown: false,
       prData: null,        // presence: {desk, phone, place}
       prDown: false,
@@ -1745,17 +1749,26 @@ class Component extends DCLogic {
     pollRoutines();
     this._rtPoll = setInterval(pollRoutines, 30000);
 
-    const pollSentinel = async () => {
+    // force=true adds ?refresh=1, which re-probes on the bridge instead of
+    // reading the last published file. The background poll must NOT force: the
+    // systemctl check is throttled to five minutes on purpose (this shape of
+    // check once spawned a process 24 times a minute forever). That throttle is
+    // right for a loop and wrong for a person standing at the board asking
+    // whether a service they just restarted is up NOW - hence the button.
+    const pollSentinel = async (force) => {
       if (!this.state.modules.some(m => m.type === 'sentinel')) return;
+      if (force) this.setState({ snBusy: true });
       try {
-        const r = await fetch(MB + '/local/sentinel');
+        const r = await fetch(MB + '/local/sentinel' + (force ? '?refresh=1' : ''));
         if (!r.ok) throw new Error(r.status);
         const d = await r.json();
         if (!d || !Array.isArray(d.checks)) throw new Error('shape');
-        this.setState({ snData: d, snDown: false });
+        this.setState({ snData: d, snDown: false, snAt: Date.now() });
       } catch (e) { this.setState({ snDown: true }); }
+      finally { if (force) this.setState({ snBusy: false }); }
     };
     pollSentinel();
+    this._pollSentinel = pollSentinel;
     this._snPoll = setInterval(pollSentinel, 30000);
 
     const pollPresence = async () => {
@@ -3273,6 +3286,20 @@ class Component extends DCLogic {
           snWorstTxt: s.snDown ? (word ? 'OFFLINE \u00b7 ' + word : 'OFFLINE')
                     : stale ? ((w === 'bad' || w === 'warn') ? 'STALE \u00b7 ' + word : 'STALE')
                     : word,
+          snRefreshTxt: s.snBusy ? '···' : '⟳',
+          snRefresh: () => { this._pollSentinel && this._pollSentinel(true); },
+          snRefreshStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.7rem',
+                            color: 'rgba(var(--text-rgb),.45)', cursor: 'pointer',
+                            padding: '0 .2rem' },
+          // How old the READING is. A health check that cannot say when it last
+          // looked is indistinguishable from one that is simply wrong, which is
+          // exactly what a five-minute-stale "not running" looked like.
+          snAgeTxt: !s.snAt ? '' : (() => {
+            const secs = Math.max(0, Math.round((Date.now() - s.snAt) / 1000));
+            return secs < 60 ? secs + 's' : Math.round(secs / 60) + 'm';
+          })(),
+          snAgeStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.55rem',
+                        letterSpacing: '.1em', color: 'rgba(var(--text-rgb),.3)' },
           snWorstStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: '.6rem',
                           letterSpacing: '.14em',
                           color: w === 'bad' ? 'rgb(var(--accent2-rgb))'

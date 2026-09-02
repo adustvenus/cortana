@@ -12,7 +12,8 @@ from aiohttp import web
 
 from bridge import (auth, comms, hub, onboarding, pairing, presence_link,
                     state, updates, watch)
-from bridge.settings import (BRIDGE_VERSION, HOST_NAME, MAX_BOARD_SNAPSHOT, PORT)
+from bridge.settings import (BRIDGE_VERSION, HOST_NAME, MAX_BOARD_SNAPSHOT,
+                             PORT, log)
 
 
 # ── onboarding (open, tailnet/LAN only) ─────────────────────────────────────
@@ -154,7 +155,15 @@ async def presence(request):
 
 
 async def comms_view(request):
-    """Recent mirrored SMS and notifications for the dashboard."""
+    """Recent mirrored SMS and notifications for the dashboard.
+
+    `?fresh=1` asks the phone for its inbox before answering. The mirror is
+    pushed on a 15-minute alarm, so without this a question asked at minute
+    three is answered from minute zero - and a text from ten minutes ago is
+    reported as absent while a three-day-old one is called the latest. A live
+    read costs one WebSocket round trip and only happens when someone asked a
+    question, not on the dashboard's poll.
+    """
     denied = auth.local_guard(request)
     if denied:
         return denied
@@ -162,6 +171,13 @@ async def comms_view(request):
         limit = int(request.query.get("limit", "30"))
     except (TypeError, ValueError):
         limit = 30
+    if request.query.get("fresh") in ("1", "true", "yes"):
+        try:
+            await comms.read_now(limit)
+        except Exception as e:
+            # The cache is still a real answer; a phone that cannot be reached
+            # is not a reason to fail the request.
+            log("live sms read failed", e)
     try:
         data = await asyncio.to_thread(comms.local_view, limit)
     except Exception as e:
@@ -208,13 +224,35 @@ async def routines(request):
     return web.json_response(data, headers=auth.CORS)
 
 
+def _fresh_sentinel():
+    """Re-probe here and now, WITHOUT writing sentinel_state.json.
+
+    The file has one writer - the cortana process - and that stays true. This
+    only fills this process's own in-memory cache and hands the rows straight
+    back, so a person pressing refresh gets an answer measured a moment ago
+    rather than up to five minutes old.
+
+    Five minutes is the systemctl throttle, and it is deliberate: this exact
+    shape of check once spawned a process 24 times a minute forever. The
+    throttle is right for the background loop and wrong for someone standing
+    at the board asking "is it up NOW", which is what this is for.
+    """
+    import sentinel as S
+    S.poll(force=True)
+    return S.snapshot()
+
+
 async def sentinel(request):
-    """Health checks, passed through as written plus how old they are."""
+    """Health checks, passed through as written plus how old they are.
+
+    `?refresh=1` re-probes instead of reading the last published file.
+    """
     denied = auth.local_guard(request)
     if denied:
         return denied
+    want_fresh = request.query.get("refresh") in ("1", "true", "yes")
     try:
-        data = await asyncio.to_thread(watch.sentinel)
+        data = await asyncio.to_thread(_fresh_sentinel if want_fresh else watch.sentinel)
     except Exception as e:
         return web.json_response({"worst": "ok", "checks": [],
                                   "error": str(e)[:200]}, headers=auth.CORS)
