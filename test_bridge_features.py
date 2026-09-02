@@ -348,11 +348,43 @@ def test_announce_frames_carry_a_sanitised_urgency():
 
 
 # -- the presence merge ----------------------------------------------------
-def test_a_live_socket_means_the_user_is_looking_at_the_phone():
-    """LinkClient is foreground-only, so the socket is the strongest presence
-    signal in the system - stronger than any timestamp."""
-    view = presence_link.merge(desk="away", online=True, phone=None)
-    assert view["phone"] == "open"
+def test_a_live_socket_no_longer_means_the_user_is_looking_at_the_phone():
+    """This test used to assert the opposite, and its name said so.
+
+    That was correct while LinkClient held the socket ONLY for a foregrounded
+    Activity. v2.5.0 added a foreground service that holds it with the app
+    closed, so the socket became permanently live and presence reported "open"
+    forever - the user watched their phone sit closed while the board insisted
+    it was open. An inference can be invalidated by a change somewhere else
+    entirely; this is what that looks like.
+    """
+    import time
+    now = time.time()
+    view = presence_link.merge(desk="away", online=True, phone=None, now=now)
+    assert view["phone"] != "open", "socket liveness must no longer imply open"
+
+    # screenOn is what still carries the original meaning.
+    looking = presence_link.merge(desk="away", online=True, now=now,
+                                  phone={"ts": now, "screenOn": True})
+    assert looking["phone"] == "open"
+
+    pocket = presence_link.merge(desk="away", online=True, now=now,
+                                 phone={"ts": now, "screenOn": False})
+    assert pocket["phone"] == "recent", "reachable, but nobody is looking at it"
+
+
+def test_the_phones_own_home_work_label_survives_the_wire():
+    """`place` cannot carry it - its vocabulary is home/out/driving/unknown and
+    the phone collapses "work" into "out" before sending. `zone` is the phone's
+    saved-place label, and it was being dropped, which is why setting a work
+    location appeared to do nothing at all."""
+    import time
+    now = time.time()
+    view = presence_link.merge(desk="present", online=True, now=now,
+                               phone={"ts": now, "zone": "work", "place": "out"})
+    assert view["zone"] == "work"
+    assert presence_link.merge(desk="present", online=True, now=now,
+                               phone={"ts": now, "zone": "nonsense"})["zone"] == "unknown"
 
 
 def test_no_report_and_no_socket_reads_as_closed_and_unknown():

@@ -28,6 +28,7 @@ STATE_FILE = Path(__file__).resolve().parent / "presence_desk.json"
 
 _last_voice = {"ts": 0.0}
 _last_written = None
+_last_write_ts = 0.0
 # Which idle probe won last time. The fallback chain is only walked once; after
 # that we go straight to the tool that worked, so a 30s loop is not shelling
 # out to three missing binaries forever.
@@ -132,13 +133,19 @@ def publish():
     """Write presence_desk.json, skipping the disk write when nothing changed -
     same discipline as hud_state.py, and it matters more here because this runs
     on a 30s loop forever."""
-    global _last_written
+    global _last_written, _last_write_ts
     payload = sample_desk()
     compare = dict(payload)
     compare.pop("last_voice", None)      # moves constantly; not worth a write
-    if compare == _last_written:
+    # Skip the write only while the file is still comfortably fresh. The guard
+    # compares the PAYLOAD, but read_desk() trusts the file by its TIMESTAMP -
+    # so a genuinely steady desk state stopped being written, aged past
+    # PRESENCE_STALE and read back as "unknown" while the user sat right there.
+    # That is this repo's signature bug: a guard measuring one thing while the
+    # consumer checks another.
+    if compare == _last_written and (time.time() - _last_write_ts) < PRESENCE_STALE / 2:
         return payload
-    _last_written = compare
+    _last_written, _last_write_ts = compare, time.time()
     tmp = tempfile.NamedTemporaryFile("w", dir=STATE_FILE.parent,
                                       delete=False, suffix=".tmp")
     json.dump(dict(payload, ts=time.time()), tmp)

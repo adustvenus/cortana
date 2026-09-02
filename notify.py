@@ -37,11 +37,19 @@ _TABLE = {
                  "away": ("board",),
                  "asleep": ("board",),
                  "unknown": ("board",)},
-    "normal":   {"present": ("desk", "board"),
+    # "present" used to mean desk+board only, which is why push notifications
+    # looked completely broken: someone testing at their machine sets a
+    # reminder, the desk is present, and the phone is never selected at all -
+    # no leg lookup, no audit row naming the phone, nothing. The phone was
+    # working; it was never asked. If a line is worth interrupting you with,
+    # it is worth having in your pocket when you walk away from the desk
+    # thirty seconds later. `ambient` is still board-only, which is where
+    # genuinely quiet things belong.
+    "normal":   {"present": ("desk", "phone", "board"),
                  "away": ("phone", "board"),
                  "asleep": ("board", "hold"),
                  "unknown": ("phone", "board")},
-    "urgent":   {"present": ("desk", "board"),
+    "urgent":   {"present": ("desk", "phone", "board"),
                  "away": ("desk", "phone", "board"),
                  "asleep": ("phone", "board"),
                  "unknown": ("desk", "phone", "board")},

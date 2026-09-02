@@ -88,6 +88,7 @@ def record(payload, now=None):
             "driving": driving,
             "charging": bool(payload.get("charging")),
             "screenOn": bool(payload.get("screenOn")),
+            "zone": str(payload.get("zone") or "unknown").strip().lower(),
             "ts": now}
     _report["data"], _report["loaded"] = kept, True
     try:
@@ -124,10 +125,17 @@ def merge(desk="unknown", online=False, phone=None, now=None):
     phone = phone if isinstance(phone, dict) else None
     age = now - float((phone or {}).get("ts") or 0) if phone else None
 
-    if online:
-        # Foreground-only client: the socket IS the user looking at the screen.
+    # `online` USED to mean "the user is looking at the phone", because
+    # LinkClient held the socket only while an Activity was foregrounded. The
+    # v2.5.0 foreground service holds it with the app closed, so that inference
+    # is now permanently true and reported "open" forever. screenOn is what
+    # still carries the original meaning - the phone sends it on every report
+    # and, until now, nothing on this side ever read it back.
+    fresh = age is not None and age <= PHONE_RECENT
+    if fresh and (phone or {}).get("screenOn"):
         phone_state = "open"
-    elif age is not None and age <= PHONE_RECENT:
+    elif online or fresh:
+        # Reachable, but nobody is looking at it.
         phone_state = "recent"
     else:
         phone_state = "closed"
@@ -139,9 +147,19 @@ def merge(desk="unknown", online=False, phone=None, now=None):
     if place not in ("home", "out", "driving", "unknown"):
         place = "unknown"
 
+    # The phone knows home from work; `place` cannot say so, because its
+    # vocabulary is home/out/driving/unknown and Presence.kt collapses "work"
+    # into "out" before it goes on the wire. `zone` is the phone's own label
+    # from its saved places, and it was being dropped on the floor here - which
+    # is why setting a work location appeared to do nothing at all.
+    zone = (phone or {}).get("zone") or "unknown"
+    if zone not in ("home", "work", "elsewhere", "unknown"):
+        zone = "unknown"
+
     return {"desk": desk if desk in ("present", "away", "asleep") else "unknown",
             "phone": phone_state,
             "place": place,
+            "zone": zone,
             "driving": place == "driving",
             "charging": bool((phone or {}).get("charging")),
             "reportAge": int(age) if age is not None else None,

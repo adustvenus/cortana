@@ -429,6 +429,20 @@ def _routine_turn(prompt):
     return reply
 
 
+def _phone_leg(text, urgency):
+    """Hand one line to the bridge to put on the phone.
+
+    Raising here is correct rather than swallowing: notify records a failed leg
+    as "phone:failed" in `deliveries`, and a silent success would make an
+    unreachable bridge indistinguishable from a delivered notification.
+    """
+    from bridge import client
+    _, err = client.call("POST", "/local/notify",
+                         {"text": text, "urgency": urgency})
+    if err:
+        raise RuntimeError(err)
+
+
 def _sentinel_loop():
     """Publish sentinel_state.json and speak anything that just got WORSE.
 
@@ -727,7 +741,13 @@ if __name__ == "__main__":
         desk=lambda text, urgency: (speech.alert(text)
                                     if urgency in ("urgent", "critical")
                                     else speech.announce(text)),
-        board=lambda text, urgency: hud_state.think(text[:120]))
+        board=lambda text, urgency: hud_state.think(text[:120]),
+        # The phone leg this process never had. The WebSocket lives in the
+        # bridge and nowhere else, so everything routed to the phone from HERE
+        # recorded "phone:unavailable" while a phone sat connected - which is
+        # most of why push notifications looked dead. bridge.client is
+        # stdlib-only, so this never drags aiohttp into the voice process.
+        phone=_phone_leg)
     threading.Thread(target=_calendar_loop, daemon=True, name="calendar").start()
     threading.Thread(target=_mic_state_loop, daemon=True, name="mic-state").start()
     threading.Thread(target=_presence_loop, daemon=True, name="presence").start()

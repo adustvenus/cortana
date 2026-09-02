@@ -404,6 +404,13 @@ routes = [
     web.post("/api/presence", presence),
     web.post("/api/comms/sync", comms_sync),
     web.post("/api/cmd/reply", cmd_reply),
+    # The shipped v2.5.0 APK posts to /api/cmd/result. Two agents built the two
+    # halves of this channel, each recorded the path as "mine to name", and
+    # neither reconciled - so every command reply 404'd and every sms.send
+    # timed out as "the phone did not respond". Aliased rather than renamed
+    # because the phone is already in the user's pocket and a route is cheaper
+    # than an APK round trip; both paths stay valid.
+    web.post("/api/cmd/result", cmd_reply),
     web.post("/api/tasks", task_op),
     web.get("/api/apk", apk),
     web.post("/api/apk/refresh", apk_refresh),

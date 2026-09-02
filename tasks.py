@@ -126,12 +126,28 @@ def _report(rec):
     memory.log_turn("assistant",
                     f"[background task {tid} ({agent}) {status}] {rec['result'][:600]}")
     hud_state.think(f"task {tid} ({agent}) {status}")
+    # Through notify, not speech.announce. A completion is the line MOST worth
+    # having on your phone - delegate is the tool that takes minutes, so you are
+    # the least likely to still be at the desk when it lands - and going
+    # straight to the speaker meant it reached the room and nothing else, with
+    # not even a `deliveries` row to say it had happened.
     if status == "done":
-        speech.announce(f"{agent.capitalize()} agent finished task {tid}. {short}")
+        line = f"{agent.capitalize()} agent finished task {tid}. {short}"
     elif status == "failed":
-        speech.announce(f"Task {tid} with the {agent} agent failed. {short}")
+        line = f"Task {tid} with the {agent} agent failed. {short}"
     elif status == "cancelled":
-        speech.announce(f"Task {tid} ({agent}) cancelled.")
+        line = f"Task {tid} ({agent}) cancelled."
+    else:
+        line = ""
+    if line:
+        try:
+            import notify
+            notify.deliver(line, "normal", src=f"task:{tid}", ref=tid)
+        except Exception as e:
+            # Never lose a completion to a routing failure - the speaker is
+            # what this did before notify existed and is still a valid floor.
+            print("[tasks] notify failed, speaking instead:", e)
+            speech.announce(line)
 
 
 def cancel(tid):

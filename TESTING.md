@@ -227,3 +227,14 @@ journalctl --user -u cortana-bridge --since '-15 min' --no-pager | tail -40
 That is enough to debug from. It is deliberately more than feels necessary,
 because the alternative is a round trip to a machine that cannot be reached
 from where the fixing happens.
+
+
+=== USER NOTES DO NOT REMOVE ===
+
+cd ~/cortana && git pull && bash install.sh
+./venv/bin/pip install -r requirements.txt
+systemctl --user restart cortana cortana-bridge cortana-dash
+journalctl --user -u cortana -n 60 --no-pager      # read it, don't assume
+bash selftest.sh 2>&1 | tee /tmp/selftest.txt
+
+=== ======================== ===

@@ -54,6 +54,18 @@ def test_critical_always_reaches_desk_and_phone():
         assert "desk" in got and "phone" in got, f"critical/{d} -> {got}"
 
 
+def test_anything_worth_interrupting_you_with_reaches_the_phone(db):
+    """Everything above ambient reaches the phone in every desk state. You walk
+    away from the desk thirty seconds after setting a reminder, and the routing
+    decision was made when you were still sitting there."""
+    for urgency in ("normal", "urgent", "critical"):
+        for desk in DESK_STATES:
+            got = notify.surfaces_for(urgency, desk)
+            if "hold" in got:
+                continue            # asleep+normal is deliberately deferred
+            assert "phone" in got, f"{urgency}/{desk} -> {got}"
+
+
 def test_ambient_never_speaks_anywhere():
     for d in DESK_STATES:
         got = notify.surfaces_for("ambient", d)
@@ -84,9 +96,20 @@ def test_an_unrecognised_urgency_falls_back_to_normal():
 
 # ── deliver() ──────────────────────────────────────────────────────────────
 def test_deliver_reaches_the_expected_legs(db, legs):
+    """A present desk now reaches the phone too, and this test used to pin the
+    opposite.
+
+    That table entry is why push notifications looked completely broken: you
+    set a reminder while sitting at your machine, the desk reads "present", and
+    the phone was never selected - no leg lookup, not even an audit row naming
+    it. The phone worked all along; nothing ever asked it.
+    """
     notify.deliver("timer done", "urgent", desk_state="present")
     assert legs["desk"] == ["timer done"]
-    assert legs["phone"] == []
+    assert legs["phone"] == ["timer done"]
+    # ambient stays board-only: that is where genuinely quiet things belong.
+    notify.deliver("indexed 40 files", "ambient", desk_state="present")
+    assert legs["phone"] == ["timer done"]
 
 
 def test_a_missing_leg_is_audited_not_faked(db, monkeypatch):

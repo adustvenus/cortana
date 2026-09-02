@@ -74,11 +74,33 @@ def _row(kind, item, now):
             1 if item.get("unread") else 0)
 
 
+# Why the phone last said it could not read SMS. Kept in memory only: it is a
+# statement about the phone's CURRENT permission state, and a stale one read
+# back after a reinstall would be worse than none.
+_sms_error = {"text": "", "ts": 0.0}
+
+
+def sms_error():
+    return _sms_error["text"]
+
+
 def ingest(payload, now=None):
     """Store one sync from the phone. Blocking sqlite - call it in a thread."""
     now = now or time.time()
     sms = payload.get("sms") if isinstance(payload, dict) else None
     notes = payload.get("notifications") if isinstance(payload, dict) else None
+    # The phone deliberately sends smsError INSTEAD of an empty list when it
+    # cannot read messages, because an empty list is a lie - it reads as "you
+    # have no texts". Nothing here consumed it, so the one failure the phone
+    # can actually explain arrived as silence and Cortana answered "nothing has
+    # come through", which is the very sentence the key exists to prevent.
+    err = payload.get("smsError") if isinstance(payload, dict) else None
+    if err:
+        _sms_error["text"] = str(err)[:200]
+        _sms_error["ts"] = time.time()
+        log("phone cannot read SMS", _sms_error["text"])
+    elif isinstance(sms, list):
+        _sms_error["text"], _sms_error["ts"] = "", 0.0
     rows = []
     for kind, items in (("sms", sms), ("note", notes)):
         if not isinstance(items, list):
@@ -153,6 +175,10 @@ def local_view(limit=30):
            for r in recent("sms", limit)]
     notes = [{"app": r["app"], "title": r["title"], "text": r["body"],
               "ts": r["ts"]} for r in recent("note", limit)]
+    # Carried so the caller can say WHY there is nothing, instead of "nothing
+    # has come through" - which is indistinguishable from an empty inbox and is
+    # the exact sentence the phone sends smsError to prevent.
+    err = sms_error()
     return {"sms": sms, "notes": notes}
 
 

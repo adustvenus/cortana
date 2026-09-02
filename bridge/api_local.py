@@ -221,6 +221,34 @@ async def sentinel(request):
     return web.json_response(data, headers=auth.CORS)
 
 
+async def announce(request):
+    """Say something on the phone, on behalf of a process that cannot.
+
+    The WebSocket lives here and nowhere else, so cortana.service had no phone
+    leg at all - notify.register() there claimed desk and board only, and every
+    delivery routed to the phone recorded "phone:unavailable" while a phone sat
+    connected two feet away. This is the missing half.
+    """
+    denied = auth.local_guard(request)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("not an object")
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400,
+                                 headers=auth.CORS)
+    text = str(body.get("text") or "").strip()
+    if not text:
+        return web.json_response({"error": "no text"}, status=400,
+                                 headers=auth.CORS)
+    urgency = str(body.get("urgency") or "normal")
+    item = hub.announce(text, urgency)
+    return web.json_response({"ok": True, "id": (item or {}).get("id")},
+                             headers=auth.CORS)
+
+
 async def preflight(request):
     return web.Response(status=204, headers=auth.CORS)
 
@@ -235,6 +263,7 @@ routes = [
     web.get("/local/routines", routines),
     web.get("/local/sentinel", sentinel),
     web.post("/local/sms", sms),
+    web.post("/local/notify", announce),
     web.get("/local/qr", qr),
     web.post("/local/pair/new", pair_new),
     web.post("/local/revoke", revoke),
