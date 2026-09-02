@@ -66,10 +66,18 @@ def _row(kind, item, now):
     if ts > 1e11:                       # phones send milliseconds; normalise
         ts /= 1000.0
     body = str(item.get("body") or item.get("text") or "")[:BODY_CAP]
+    addr = str(item.get("from") or item.get("sender") or "")
+    # `sender` is what gets SPOKEN, so it prefers the contact name; `title`
+    # keeps the raw address, which is what a reply has to be aimed at. Two
+    # fields because collapsing them loses one of the two uses - and `title`
+    # already held the counterparty address for outgoing messages, so an SMS
+    # row now means the same thing in both directions.
+    name = str(item.get("fromName") or "").strip()
+    who = (name or addr)[:64]
+    title = addr[:120] if kind == "sms" else str(item.get("title") or "")[:120]
     return (ts, kind,
             str(item.get("app") or "")[:64],
-            str(item.get("from") or item.get("sender") or "")[:64],
-            str(item.get("title") or "")[:120],
+            who, title,
             body, _ext_id(kind, item),
             1 if item.get("unread") else 0)
 
@@ -170,7 +178,11 @@ def local_view(limit=30):
     # EMPTY sender to it read an incoming text from a withheld or short-code
     # number back as one the user had sent - "You texted just now: your code is
     # 447122" - which is worse than admitting we do not know who it was from.
-    sms = [{"id": r["id"], "from": r["from"] or "unknown", "body": r["body"],
+    # `from` is the name when the phone knew one, and `number` is always the
+    # raw address - so "who texted" can say a person and a reply can still be
+    # aimed at a handset.
+    sms = [{"id": r["id"], "from": r["from"] or "unknown",
+            "number": r.get("title") or "", "body": r["body"],
             "ts": r["ts"], "unread": r["unread"]}
            for r in recent("sms", limit)]
     notes = [{"app": r["app"], "title": r["title"], "text": r["body"],

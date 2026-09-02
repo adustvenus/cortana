@@ -51,6 +51,11 @@
     <!-- ── Comms hub (Settings -> COMMS, every switch default OFF) ──────────
          Notification access is NOT declared here: it is a system grant given
          in Settings that no app may request, only deep-link to. -->
+    <!-- Optional, and only for the comms hub: turns a phone number into the
+         name you actually call someone, in both directions. Every lookup
+         degrades to "no name known" without it - never to a crash, and never
+         to a guessed recipient. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- RECEIVE_SMS is deliberately NOT declared. Nothing in this app receives

@@ -167,6 +167,11 @@ object Comms {
                     out.put(JSONObject()
                         .put("id", c.getString(0) ?: "")
                         .put("from", c.getString(1) ?: "")
+                        // The workstation prefers this when present. Sent as a
+                        // SEPARATE field rather than replacing `from`, because
+                        // a reply needs the number and a readback needs the
+                        // name, and collapsing them loses one of the two.
+                        .put("fromName", Contacts.nameFor(ctx, c.getString(1) ?: "") ?: "")
                         .put("body", (c.getString(2) ?: "").take(600))
                         .put("ts", c.getLong(3) / 1000.0)
                         .put("unread", c.getInt(4) == 0))
@@ -185,6 +190,27 @@ object Comms {
             return "SEND_SMS was not granted on this phone"
         if (to.isBlank()) return "no number to send to"
         if (body.isBlank()) return "no message to send"
+
+        // `to` may be a person, not a number. Nobody thinks of the people in
+        // their life as +15550100, so a name has to work - but a name that
+        // resolves WRONG sends a private message to the wrong human, which is
+        // worse than refusing. So: an unambiguous match sends, and anything
+        // else comes back as a sentence for Cortana to put to the user.
+        var dest = to.trim()
+        if (!Contacts.looksLikeNumber(dest)) {
+            if (!has(ctx, Manifest.permission.READ_CONTACTS))
+                return "I can't look up contacts on this phone - grant Contacts " +
+                    "access, or give me the number"
+            val hits = Contacts.numbersFor(ctx, dest)
+            when {
+                hits.isEmpty() -> return "no contact on this phone matches " + dest
+                hits.size > 1 -> return "that matches " + hits.size + " contacts - " +
+                    hits.joinToString("; ") { it.first + " on " + it.second } +
+                    ". Which one?"
+                else -> dest = hits[0].second
+            }
+        }
+
         return try {
             val sm = if (Build.VERSION.SDK_INT >= 31)
                 ctx.getSystemService(android.telephony.SmsManager::class.java)
@@ -194,7 +220,7 @@ object Comms {
             // divideMessage/sendMultipart rather than sendTextMessage: anything
             // Cortana writes is easily over one 160-character segment and a
             // single-part send would be truncated.
-            sm.sendMultipartTextMessage(to, null, sm.divideMessage(body), null, null)
+            sm.sendMultipartTextMessage(dest, null, sm.divideMessage(body), null, null)
             null
         } catch (e: Exception) {
             e.message ?: "the send failed with no message"

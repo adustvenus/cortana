@@ -516,6 +516,28 @@ def test_millisecond_timestamps_are_normalised(db):
     assert abs(comms.recent("sms")[0]["ts"] - now) < 5
 
 
+def test_a_contact_name_is_what_gets_spoken_and_the_number_is_kept(db):
+    """The mirror used to speak only in phone numbers, because the raw address
+    was all that was stored. `from` is now the name when the phone knew one -
+    that is what gets read aloud - while the number survives alongside it,
+    because a readback needs the person and a reply needs the handset."""
+    comms.ingest({"sms": [{"id": "m1", "from": "+15550100",
+                           "fromName": "Little Demon from 528",
+                           "body": "on my way", "ts": time.time()}]})
+    row = comms.local_view()["sms"][0]
+    assert row["from"] == "Little Demon from 528"
+    assert row["number"] == "+15550100"
+
+
+def test_an_unknown_number_still_reads_back_as_the_number(db):
+    """No contact match must not become an empty name - "  texted you" is
+    worse than a number, and a withheld number has no name to find."""
+    comms.ingest({"sms": [{"id": "m2", "from": "+15550199", "fromName": "",
+                           "body": "code 1234", "ts": time.time()}]})
+    row = comms.local_view()["sms"][0]
+    assert row["from"] == "+15550199"
+
+
 def test_bodies_are_capped(db):
     comms.ingest({"sms": [{"id": "s1", "from": "x", "body": "y" * 5000,
                            "ts": time.time()}]})

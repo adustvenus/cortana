@@ -262,7 +262,11 @@ TOOL_DEFS = {
                           "local copy, so it works even when the phone is unreachable.",
                           {"kind": {"type": "string"}, "limit": {"type": "integer"}}, []),
     "sms_send": _schema("sms_send",
-                        "Send a text message from the user's phone. TWO CALLS, ALWAYS. Call it "
+                        "Send a text message from the user's phone. 'to' may be a CONTACT NAME "
+                        "as the user says it ('Mum', 'Little Demon from 528') - the phone "
+                        "resolves it. If more than one contact matches you get them listed "
+                        "back: read the choices out and ask which, never pick one. A number "
+                        "works too. TWO CALLS, ALWAYS. Call it "
                         "first WITHOUT confirm: nothing is sent and it returns the message read "
                         "back to you. Say that line to the user, and only call it again with "
                         "confirm=true after they explicitly say yes. The recipient and body must "

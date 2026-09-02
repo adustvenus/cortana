@@ -365,11 +365,16 @@ class SettingsActivity : Activity() {
             // READ_SMS only. RECEIVE_SMS is not declared and nothing here
             // receives one; requesting it produced a dialog for a permission
             // the app has no use for.
-            if (on) request(Manifest.permission.READ_SMS)
+            // Contacts alongside SMS, because a mirror that can only say
+            // "+15550100 texted you" is barely worth having. Optional: refuse
+            // it and everything still works in numbers.
+            if (on) request(Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS)
         })
         col.addView(toggle("Let Cortana send SMS on request", Prefs.smsSend(this)) { on ->
             Prefs.setSmsSend(this, on)
-            if (on) request(Manifest.permission.SEND_SMS)
+            // Without Contacts, "text Mum" cannot be resolved and Cortana has
+            // to be given a number - so ask for both here too.
+            if (on) request(Manifest.permission.SEND_SMS, Manifest.permission.READ_CONTACTS)
         })
         col.addView(Ui.gap(this, 10))
         col.addView(Ui.value(this,
