@@ -218,8 +218,12 @@ def _norm(text):
 def stage(to, body, now=None):
     """Hold a composed message and return the line to read back to the user."""
     _staged.update(to=_norm(to), body=_norm(body), ts=now or time.time())
-    return (f"Ready to text {_staged['to']}: {_staged['body']}. "
-            "Say send it and I will.")
+    # Asked as a question, not as a script. "Say send it and I will" reads as
+    # an instruction that only those three words satisfy, and a user who
+    # answered "yes" or "go ahead" - the two most natural replies to a
+    # read-back - found nothing happened. What guarantees safety here is the
+    # exact to/body match in check_confirmed(), NOT the wording of the yes.
+    return f"Ready to text {_staged['to']}: {_staged['body']}. Send it?"
 
 
 def clear_staged():

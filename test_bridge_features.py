@@ -516,6 +516,36 @@ def test_millisecond_timestamps_are_normalised(db):
     assert abs(comms.recent("sms")[0]["ts"] - now) < 5
 
 
+def test_the_readback_asks_rather_than_scripting_one_phrase(db):
+    """It used to end "Say send it and I will", which reads as an instruction
+    that only those three words satisfy - a user answering "yes" or "go ahead",
+    the two most natural replies to a read-back, found nothing happened.
+
+    Safety here comes from check_confirmed matching the exact to/body, not from
+    constraining how the user says yes."""
+    line = comms.stage("+15550100", "on my way")
+    assert "on my way" in line and "+15550100" in line
+    assert "say send it" not in line.lower(), "still scripting one phrase"
+    assert line.rstrip().endswith("?"), "a read-back should ask, not instruct"
+
+
+def test_confirming_still_requires_the_exact_message(db):
+    """The safety property the wording change must not weaken: a confirm can
+    only ever send the text that was actually read aloud."""
+    comms.stage("+15550100", "on my way")
+    ok, _ = comms.check_confirmed("+15550100", "on my way")
+    assert ok, "the exact text that was read back must be sendable"
+
+    # A confirm for DIFFERENT text is refused AND drops the draft, so the
+    # obvious retry cannot send something no human heard. Re-staging on the
+    # mismatch path is how "compose one message, confirm another" used to work.
+    comms.stage("+15550100", "on my way")
+    ok, err = comms.check_confirmed("+15550100", "wire me two thousand pounds")
+    assert not ok and err
+    ok2, _ = comms.check_confirmed("+15550100", "wire me two thousand pounds")
+    assert not ok2, "repeating the rejected confirm must not send it"
+
+
 def test_a_contact_name_is_what_gets_spoken_and_the_number_is_kept(db):
     """The mirror used to speak only in phone numbers, because the raw address
     was all that was stored. `from` is now the name when the phone knew one -
