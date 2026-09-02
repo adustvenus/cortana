@@ -173,8 +173,15 @@ object Presence {
         val app = ctx.applicationContext
         if (!Prefs.presenceOn(app) || !Prefs.paired(app)) { done?.invoke(); return }
         val body = snapshot(app)
+        // screenOn belongs in the signature. It is the field the workstation
+        // now uses to tell "the user is looking at the phone" from "the
+        // service is holding a socket in a pocket", and leaving it out meant a
+        // lock or unlock produced no report at all - the value the bridge held
+        // was whatever the screen happened to be doing at the last place or
+        // charging change, routinely half an hour stale.
         val sig = body.optString("place") + "|" + body.optString("zone") + "|" +
-            body.optBoolean("charging") + "|" + body.optBoolean("driving")
+            body.optBoolean("charging") + "|" + body.optBoolean("driving") + "|" +
+            body.optBoolean("screenOn")
         val now = System.currentTimeMillis()
         val since = now - Prefs.presenceSentAt(app)
         if (sig == Prefs.presenceSig(app) && since < HEARTBEAT_MS) { done?.invoke(); return }

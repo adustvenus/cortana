@@ -6,8 +6,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -82,7 +84,14 @@ class LinkService : Service(), LinkClient.Listener, LinkClient.Background {
             else -> {}
         }
         attach()
-        scheduleTick()
+        // scheduleTick() deliberately NOT called here. setAndAllowWhileIdle
+        // REPLACES any pending alarm with the same PendingIntent, so arming it
+        // on every start command meant every launch of the app, the widget or
+        // Settings pushed the 15-minute tick another 15 minutes into the
+        // future. Anyone using their phone normally never let it fire, so the
+        // only scheduled /api/comms/sync and /api/presence never ran - which is
+        // most of why "who texted" answered nothing and presence went stale.
+        // It is armed once in attach() and re-armed by tick() after each fire.
         return START_STICKY
     }
 
@@ -92,6 +101,7 @@ class LinkService : Service(), LinkClient.Listener, LinkClient.Background {
         LinkClient.onCmd = null
         LinkClient.stop(this)
         unregisterNetwork()
+        unregisterScreen()
         cancelTick()
     }
 
@@ -103,6 +113,8 @@ class LinkService : Service(), LinkClient.Listener, LinkClient.Background {
         Presence.start(this)
         Comms.tick(this)
         registerNetwork()
+        registerScreen()
+        scheduleTick()
     }
 
     // -- notification channels -----------------------------------------------
@@ -314,6 +326,34 @@ class LinkService : Service(), LinkClient.Listener, LinkClient.Background {
         LinkClient.poke(this)
         Presence.tick(this)
         Comms.tick(this)
+        // Re-arm HERE, where a fire has actually happened. setAndAllowWhileIdle
+        // is one-shot, so without this the tick runs exactly once per service
+        // lifetime.
+        scheduleTick()
+    }
+
+    // Screen on/off cannot be declared in a manifest - they are runtime-only
+    // broadcasts. Without this, `screenOn` was sampled only when some OTHER
+    // field changed or on the 30-minute heartbeat, so locking the phone told
+    // the workstation nothing and presence stayed wrong for half an hour.
+    private var screenReceiver: BroadcastReceiver? = null
+
+    private fun registerScreen() {
+        if (screenReceiver != null || !Prefs.presenceOn(this)) return
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) { Presence.report(this@LinkService) }
+        }
+        val f = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        try { registerReceiver(r, f); screenReceiver = r } catch (e: Exception) { }
+    }
+
+    private fun unregisterScreen() {
+        val r = screenReceiver ?: return
+        screenReceiver = null
+        try { unregisterReceiver(r) } catch (e: Exception) { }
     }
 
     private fun registerNetwork() {

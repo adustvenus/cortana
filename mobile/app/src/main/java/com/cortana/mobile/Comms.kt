@@ -124,8 +124,16 @@ object Comms {
             if (!has(app, Manifest.permission.READ_SMS))
                 body.put("smsError", "READ_SMS is switched on for Cortana but " +
                     "not granted on this phone, so no messages can be read")
-            else
+            else try {
                 body.put("sms", readSms(app, SMS_LIMIT))
+            } catch (e: Exception) {
+                // readSms used to swallow this and return an empty array, which
+                // recreated the exact "you have no texts" lie the smsError
+                // branch above exists to prevent - and it is the branch that
+                // actually fires once READ_SMS has been granted.
+                body.put("smsError", "this phone's SMS provider refused the " +
+                    "read: " + (e.message ?: e.toString()))
+            }
             try {
                 LinkClient.postComms(app, body)
             } catch (e: Exception) { /* the next tick retries */ }
@@ -138,15 +146,24 @@ object Comms {
      * provider - this app is not the default SMS handler and does not want to
      * be, which is also why sent messages are not mirrored.
      */
+    /** Throws rather than returning an empty list: the caller must be able to
+     *  tell "no messages" from "the read failed", because an empty inbox and a
+     *  refused query look identical to the workstation and one of them is a
+     *  lie. syncSms turns a throw into smsError. */
     fun readSms(ctx: Context, limit: Int): JSONArray {
         val out = JSONArray()
         if (!has(ctx, Manifest.permission.READ_SMS)) return out
         val cols = arrayOf("_id", "address", "body", "date", "read")
         val n = if (limit < 1) 1 else if (limit > 100) 100 else limit
-        try {
+        // "date DESC" only. A LIMIT appended to the sort order is not portable:
+        // SQLiteQueryBuilder applies strict grammar checking to sortOrder on
+        // API 30+, and OEM SMS providers vary, so the clause that looks like an
+        // optimisation is a provider-dependent exception. Stop at n instead.
+        run {
             ctx.contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI, cols,
-                null, null, "date DESC LIMIT " + n)?.use { c ->
+                null, null, "date DESC")?.use { c ->
                 while (c.moveToNext()) {
+                    if (out.length() >= n) break
                     out.put(JSONObject()
                         .put("id", c.getString(0) ?: "")
                         .put("from", c.getString(1) ?: "")
@@ -155,10 +172,6 @@ object Comms {
                         .put("unread", c.getInt(4) == 0))
                 }
             }
-        } catch (e: Exception) {
-            // No telephony (tablet), a provider that refuses the LIMIT clause,
-            // or the permission revoked between the check and the query. An
-            // empty list is the right answer to all three.
         }
         return out
     }
